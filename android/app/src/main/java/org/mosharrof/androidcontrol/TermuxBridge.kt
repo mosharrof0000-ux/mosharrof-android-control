@@ -4,6 +4,7 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 
@@ -32,6 +33,10 @@ object TermuxBridge {
 
     fun run(context: Context, operationId: String): Result<String> = runCatching {
         val operation = operations[operationId] ?: error("এই Termux অপারেশন অনুমোদিত নয়")
+        val permission = context.checkSelfPermission("com.termux.permission.RUN_COMMAND")
+        check(permission == PackageManager.PERMISSION_GRANTED) {
+            "Termux RUN_COMMAND অনুমতি Companion-কে দেওয়া নেই। Android Settings → Apps → Android Companion → Permissions পরীক্ষা করুন।"
+        }
         val intent = Intent(ACTION_RUN).apply {
             setClassName(TERMUX_PACKAGE, TERMUX_SERVICE)
             putExtra("com.termux.RUN_COMMAND_PATH", operation.path)
@@ -41,6 +46,9 @@ object TermuxBridge {
             putExtra("com.termux.RUN_COMMAND_LABEL", operation.label)
             putExtra("com.termux.RUN_COMMAND_DESCRIPTION", "Predefined read-only diagnostic operation")
         }
+        check(context.packageManager.resolveService(intent, PackageManager.MATCH_DEFAULT_ONLY) != null) {
+            "Termux RunCommandService পাওয়া যায়নি। Termux ইনস্টল/আপডেট আছে কি না পরীক্ষা করুন।"
+        }
         val requestCode = (System.currentTimeMillis() and 0x7fffffff).toInt()
         val callback = Intent(context, TermuxResultReceiver::class.java)
             .putExtra("request_id", requestCode)
@@ -48,8 +56,17 @@ object TermuxBridge {
             (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0)
         val pending = PendingIntent.getBroadcast(context, requestCode, callback, flags)
         intent.putExtra("com.termux.RUN_COMMAND_PENDING_INTENT", pending)
-        context.startService(intent)
-        "Termux-এ '${operation.label}' কাজ পাঠানো হয়েছে। ফলাফল দেখতে ‘Termux ফলাফল’ চাপুন।"
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString(LAST_RESULT, operation.label + " অনুরোধ পাঠানো হয়েছে। Termux-এর ফলাফলের অপেক্ষায়…")
+            .apply()
+        try {
+            context.startService(intent)
+        } catch (error: SecurityException) {
+            error("Android/Termux অনুমতি দিয়ে অনুরোধ প্রত্যাখ্যান করেছে: " + (error.message ?: "SecurityException"))
+        } catch (error: IllegalStateException) {
+            error("Android service চালু করতে দেয়নি: " + (error.message ?: "IllegalStateException"))
+        }
+        "Android Termux service-এ অনুরোধ পাঠিয়েছে; এটি এখনো execution-এর প্রমাণ নয়। ‘Termux ফলাফল’ চাপুন।"
     }
 
     fun lastResult(context: Context): String =
