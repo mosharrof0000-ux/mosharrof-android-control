@@ -64,7 +64,7 @@ class MainActivity : Activity() {
     }
 
     private fun runTermux(operationId: String) {
-        status.text = "Termux-এর সঙ্গে সংযোগ করা হচ্ছে…"
+        status.text = "Termux অনুমতি ও সার্ভিস যাচাই করা হচ্ছে…"
         val result = TermuxBridge.run(this, operationId)
         result.onSuccess { status.text = it }
             .onFailure { error ->
