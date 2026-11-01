@@ -1,33 +1,30 @@
-# Architecture and implementation plan
+# Architecture and implementation status
 
 ## Product boundary
-Mosharrof Android Control is an independent Android companion. ChatGPT is the conversational interface. The Mosharrof app may optionally integrate later, but is not a dependency.
+Mosharrof Android Control is a standalone Android companion. ChatGPT is intended to be the conversational interface. The Mosharrof app is not a dependency.
 
-## Components
-1. **Android companion** — native app, user-granted SAF access, local diagnostics, consent screens, and a foreground service only when a user-started session needs it.
-2. **Device agent** — narrow typed operations; no arbitrary shell endpoint. Termux integration is optional and separately permissioned.
-3. **Authenticated relay** — outbound device connection over TLS, pairing, short-lived credentials, command IDs, expiry, replay protection, rate limits, and audit records.
-4. **ChatGPT connector** — an HTTPS API described by OpenAPI. The user must explicitly connect/authorize it in ChatGPT; this repository alone cannot create a native ChatGPT connection.
+## Implemented local capability
+- Native Android app with read-only storage and RAM diagnostics.
+- User-selected Storage Access Framework tree.
+- Bounded recursive inventory, SHA-256 duplicate detection, and audio metadata extraction.
+- CI debug APK build.
 
-## Initial milestone
-- Buildable Android starter app.
-- Show available storage and Android memory diagnostics.
-- Let the user choose a folder through SAF.
-- Explain capability and permission boundaries.
-- Do not delete or modify files in this milestone.
+## Still required for remote ChatGPT control
+1. Device enrollment and pairing UX.
+2. Authenticated relay service over TLS with short-lived/revocable credentials.
+3. Typed operation schemas, command expiry, unique IDs, replay/idempotency checks, rate limits, and audit trail.
+4. Device-initiated outbound connection and foreground-session consent.
+5. OpenAPI contract and an explicitly configured/authorized ChatGPT connector.
+6. Integration tests, threat review, and real-device validation.
 
-## Later milestones
-- SAF/MediaStore inventory and duplicate scan (hash-based).
-- Review screen, quarantine/backup, explicit delete confirmation.
-- Audio metadata extraction and opt-in audio analysis.
-- App usage insights with Usage Access permission.
-- User-initiated screen sharing using MediaProjection and Android's consent UI.
-- Secure relay and ChatGPT connector.
-- Optional Termux integration for explicitly allowlisted developer tasks.
+A GitHub repository or APK alone does not connect ChatGPT to the phone. The hosted relay needs an actual deployment and credentials; the user must explicitly authorize the connector.
 
-## Important Android limits
-- Scoped storage means access is limited to user-selected files/folders and platform media APIs.
-- Usage Access is a separate user-granted special access.
-- MediaProjection requires Android's system consent flow; no covert capture.
-- Android controls process memory. The app can report memory information but cannot guarantee clearing other apps' RAM.
-- Some app-private data and protected system settings are inaccessible to ordinary apps.
+## Future local milestones
+- Reversible quarantine and safe file move/copy with preview and confirmation.
+- More complete media indexing, playlists, and exportable reports.
+- Usage Access app-usage reporting (separate user-granted special access).
+- User-initiated screen sharing using MediaProjection system consent.
+- Optional separately permissioned Termux task agent.
+
+## Android limits
+Scoped storage limits visibility to user-selected folders and public media APIs. Android/data and app-private files are protected. MediaProjection requires the system consent UI. Ordinary apps cannot reliably clear other apps' RAM or override system controls.
