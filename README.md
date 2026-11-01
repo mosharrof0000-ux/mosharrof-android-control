@@ -1,30 +1,25 @@
 # Mosharrof Android Control
 
-A standalone Android companion intended to let the user inspect and manage their own Android device through an authenticated, permission-scoped bridge with ChatGPT.
+A standalone Android companion for user-authorized device inspection and file/media inventory. It is independent of the Mosharrof app.
 
-**Status: foundation in progress.** This project is separate from the Mosharrof app. The current code is a starter Android app; it does not yet provide remote ChatGPT control or claim to have access to the phone.
+## Implemented in the current branch
+- Android-reported internal data-partition storage and RAM diagnostics.
+- User-selected folder access through Android Storage Access Framework (SAF).
+- Recursive file inventory (bounded to 5,000 files / 12 directory levels).
+- SHA-256 duplicate-content detection, grouped by size/extension before hashing.
+- Audio metadata inspection (artist, album, duration) for common audio formats.
+- CI-built debug APK artifact.
 
-## Current starter
-- Android app scaffold under `android/`.
-- Read-only internal data-partition storage and Android-reported RAM diagnostics.
-- User-initiated Android folder picker (Storage Access Framework).
-- Security and architecture documentation.
+## Not yet implemented / not claimed
+- ChatGPT-to-phone remote command bridge or hosted relay.
+- File deletion, quarantine, copy/move, bulk rename, or system/app settings control.
+- MediaProjection screen sharing, Usage Access app statistics, or Termux command agent.
+- Physical-device QA on the user's phone.
 
-## Planned capabilities
-- User-selected files and media via SAF/MediaStore.
-- Duplicate detection with preview, quarantine/backup, and explicit confirmation before deletion.
-- Audio metadata and opt-in analysis.
-- Storage and app-usage insights.
-- Optional Termux agent for developer/project tasks.
-- Authenticated ChatGPT-facing HTTPS API with scoped commands and audit logs.
+## Android constraints
+The user must select folders and grant access. Android restricts protected folders and app-private data. RAM is managed by Android; this app reports memory but cannot reliably force-clear other apps. SAF provider capabilities vary by device and storage provider.
 
-## Safety boundaries
-No public shell, arbitrary remote command execution, silent deletion, permission bypass, or hidden screen capture. Android permission prompts remain under the user's control. Android itself manages RAM; the app can report memory and guide the user but cannot reliably force-clear other apps' memory.
-
-## Project layout
-- `android/`: native Android companion.
-- `docs/`: architecture, permissions, threat model, staged implementation.
-- `openapi/`: planned ChatGPT-facing API contract.
-- `agent/`: future authenticated relay/agent implementation.
+## Security
+Current app operations are read-only. Duplicate detection never deletes files. Remote control must not be enabled until device pairing, TLS, revocable credentials, typed command allowlists, expiry/replay checks, audit logs, and explicit destructive-action confirmation are implemented and tested.
 
 See [architecture](docs/ARCHITECTURE.md), [security model](docs/SECURITY.md), and [Android build notes](android/README.md).
