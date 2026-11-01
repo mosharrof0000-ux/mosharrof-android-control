@@ -34,7 +34,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(16, 16, 16, 24)
             addView(TextView(this@MainActivity).apply {
-                text = "Mosharrof Android Control"; textSize = 22f
+                text = "Android Companion"; textSize = 22f
             })
             addView(status)
             addButton("স্টোরেজ ও RAM পরীক্ষা") { refreshDiagnostics() }
@@ -42,9 +42,16 @@ class MainActivity : Activity() {
             addButton("নির্বাচিত ফোল্ডারের ফাইল তালিকা") { scanSelectedFolder(false) }
             addButton("ডুপ্লিকেট ফাইল শনাক্ত") { scanSelectedFolder(true) }
             addButton("অডিও ফাইলের তথ্য দেখুন") { scanAudioMetadata() }
+            addButton("Termux: Python সংস্করণ") { runTermux("termux.python_version") }
+            addButton("Termux: ভিডিও প্রজেক্ট Git অবস্থা") { runTermux("termux.git_video_status") }
+            addButton("Termux: স্টোরেজ রিপোর্ট") { runTermux("termux.storage_report") }
+            addButton("Termux: সিস্টেম তথ্য") { runTermux("termux.system_info") }
+            addButton("Termux ফলাফল দেখুন") {
+                report.text = TermuxBridge.lastResult(this@MainActivity)
+            }
             addView(report, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(TextView(this@MainActivity).apply {
-                text = "\nনিরাপত্তা: এই সংস্করণ শুধু পড়ে ও রিপোর্ট করে। কোনো ফাইল মুছে, সরায় বা বদলায় না। RAM Android নিজে পরিচালনা করে।"
+                text = "\nনিরাপত্তা: Termux-এ কেবল নির্দিষ্ট read-only কমান্ড চলে। কোনো arbitrary shell, ফাইল মোছা বা পরিবর্তন নেই।"
                 textSize = 13f; setPadding(12, 20, 12, 12)
             })
         }
@@ -54,6 +61,15 @@ class MainActivity : Activity() {
 
     private fun LinearLayout.addButton(label: String, action: () -> Unit) {
         addView(Button(this@MainActivity).apply { text = label; setOnClickListener { action() } })
+    }
+
+    private fun runTermux(operationId: String) {
+        status.text = "Termux-এর সঙ্গে সংযোগ করা হচ্ছে…"
+        val result = TermuxBridge.run(this, operationId)
+        result.onSuccess { status.text = it }
+            .onFailure { error ->
+                status.text = "Termux চালানো যায়নি: ${error.message ?: "অনুমতি বা সেটআপ পরীক্ষা করুন"}"
+            }
     }
 
     private fun refreshDiagnostics() {

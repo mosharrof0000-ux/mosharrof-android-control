@@ -1,4 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
+    <queries>
+        <package android:name="com.termux" />
+    </queries>
     <application
         android:allowBackup="false"
         android:label="Mosharrof Android Control"
@@ -12,5 +16,9 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <receiver
+            android:name=".TermuxResultReceiver"
+            android:enabled="true"
+            android:exported="false" />
     </application>
 </manifest>

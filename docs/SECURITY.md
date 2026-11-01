@@ -1,27 +1,21 @@
 # Security model
 
 ## Non-negotiable rules
-- Never expose an unauthenticated listener or generic shell endpoint.
-- Pair devices explicitly; use TLS and short-lived, revocable credentials.
-- Every command has a typed schema, scope, expiry, unique ID, and idempotency/replay check.
-- Keep an append-only audit trail of requested action, consent, result, and timestamp.
+- No unauthenticated listener and no generic remote shell endpoint.
+- Pair devices explicitly; use TLS and short-lived, revocable credentials for any future relay.
+- Every future remote job must have a typed schema, scope, expiry, unique ID, idempotency/replay check, rate limit, and audit record.
 - Read-only inspection is the default.
-- Destructive actions (delete, overwrite, bulk move, permission changes) require a clear preview and a separate user confirmation.
-- Prefer reversible quarantine/backup before permanent deletion.
+- Destructive actions require a clear preview and a separate confirmation; prefer reversible quarantine.
 - Never bypass Android permission dialogs, lock screens, OTP, banking controls, or app security boundaries.
-- Do not store API keys in source control or plain-text preferences.
+- Never store API keys in source control or plain-text preferences.
 
-## Initial release
-This starter release performs only local, read-only diagnostics and opens the Android folder picker. It has no network control channel and no delete capability.
+## Termux bridge boundary
+- Requests are mapped by a hard-coded operation ID to a fixed executable path and fixed argument vector.
+- No shell interpreter, arbitrary command text, or user-supplied arguments are accepted.
+- Initial Termux operations are read-only diagnostics and a fixed Git status query.
+- Termux's own `com.termux.permission.RUN_COMMAND` permission and `allow-external-apps` setting are both required and must be enabled by the user.
+- The result receiver is private to this app; returned output is truncated before local storage.
+- Termux output may contain private filenames or project information; the user should only enable this bridge on a device they control.
 
-## Threats to address before remote control
-- stolen pairing credentials;
-- replayed or duplicated commands;
-- malicious or malformed command payloads;
-- compromised relay;
-- accidental bulk deletion;
-- privilege escalation through shell or accessibility;
-- logs leaking filenames, tokens, or personal data.
-
-## Required mitigations
-Credential revocation, command allowlists, strict input validation, rate limits, least privilege, redacted logs, explicit consent, and security tests are release blockers.
+## Remaining threats before remote control
+Stolen pairing credentials, replayed jobs, malicious payloads, compromised relay, accidental bulk operations, privilege escalation, and logs leaking private data. Mitigations include revocation, strict schemas, bounded output, redacted logs, explicit consent, and security tests.

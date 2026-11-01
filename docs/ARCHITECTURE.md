@@ -1,30 +1,32 @@
 # Architecture and implementation status
 
 ## Product boundary
-Mosharrof Android Control is a standalone Android companion. ChatGPT is intended to be the conversational interface. The Mosharrof app is not a dependency.
+This is a standalone Android companion intended to be controlled conversationally through ChatGPT. It does not require the Mosharrof AI app.
 
 ## Implemented local capability
-- Native Android app with read-only storage and RAM diagnostics.
-- User-selected Storage Access Framework tree.
-- Bounded recursive inventory, SHA-256 duplicate detection, and audio metadata extraction.
-- CI debug APK build.
+- Read-only storage and RAM diagnostics.
+- User-selected Storage Access Framework tree, bounded inventory, SHA-256 duplicate detection, and audio metadata.
+- Optional Termux RUN_COMMAND bridge with a strict operation allowlist: Python version, fixed video-project Git status, Termux home storage report, and system information.
+- Termux command output is returned through a private app BroadcastReceiver and stored locally for display.
 
-## Still required for remote ChatGPT control
-1. Device enrollment and pairing UX.
-2. Authenticated relay service over TLS with short-lived/revocable credentials.
-3. Typed operation schemas, command expiry, unique IDs, replay/idempotency checks, rate limits, and audit trail.
-4. Device-initiated outbound connection and foreground-session consent.
-5. OpenAPI contract and an explicitly configured/authorized ChatGPT connector.
-6. Integration tests, threat review, and real-device validation.
+## Termux setup required on the phone
+1. Install Termux from a trusted source and open it once.
+2. In Termux, edit `~/.termux/termux.properties` and set `allow-external-apps = true`, then restart Termux.
+3. In Android Settings -> Apps -> Android Companion -> Permissions -> Additional permissions, grant **Run commands in Termux environment**.
+4. Open the companion and run one of the four predefined Termux diagnostics.
+5. The video-project status check expects the repository at `~/mosharrof-video-processing`.
 
-A GitHub repository or APK alone does not connect ChatGPT to the phone. The hosted relay needs an actual deployment and credentials; the user must explicitly authorize the connector.
+Termux documents both the Android permission and `allow-external-apps` as mandatory safeguards. See the [official RUN_COMMAND documentation](https://github.com/termux/termux-app/wiki/RUN_COMMAND-Intent).
 
-## Future local milestones
-- Reversible quarantine and safe file move/copy with preview and confirmation.
-- More complete media indexing, playlists, and exportable reports.
-- Usage Access app-usage reporting (separate user-granted special access).
-- User-initiated screen sharing using MediaProjection system consent.
-- Optional separately permissioned Termux task agent.
+## Not yet connected to ChatGPT
+This local bridge is not a remote ChatGPT connection. Still required:
+1. Device pairing and a secure HTTPS relay with short-lived, revocable credentials.
+2. Typed job queue, command IDs, expiry, replay/idempotency protection, rate limits, and audit logs.
+3. Device-initiated outbound polling and visible foreground-session consent.
+4. An OpenAPI contract and an explicitly configured/authorized ChatGPT connector.
+5. Integration tests and physical-device QA.
+
+A GitHub repository or APK alone does not connect this chat to the phone. The relay must be deployed and the connector explicitly configured.
 
 ## Android limits
-Scoped storage limits visibility to user-selected folders and public media APIs. Android/data and app-private files are protected. MediaProjection requires the system consent UI. Ordinary apps cannot reliably clear other apps' RAM or override system controls.
+Only the fixed Termux operations are allowed; there is no generic shell, caller-provided command string, delete, overwrite, or permission bypass. Android SAF limits file access to user-selected folders. MediaProjection requires Android system consent. Ordinary apps cannot reliably clear other apps' RAM.
