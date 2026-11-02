@@ -57,7 +57,7 @@ export class RelayDO {
    const body=await req.json().catch(()=>null) as any;
    if(!body||typeof body.output!=="string"||body.output.length>12000||!Number.isInteger(body.exit_code))return json({error:"invalid_result"},400);
    const key="result:"+resultMatch[1];if(await this.state.storage.get(key))return json({error:"duplicate_result"},409);
-   await this.state.storage.put(key,{command_id:resultMatch[1],output:body.output,exit_code:body.exit_code,completed_at:new Date().toISOString()},{expirationTtl:86400});
+   await this.state.storage.put(key,{command_id:resultMatch[1],output:body.output,exit_code:body.exit_code,completed_at:new Date().toISOString(),expires_at:Date.now()+86400_000});
    return json({accepted:true});
   }
   if(p==="/v1/chat/commands"&&req.method==="POST"){
@@ -70,8 +70,8 @@ export class RelayDO {
    // concurrent connector requests from exceeding the bound or duplicating jobs.
    const outcome=await this.state.storage.transaction(async tx=>{
     if(idem){
-     const prior=await tx.get<string>("idem:"+idem);
-     if(prior)return {kind:"reused" as const,command_id:prior};
+     const prior=await tx.get<{command_id:string;expires_at:number}>("idem:"+idem);
+     if(prior && prior.expires_at>Date.now())return {kind:"reused" as const,command_id:prior.command_id};
     }
     const queue=await tx.get<Array<any>>("queue")??[];
     const live=queue.filter(j=>j.expires_at>Date.now());
@@ -79,8 +79,8 @@ export class RelayDO {
     const job={command_id:crypto.randomUUID(),operation_id:body.operation_id,created_at:new Date().toISOString(),expires_at:Date.now()+JOB_TTL};
     live.push(job);
     await tx.put("queue",live);
-    if(idem)await tx.put("idem:"+idem,job.command_id,{expirationTtl:86400});
-    await tx.put("audit:"+job.command_id,{...job,actor:"chatgpt-connector"},{expirationTtl:604800});
+    if(idem)await tx.put("idem:"+idem,{command_id:job.command_id,expires_at:Date.now()+86400_000});
+    await tx.put("audit:"+job.command_id,{...job,actor:"chatgpt-connector",expires_at:Date.now()+604800_000});
     return {kind:"created" as const,job};
    });
    if(outcome.kind==="full")return json({error:"queue_full"},429);
@@ -90,8 +90,8 @@ export class RelayDO {
   const getMatch=p.match(/^\/v1\/chat\/commands\/([a-f0-9-]+)$/);
   if(getMatch&&req.method==="GET"){
    if(!equal(bearer(req),this.env.CHATGPT_CONNECTOR_TOKEN))return json({error:"unauthorized"},401);
-   const result=await this.state.storage.get("result:"+getMatch[1]);
-   return result?json({status:"completed",...result}):json({status:"pending_or_expired",command_id:getMatch[1]},202);
+   const result=await this.state.storage.get<{expires_at:number;[key:string]:unknown}>("result:"+getMatch[1]);
+   return result && result.expires_at>Date.now()?json({status:"completed",...result}):json({status:"pending_or_expired",command_id:getMatch[1]},202);
   }
   if(p==="/v1/device/unpair"&&req.method==="POST"){
    if(!await this.deviceAuth(req))return json({error:"unauthorized"},401);
