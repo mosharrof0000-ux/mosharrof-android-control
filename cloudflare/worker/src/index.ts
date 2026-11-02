@@ -41,9 +41,14 @@ export class RelayDO {
   }
   if(p==="/v1/device/jobs/next"&&req.method==="GET"){
    if(!await this.deviceAuth(req))return json({error:"unauthorized"},401);
-   const queue=await this.state.storage.get<Array<any>>("queue")??[];
-   const now=Date.now(),live=queue.filter(j=>j.expires_at>now);
-   const job=live.shift()??null;await this.state.storage.put("queue",live);
+   // Read-and-pop atomically: concurrent device polls must not receive the same job.
+   const job=await this.state.storage.transaction(async tx=>{
+    const queue=await tx.get<Array<any>>("queue")??[];
+    const now=Date.now(),live=queue.filter(j=>j.expires_at>now);
+    const next=live.shift()??null;
+    await tx.put("queue",live);
+    return next;
+   });
    return json({job});
   }
   const resultMatch=p.match(/^\/v1\/device\/jobs\/([a-f0-9-]+)\/result$/);
@@ -60,15 +65,27 @@ export class RelayDO {
    if(!await this.state.storage.get<boolean>("paired"))return json({error:"device_not_paired"},409);
    const body=await req.json().catch(()=>null) as any;
    if(!body||typeof body.operation_id!=="string"||!ALLOWED.has(body.operation_id))return json({error:"operation_not_allowed"},400);
-   const queue=await this.state.storage.get<Array<any>>("queue")??[];
-   if(queue.length>=MAX_QUEUE)return json({error:"queue_full"},429);
    const idem=typeof body.idempotency_key==="string"?body.idempotency_key.slice(0,100):"";
-   if(idem){const prior=await this.state.storage.get<string>("idem:"+idem);if(prior)return json({command_id:prior,reused:true},200);}
-   const job={command_id:crypto.randomUUID(),operation_id:body.operation_id,created_at:new Date().toISOString(),expires_at:Date.now()+JOB_TTL};
-   queue.push(job);await this.state.storage.put("queue",queue);
-   if(idem)await this.state.storage.put("idem:"+idem,job.command_id,{expirationTtl:86400});
-   await this.state.storage.put("audit:"+job.command_id,{...job,actor:"chatgpt-connector"},{expirationTtl:604800});
-   return json(job,202);
+   // Queue capacity, idempotency and insertion share one transaction to prevent
+   // concurrent connector requests from exceeding the bound or duplicating jobs.
+   const outcome=await this.state.storage.transaction(async tx=>{
+    if(idem){
+     const prior=await tx.get<string>("idem:"+idem);
+     if(prior)return {kind:"reused" as const,command_id:prior};
+    }
+    const queue=await tx.get<Array<any>>("queue")??[];
+    const live=queue.filter(j=>j.expires_at>Date.now());
+    if(live.length>=MAX_QUEUE)return {kind:"full" as const};
+    const job={command_id:crypto.randomUUID(),operation_id:body.operation_id,created_at:new Date().toISOString(),expires_at:Date.now()+JOB_TTL};
+    live.push(job);
+    await tx.put("queue",live);
+    if(idem)await tx.put("idem:"+idem,job.command_id,{expirationTtl:86400});
+    await tx.put("audit:"+job.command_id,{...job,actor:"chatgpt-connector"},{expirationTtl:604800});
+    return {kind:"created" as const,job};
+   });
+   if(outcome.kind==="full")return json({error:"queue_full"},429);
+   if(outcome.kind==="reused")return json({command_id:outcome.command_id,reused:true},200);
+   return json(outcome.job,202);
   }
   const getMatch=p.match(/^\/v1\/chat\/commands\/([a-f0-9-]+)$/);
   if(getMatch&&req.method==="GET"){
