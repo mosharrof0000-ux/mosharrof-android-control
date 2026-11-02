@@ -1,0 +1,30 @@
+name: Cloudflare Worker Check
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "cloudflare/worker/**"
+      - ".github/workflows/worker-check.yml"
+  push:
+    branches: [main, feat/cloudflare-chatgpt-relay-20261102]
+    paths:
+      - "cloudflare/worker/**"
+      - ".github/workflows/worker-check.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies and type-check
+        working-directory: cloudflare/worker
+        run: |
+          npm install
+          npm run check
