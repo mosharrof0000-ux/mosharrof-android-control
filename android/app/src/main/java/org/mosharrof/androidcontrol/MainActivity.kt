@@ -69,7 +69,7 @@ class MainActivity : Activity() {
             }
             setupToken = EditText(this@MainActivity).apply {
                 hint = "Device setup token (secret)"
-                singleLine = true
+                setSingleLine(true)
             }
             addView(relayUrl)
             addView(setupToken)
