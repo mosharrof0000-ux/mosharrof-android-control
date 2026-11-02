@@ -32,10 +32,11 @@ class MainActivity : Activity() {
     private lateinit var setupToken: EditText
     private val relayHandler = Handler(Looper.getMainLooper())
     @Volatile private var relayPolling = false
+    @Volatile private var activityVisible = false
     private var lastRelayCommand = ""
     private val relayTick = object : Runnable {
         override fun run() {
-            if (!relayPolling || isFinishing) return
+            if (!relayPolling || !activityVisible || isFinishing) return
             worker.execute {
                 runCatching { RelayClient.poll(this@MainActivity) }.onSuccess { job ->
                     if (job != null && job.commandId != lastRelayCommand) {
@@ -46,7 +47,7 @@ class MainActivity : Activity() {
                 }.onFailure { error ->
                     runOnUiThread { status.text = "Relay polling সমস্যা: ${error.message}" }
                 }
-                if (relayPolling) relayHandler.postDelayed(this@MainActivity.relayTick, 3000)
+                if (relayPolling && activityVisible) relayHandler.postDelayed(this@MainActivity.relayTick, 3000)
             }
         }
     }
@@ -136,10 +137,12 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        activityVisible = true
         if (RelayClient.configured(this) && relayPolling) relayHandler.post(relayTick)
     }
 
     override fun onPause() {
+        activityVisible = false
         relayHandler.removeCallbacks(relayTick)
         super.onPause()
     }
