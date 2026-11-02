@@ -2,7 +2,6 @@ name: Cloudflare Worker Check
 
 on:
   pull_request:
-    branches: [main]
     paths:
       - "cloudflare/worker/**"
       - ".github/workflows/worker-check.yml"
