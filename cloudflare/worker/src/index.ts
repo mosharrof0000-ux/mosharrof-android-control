@@ -9,7 +9,7 @@ function bearer(req:Request){return req.headers.get("authorization")?.replace(/^
 export default {
  async fetch(req:Request,env:Env):Promise<Response>{
   const url=new URL(req.url);
-  if(req.method==="GET"&&url.pathname==="/healthz")return json({status:"ok",service:"mosharrof-chatgpt-device-relay",stage:"unpaired-or-paired"});
+  if(req.method==="GET"&&url.pathname==="/healthz")return json({status:"ok",service:"mosharrof-chatgpt-device-relay",stage:"unpaired-or-paired",secrets_configured:!!(env.CHATGPT_CONNECTOR_TOKEN&&env.DEVICE_SETUP_TOKEN)});
   if(!env.CHATGPT_CONNECTOR_TOKEN||!env.DEVICE_SETUP_TOKEN)return json({error:"relay_secrets_not_configured"},503);
   const id=env.RELAY.idFromName("single-authorized-device");
   return env.RELAY.get(id).fetch(req);
