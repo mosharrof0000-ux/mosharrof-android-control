@@ -5,10 +5,13 @@ import android.app.ActivityManager
 import android.content.Intent
 import android.media.MediaMetadataRetriever
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.Environment
 import android.os.StatFs
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -25,6 +28,28 @@ class MainActivity : Activity() {
     private val folderRequestCode = 4102
     private val maxFiles = 5000
     private val maxDepth = 12
+    private lateinit var relayUrl: EditText
+    private lateinit var setupToken: EditText
+    private val relayHandler = Handler(Looper.getMainLooper())
+    @Volatile private var relayPolling = false
+    private var lastRelayCommand = ""
+    private val relayTick = object : Runnable {
+        override fun run() {
+            if (!relayPolling || isFinishing) return
+            worker.execute {
+                runCatching { RelayClient.poll(this@MainActivity) }.onSuccess { job ->
+                    if (job != null && job.commandId != lastRelayCommand) {
+                        lastRelayCommand = job.commandId
+                        runOnUiThread { status.text = "Relay থেকে অনুমোদিত কাজ এসেছে: ${job.operationId}" }
+                        TermuxBridge.run(this@MainActivity, job.operationId, job.commandId)
+                    }
+                }.onFailure { error ->
+                    runOnUiThread { status.text = "Relay polling সমস্যা: ${error.message}" }
+                }
+                if (relayPolling) relayHandler.postDelayed(this@MainActivity.relayTick, 3000)
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -37,6 +62,24 @@ class MainActivity : Activity() {
                 text = "Android Companion"; textSize = 22f
             })
             addView(status)
+            relayUrl = EditText(this@MainActivity).apply {
+                hint = "Cloudflare Worker URL (https://…workers.dev)"
+                singleLine = true
+            }
+            setupToken = EditText(this@MainActivity).apply {
+                hint = "Device setup token (secret)"
+                singleLine = true
+            }
+            addView(relayUrl)
+            addView(setupToken)
+            addButton("নিরাপদ Relay Pairing শুরু করুন") { beginRelayPairing() }
+            addButton("Relay polling চালু করুন") { startRelayPolling() }
+            addButton("Relay সংযোগ বন্ধ / বিচ্ছিন্ন করুন") {
+                relayPolling = false
+                relayHandler.removeCallbacks(relayTick)
+                RelayClient.clear(this@MainActivity)
+                status.text = "Relay token মুছে ফেলা হয়েছে; সংযোগ বিচ্ছিন্ন।"
+            }
             addButton("স্টোরেজ ও RAM পরীক্ষা") { refreshDiagnostics() }
             addButton("ফোল্ডার নির্বাচন / পরিবর্তন") { openFolderPicker() }
             addButton("নির্বাচিত ফোল্ডারের ফাইল তালিকা") { scanSelectedFolder(false) }
@@ -61,6 +104,44 @@ class MainActivity : Activity() {
 
     private fun LinearLayout.addButton(label: String, action: () -> Unit) {
         addView(Button(this@MainActivity).apply { text = label; setOnClickListener { action() } })
+    }
+
+    private fun beginRelayPairing() {
+        val url = relayUrl.text.toString()
+        val secret = setupToken.text.toString()
+        status.text = "Cloudflare Relay pairing শুরু হচ্ছে…"
+        worker.execute {
+            val result = runCatching { RelayClient.pair(this, url, secret) }
+            runOnUiThread {
+                result.onSuccess { code ->
+                    setupToken.text.clear()
+                    status.text = "Pairing code: $code (৫ মিনিটের মধ্যে অনুমোদিত ChatGPT connector-এ claim করতে হবে)।"
+                }.onFailure { error ->
+                    status.text = "Pairing ব্যর্থ: ${error.message}"
+                }
+            }
+        }
+    }
+
+    private fun startRelayPolling() {
+        if (!RelayClient.configured(this)) {
+            status.text = "আগে Relay URL ও setup token দিয়ে pairing করুন।"
+            return
+        }
+        relayPolling = true
+        relayHandler.removeCallbacks(relayTick)
+        status.text = "Relay polling চালু — অ্যাপ সামনে খোলা রাখুন।"
+        relayHandler.post(relayTick)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (RelayClient.configured(this) && relayPolling) relayHandler.post(relayTick)
+    }
+
+    override fun onPause() {
+        relayHandler.removeCallbacks(relayTick)
+        super.onPause()
     }
 
     private fun runTermux(operationId: String) {
@@ -228,6 +309,8 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        relayPolling = false
+        relayHandler.removeCallbacks(relayTick)
         worker.shutdownNow()
         super.onDestroy()
     }
