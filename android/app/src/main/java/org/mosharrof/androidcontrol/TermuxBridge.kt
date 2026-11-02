@@ -31,7 +31,7 @@ object TermuxBridge {
         "termux.system_info" to Operation("Termux system information", "$PREFIX/uname", arrayOf("-a"))
     )
 
-    fun run(context: Context, operationId: String): Result<String> = runCatching {
+    fun run(context: Context, operationId: String, commandId: String? = null): Result<String> = runCatching {
         val operation = operations[operationId] ?: error("এই Termux অপারেশন অনুমোদিত নয়")
         val permission = context.checkSelfPermission("com.termux.permission.RUN_COMMAND")
         check(permission == PackageManager.PERMISSION_GRANTED) {
@@ -52,6 +52,7 @@ object TermuxBridge {
         val requestCode = (System.currentTimeMillis() and 0x7fffffff).toInt()
         val callback = Intent(context, TermuxResultReceiver::class.java)
             .putExtra("request_id", requestCode)
+            .putExtra("relay_command_id", commandId)
         val flags = PendingIntent.FLAG_ONE_SHOT or
             (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0)
         val pending = PendingIntent.getBroadcast(context, requestCode, callback, flags)
@@ -104,5 +105,12 @@ class TermuxResultReceiver : BroadcastReceiver() {
             }
         }
         TermuxBridge.saveResult(context, result)
+        val commandId = intent.getStringExtra("relay_command_id")
+        if (!commandId.isNullOrBlank()) {
+            val exitCode = bundle?.getInt("exitCode", -1) ?: -1
+            Thread {
+                runCatching { RelayClient.postResult(context, commandId, result, exitCode) }
+            }.start()
+        }
     }
 }
