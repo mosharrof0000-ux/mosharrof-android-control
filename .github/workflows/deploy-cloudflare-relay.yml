@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - feat/cloudflare-chatgpt-relay-20261102
+      - main
     paths:
       - "cloudflare/worker/**"
       - ".github/workflows/deploy-cloudflare-relay.yml"
@@ -15,14 +15,11 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: cloudflare-relay
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: cloudflare/worker/package-lock.json
       - name: Verify required secrets are configured
         env:
           CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
