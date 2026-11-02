@@ -1,0 +1,56 @@
+openapi: 3.1.0
+info:
+  title: Mosharrof ChatGPT Android Relay
+  version: 0.1.0
+  description: Typed, read-only operations between an explicitly paired Android companion and an authenticated ChatGPT connector.
+servers:
+  - url: https://YOUR-WORKER.workers.dev
+security:
+  - ConnectorBearer: []
+paths:
+  /healthz:
+    get:
+      security: []
+      responses:
+        "200": { description: Worker health }
+  /v1/chat/pair/claim:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [pairing_code], properties: { pairing_code: { type: string, pattern: "^[0-9]{6}$" } } }
+      responses:
+        "200": { description: Device paired }
+  /v1/chat/commands:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [operation_id, idempotency_key]
+              properties:
+                operation_id:
+                  type: string
+                  enum: [termux.python_version, termux.git_video_status, termux.storage_report, termux.system_info, device.storage_report, device.selected_folder_inventory, device.audio_metadata]
+                idempotency_key: { type: string, maxLength: 100 }
+      responses:
+        "202": { description: Command queued }
+  /v1/chat/commands/{command_id}:
+    get:
+      parameters:
+        - in: path
+          name: command_id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: Completed result }
+        "202": { description: Still pending or expired }
+components:
+  securitySchemes:
+    ConnectorBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque token

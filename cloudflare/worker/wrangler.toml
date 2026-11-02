@@ -1,0 +1,11 @@
+name = "mosharrof-chatgpt-device-relay"
+main = "src/index.ts"
+compatibility_date = "2026-11-02"
+
+[[durable_objects.bindings]]
+name = "RELAY"
+class_name = "RelayDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RelayDO"]
