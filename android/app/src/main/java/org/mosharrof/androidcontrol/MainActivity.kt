@@ -56,7 +56,7 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         report = TextView(this).apply { textSize = 15f; setPadding(20, 12, 20, 12) }
         status = TextView(this).apply { textSize = 14f; setPadding(20, 8, 20, 8) }
-        val content = LinearLayout(this).apply {
+        val content: LinearLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(16, 16, 16, 24)
             addView(TextView(this@MainActivity).apply {
@@ -65,7 +65,7 @@ class MainActivity : Activity() {
             addView(status)
             relayUrl = EditText(this@MainActivity).apply {
                 hint = "Cloudflare Worker URL (https://…workers.dev)"
-                singleLine = true
+                setSingleLine(true)
             }
             setupToken = EditText(this@MainActivity).apply {
                 hint = "Device setup token (secret)"
