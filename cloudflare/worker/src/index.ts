@@ -15,7 +15,7 @@ export default {
   return env.RELAY.get(id).fetch(req);
  }
 };
-const ALLOWED=new Set(["termux.python_version","termux.git_video_status","termux.storage_report","termux.system_info","device.storage_report","device.selected_folder_inventory","device.audio_metadata"]);
+const ALLOWED=new Set(["termux.python_version","termux.git_video_status","termux.storage_report","termux.system_info"]);
 const MAX_QUEUE=20, JOB_TTL=60_000;
 export class RelayDO {
  state:DurableObjectState; env:Env;
