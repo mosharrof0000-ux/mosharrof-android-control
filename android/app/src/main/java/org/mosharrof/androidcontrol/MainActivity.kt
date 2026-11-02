@@ -34,7 +34,7 @@ class MainActivity : Activity() {
     @Volatile private var relayPolling = false
     @Volatile private var activityVisible = false
     private var lastRelayCommand = ""
-    private val relayTick = object : Runnable {
+    private val relayTick: Runnable = object : Runnable {
         override fun run() {
             if (!relayPolling || !activityVisible || isFinishing) return
             worker.execute {
