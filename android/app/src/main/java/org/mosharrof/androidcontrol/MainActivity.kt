@@ -84,6 +84,7 @@ class MainActivity : Activity() {
             addButton("স্টোরেজ ও RAM পরীক্ষা") { refreshDiagnostics() }
             addButton("Android সক্ষমতা ও অনুমতি পরীক্ষা") { showCapabilities() }
             addButton("অনুমতি কেন্দ্র খুলুন") { PermissionCenter.show(this@MainActivity) }
+            addButton("স্ক্রিনের লেখা ও বাটন শনাক্ত করুন") { showAccessibilitySnapshot() }
             addButton("ফোল্ডার নির্বাচন / পরিবর্তন") { openFolderPicker() }
             addButton("নির্বাচিত ফোল্ডারের ফাইল তালিকা") { scanSelectedFolder(false) }
             addButton("ডুপ্লিকেট ফাইল শনাক্ত") { scanSelectedFolder(true) }
@@ -107,6 +108,11 @@ class MainActivity : Activity() {
 
     private fun LinearLayout.addButton(label: String, action: () -> Unit) {
         addView(Button(this@MainActivity).apply { text = label; setOnClickListener { action() } })
+    }
+
+    private fun showAccessibilitySnapshot() {
+        report.text = ScreenReaderService.latestSnapshot
+        status.text = "স্ক্রিন শনাক্তকরণ: শুধু পড়া হয়েছে; কোনো টাচ বা ক্লিক করা হয়নি।"
     }
 
     private fun beginRelayPairing() {

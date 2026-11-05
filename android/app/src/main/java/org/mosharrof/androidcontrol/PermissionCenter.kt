@@ -5,6 +5,7 @@ import android.app.AlertDialog
 import android.app.AppOpsManager
 import android.app.NotificationManager
 import android.content.Context
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -19,6 +20,21 @@ object PermissionCenter {
         val detail: String,
         val action: String? = null
     )
+
+
+    private fun accessibilityEnabled(context: Context): Boolean {
+        val expected = ComponentName(
+            context,
+            ScreenReaderService::class.java
+        ).flattenToString()
+
+        val enabled = Settings.Secure.getString(
+            context.contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ).orEmpty()
+
+        return enabled.split(':').any { it.equals(expected, ignoreCase = true) }
+    }
 
     private fun items(context: Context): List<Item> {
         val overlay = Settings.canDrawOverlays(context)
@@ -66,9 +82,10 @@ object PermissionCenter {
                 "Termux অ্যাপ ও তার নিজস্ব অনুমতি-ব্যবস্থা প্রয়োজন।"
             ),
             Item(
-                "Accessibility / টাচ নিয়ন্ত্রণ",
-                "মডিউল তৈরি হয়নি",
-                "AccessibilityService এখনো অ্যাপে যোগ করা হয়নি। শুধু Settings থেকে চালু করলেই এই অ্যাপ কাজ করতে পারবে না।"
+                "Accessibility / স্ক্রিন পড়া",
+                if (accessibilityEnabled(context)) "চালু" else "চালু নয়",
+                "ব্যবহারকারীর অনুমতিতে স্ক্রিনের লেখা ও বাটন শনাক্ত করবে। এই সংস্করণে টাচ বা ক্লিক করবে না।",
+                Settings.ACTION_ACCESSIBILITY_SETTINGS
             ),
             Item(
                 "Notification Access",
