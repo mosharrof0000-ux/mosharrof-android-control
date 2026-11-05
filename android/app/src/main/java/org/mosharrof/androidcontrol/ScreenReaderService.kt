@@ -10,10 +10,24 @@ import android.view.accessibility.AccessibilityNodeInfo
  */
 class ScreenReaderService : AccessibilityService() {
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (event == null) return
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        activeService = this
+        isConnected = true
+        captureSnapshot()
+    }
 
-        val root = rootInActiveWindow ?: return
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (event != null) captureSnapshot()
+    }
+
+    private fun captureSnapshot() {
+        val root = rootInActiveWindow
+        if (root == null) {
+            latestSnapshot = "বর্তমান স্ক্রিন থেকে তথ্য পড়া যাচ্ছে না।"
+            return
+        }
+
         val lines = mutableListOf<String>()
 
         fun walk(node: AccessibilityNodeInfo?, depth: Int) {
@@ -44,7 +58,7 @@ class ScreenReaderService : AccessibilityService() {
                     walk(node.getChild(i), depth + 1)
                 }
             } catch (_: Exception) {
-                // A changing screen may invalidate a node.
+                // Screen may change while being inspected.
             } finally {
                 runCatching { node.recycle() }
             }
@@ -55,17 +69,39 @@ class ScreenReaderService : AccessibilityService() {
         latestSnapshot = if (lines.isEmpty()) {
             "এই স্ক্রিনে শনাক্ত করার মতো লেখা বা বাটন পাওয়া যায়নি।"
         } else {
-            lines.distinct().joinToString("\n")
+            lines.distinct().joinToString("\\n")
         }
     }
 
-    override fun onInterrupt() {
-        // No ongoing interaction to interrupt.
+    override fun onInterrupt() {}
+
+    override fun onDestroy() {
+        if (activeService === this) {
+            activeService = null
+            isConnected = false
+        }
+        super.onDestroy()
     }
 
     companion object {
         @Volatile
+        private var activeService: ScreenReaderService? = null
+
+        @Volatile
+        var isConnected: Boolean = false
+            private set
+
+        @Volatile
         var latestSnapshot: String =
             "এখনো কোনো স্ক্রিনের তথ্য শনাক্ত হয়নি।"
+
+        fun refreshNow(): String {
+            val service = activeService
+            if (service == null) {
+                return "স্ক্রিন পড়ার Accessibility Service চালু বা সংযুক্ত নেই। Permission Center থেকে অনুমতি চালু করুন।"
+            }
+            service.captureSnapshot()
+            return latestSnapshot
+        }
     }
 }

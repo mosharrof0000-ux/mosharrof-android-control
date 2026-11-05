@@ -85,6 +85,9 @@ class MainActivity : Activity() {
             addButton("Android সক্ষমতা ও অনুমতি পরীক্ষা") { showCapabilities() }
             addButton("অনুমতি কেন্দ্র খুলুন") { PermissionCenter.show(this@MainActivity) }
             addButton("স্ক্রিনের লেখা ও বাটন শনাক্ত করুন") { showAccessibilitySnapshot() }
+            addButton("Accessibility অনুমতি চালু করুন") {
+                startActivity(Intent("android.settings.ACCESSIBILITY_SETTINGS"))
+            }
             addButton("ফোল্ডার নির্বাচন / পরিবর্তন") { openFolderPicker() }
             addButton("নির্বাচিত ফোল্ডারের ফাইল তালিকা") { scanSelectedFolder(false) }
             addButton("ডুপ্লিকেট ফাইল শনাক্ত") { scanSelectedFolder(true) }
@@ -111,8 +114,12 @@ class MainActivity : Activity() {
     }
 
     private fun showAccessibilitySnapshot() {
-        report.text = ScreenReaderService.latestSnapshot
-        status.text = "স্ক্রিন শনাক্তকরণ: শুধু পড়া হয়েছে; কোনো টাচ বা ক্লিক করা হয়নি।"
+        report.text = ScreenReaderService.refreshNow()
+        status.text = if (ScreenReaderService.isConnected) {
+            "স্ক্রিন শনাক্তকরণ সম্পন্ন — শুধু পড়া হয়েছে; কোনো টাচ বা ক্লিক করা হয়নি।"
+        } else {
+            "Accessibility অনুমতি চালু করুন, তারপর আবার চেষ্টা করুন।"
+        }
     }
 
     private fun beginRelayPairing() {
