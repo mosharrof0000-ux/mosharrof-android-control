@@ -28,6 +28,8 @@ import java.util.concurrent.Executors
 class MainActivity : Activity() {
     private lateinit var report: TextView
     private lateinit var status: TextView
+    private lateinit var pageTitle: TextView
+    private lateinit var pageHost: LinearLayout
     private var selectedTree: DocumentFile? = null
     private val worker = Executors.newSingleThreadExecutor()
     private val folderRequestCode = 4102
@@ -464,7 +466,7 @@ class MainActivity : Activity() {
                 status.text = if (failures == 0) {
                     "Self-Test শেষ: সব প্রাথমিক পরীক্ষা সফল।"
                 } else {
-                    "Self-Test-এ $failuresটি সমস্যা পাওয়া গেছে।"
+                    "Self-Test-এ ${failures}টি সমস্যা পাওয়া গেছে।"
                 }
             }
         }
