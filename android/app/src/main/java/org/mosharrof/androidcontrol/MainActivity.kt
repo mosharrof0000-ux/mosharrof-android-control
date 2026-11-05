@@ -83,6 +83,7 @@ class MainActivity : Activity() {
             }
             addButton("স্টোরেজ ও RAM পরীক্ষা") { refreshDiagnostics() }
             addButton("Android সক্ষমতা ও অনুমতি পরীক্ষা") { showCapabilities() }
+            addButton("অনুমতি কেন্দ্র খুলুন") { PermissionCenter.show(this@MainActivity) }
             addButton("ফোল্ডার নির্বাচন / পরিবর্তন") { openFolderPicker() }
             addButton("নির্বাচিত ফোল্ডারের ফাইল তালিকা") { scanSelectedFolder(false) }
             addButton("ডুপ্লিকেট ফাইল শনাক্ত") { scanSelectedFolder(true) }
