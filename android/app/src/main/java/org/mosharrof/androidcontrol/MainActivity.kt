@@ -1,6 +1,11 @@
 package org.mosharrof.androidcontrol
 
 import android.app.Activity
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.view.Gravity
+import android.view.View
 import android.app.ActivityManager
 import android.content.Intent
 import android.media.MediaMetadataRetriever
@@ -30,6 +35,15 @@ class MainActivity : Activity() {
     private val maxDepth = 12
     private lateinit var relayUrl: EditText
     private lateinit var setupToken: EditText
+    private lateinit var aiModel: EditText
+    private lateinit var aiEndpoint: EditText
+    private lateinit var aiKey: EditText
+    private lateinit var aiPrompt: EditText
+
+    private var aiModelDraft = ""
+    private var aiEndpointDraft = ""
+    private var aiPromptDraft = ""
+    private var relayUrlDraft = ""
     private val relayHandler = Handler(Looper.getMainLooper())
     @Volatile private var relayPolling = false
     @Volatile private var activityVisible = false
@@ -52,23 +66,277 @@ class MainActivity : Activity() {
         }
     }
 
+    private val teal = Color.rgb(8, 124, 104)
+    private val tealDark = Color.rgb(5, 83, 72)
+    private val canvasColor = Color.rgb(245, 249, 247)
+    private val cardColor = Color.WHITE
+    private val mutedColor = Color.rgb(100, 119, 112)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        report = TextView(this).apply { textSize = 15f; setPadding(20, 12, 20, 12) }
-        status = TextView(this).apply { textSize = 14f; setPadding(20, 8, 20, 8) }
-        val content: LinearLayout = LinearLayout(this).apply {
+
+        report = TextView(this).apply {
+            textSize = 14f
+            setTextColor(Color.rgb(35, 55, 48))
+            setPadding(16, 14, 16, 14)
+        }
+        status = TextView(this).apply {
+            text = "ডিভাইস প্রস্তুত"
+            textSize = 13f
+            setTextColor(tealDark)
+            setPadding(14, 12, 14, 12)
+            background = roundedBackground(Color.rgb(226, 243, 237), 14)
+        }
+
+        val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(16, 16, 16, 24)
-            addView(TextView(this@MainActivity).apply {
-                text = "Android Companion"; textSize = 22f
-            })
-            addView(status)
+            setBackgroundColor(canvasColor)
+        }
+
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(20, 22, 20, 14)
+            setBackgroundColor(tealDark)
+        }
+        header.addView(TextView(this).apply {
+            text = "MOSHARROF  /  ANDROID"
+            textSize = 11f
+            letterSpacing = 0.12f
+            setTextColor(Color.rgb(181, 229, 213))
+            typeface = Typeface.DEFAULT_BOLD
+        })
+        header.addView(TextView(this).apply {
+            text = "Android Control"
+            textSize = 25f
+            setTextColor(Color.WHITE)
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            setPadding(0, 5, 0, 3)
+        })
+        header.addView(TextView(this).apply {
+            text = "আপনার ডিভাইস, এক জায়গায় নিয়ন্ত্রণ"
+            textSize = 13f
+            setTextColor(Color.rgb(218, 239, 231))
+        })
+        root.addView(header)
+
+        val statusWrap = LinearLayout(this).apply {
+            setPadding(16, 12, 16, 8)
+            addView(status, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ))
+        }
+        root.addView(statusWrap)
+
+        pageTitle = TextView(this).apply {
+            textSize = 20f
+            setTextColor(tealDark)
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(20, 10, 20, 12)
+        }
+        root.addView(pageTitle)
+
+        val scroll = ScrollView(this)
+        pageHost = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(16, 0, 16, 20)
+        }
+        scroll.addView(pageHost)
+        root.addView(scroll, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
+
+        val nav = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(6, 7, 6, 7)
+            setBackgroundColor(Color.WHITE)
+            elevation = 8f
+        }
+        addNavButton(nav, "হোম") { showHome() }
+        addNavButton(nav, "স্ক্রিন") { showScreenPage() }
+        addNavButton(nav, "ফাইল") { showFilesPage() }
+        addNavButton(nav, "টুলস") { showToolsPage() }
+        root.addView(nav)
+
+        setContentView(root)
+        showHome()
+        refreshDiagnostics()
+    }
+
+    private fun roundedBackground(color: Int, radius: Int): GradientDrawable {
+        return GradientDrawable().apply {
+            setColor(color)
+            cornerRadius = radius.toFloat()
+        }
+    }
+
+    private fun addNavButton(parent: LinearLayout, label: String, action: () -> Unit) {
+        val button = TextView(this).apply {
+            text = label
+            textSize = 12f
+            gravity = Gravity.CENTER
+            setTextColor(tealDark)
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(10, 12, 10, 12)
+            setOnClickListener { action() }
+        }
+        parent.addView(button, LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+    }
+
+    private fun showPage(title: String, content: LinearLayout.() -> Unit) {
+        pageTitle.text = title
+        if (::aiModel.isInitialized) aiModelDraft = aiModel.text.toString()
+        if (::aiEndpoint.isInitialized) aiEndpointDraft = aiEndpoint.text.toString()
+        if (::aiPrompt.isInitialized) aiPromptDraft = aiPrompt.text.toString()
+        if (::relayUrl.isInitialized) relayUrlDraft = relayUrl.text.toString()
+
+        pageHost.removeAllViews()
+        pageHost.content()
+        pageHost.addView(report, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = 14 })
+        report.background = roundedBackground(Color.WHITE, 16)
+    }
+
+    private fun addCard(
+        parent: LinearLayout,
+        title: String,
+        detail: String,
+        action: () -> Unit
+    ) {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(18, 16, 18, 16)
+            background = roundedBackground(cardColor, 18)
+            elevation = 2f
+            setOnClickListener { action() }
+        }
+        card.addView(TextView(this).apply {
+            text = title
+            textSize = 17f
+            setTextColor(tealDark)
+            typeface = Typeface.DEFAULT_BOLD
+        })
+        card.addView(TextView(this).apply {
+            text = detail
+            textSize = 13f
+            setTextColor(mutedColor)
+            setPadding(0, 6, 0, 0)
+        })
+        parent.addView(card, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { bottomMargin = 12 })
+    }
+
+    private fun addHeading(parent: LinearLayout, title: String) {
+        parent.addView(TextView(this).apply {
+            text = title
+            textSize = 15f
+            setTextColor(tealDark)
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(4, 12, 4, 8)
+        })
+    }
+
+    private fun showHome() {
+        showPage("ড্যাশবোর্ড") {
+            addHeading(this, "প্রধান বিভাগ")
+            addCard(this, "স্ক্রিন নিয়ন্ত্রণ", "স্ক্রিনের লেখা ও বাটন শনাক্ত, Accessibility", ::showScreenPage)
+            addCard(this, "ফাইল ব্যবস্থাপনা", "ফোল্ডার, ফাইল তালিকা, ডুপ্লিকেট ও অডিও", ::showFilesPage)
+            addCard(this, "অনুমতি ও সক্ষমতা", "Android API, অনুমতি এবং Module Manager", ::showPermissionsPage)
+            addCard(this, "AI ও Relay", "AI সংযোগ, নিরাপদ Pairing এবং Relay", ::showAiRelayPage)
+            addCard(this, "Termux ও কমান্ড", "অনুমোদিত কমান্ড এবং ফলাফল", ::showTermuxPage)
+            addCard(this, "ডিভাইস পর্যবেক্ষণ", "স্টোরেজ, RAM ও সিস্টেম তথ্য", ::showToolsPage)
+            addHeading(this, "দ্রুত অবস্থা")
+            addButton("ডিভাইস তথ্য হালনাগাদ") { refreshDiagnostics() }
+            addButton("Engine Self-Test চালান") { runEngineSelfTest() }
+        }
+    }
+
+    private fun showScreenPage() {
+        showPage("স্ক্রিন নিয়ন্ত্রণ") {
+            addHeading(this, "পড়া ও শনাক্তকরণ")
+            addButton("স্ক্রিনের লেখা ও বাটন শনাক্ত করুন") { showAccessibilitySnapshot() }
+            addButton("Accessibility অনুমতি চালু করুন") {
+                startActivity(Intent("android.settings.ACCESSIBILITY_SETTINGS"))
+            }
+            addButton("অনুমতি কেন্দ্র খুলুন") { PermissionCenter.show(this@MainActivity) }
+            addTextNote(this, "বর্তমানে স্ক্রিন শনাক্তকরণ read-only। অনুমতি ছাড়া কোনো টাচ বা ক্লিক করা হয় না।")
+        }
+    }
+
+    private fun showFilesPage() {
+        showPage("ফাইল ব্যবস্থাপনা") {
+            addHeading(this, "ফোল্ডার নির্বাচন")
+            addButton("ফোল্ডার নির্বাচন / পরিবর্তন") { openFolderPicker() }
+            addButton("নির্বাচিত ফোল্ডারের ফাইল তালিকা") { scanSelectedFolder(false) }
+            addButton("ডুপ্লিকেট ফাইল শনাক্ত") { scanSelectedFolder(true) }
+            addButton("অডিও ফাইলের তথ্য দেখুন") { scanAudioMetadata() }
+            addTextNote(this, "ফাইল স্ক্যানের সময় কোনো ফাইল মোছা বা পরিবর্তন করা হয় না।")
+        }
+    }
+
+    private fun showPermissionsPage() {
+        showPage("অনুমতি ও সক্ষমতা") {
+            addHeading(this, "Android সক্ষমতা")
+            addButton("Android সক্ষমতা ও অনুমতি পরীক্ষা") { showCapabilities() }
+            addButton("অনুমতি কেন্দ্র খুলুন") { PermissionCenter.show(this@MainActivity) }
+            addButton("Android API তালিকা") { report.text = AndroidApiRegistry.report() }
+            addButton("Module Manager") { report.text = ModuleRegistry.report(this@MainActivity) }
+            addButton("Engine Self-Test চালান") { runEngineSelfTest() }
+            addTextNote(this, "কোনো অনুমতি গোপনে চালু করা হয় না। Android-এর নিজস্ব সেটিংস ও সম্মতি ব্যবহার করা হয়।")
+        }
+    }
+
+    private fun showAiRelayPage() {
+        showPage("AI ও Relay") {
+            addHeading(this, "AI সংযোগ")
+            aiModel = EditText(this@MainActivity).apply {
+                hint = "AI মডেলের নাম (যেমন: gemini-2.5-flash)"
+                setText(aiModelDraft)
+                setSingleLine(true)
+            }
+            aiEndpoint = EditText(this@MainActivity).apply {
+                hint = "OpenAI-compatible HTTPS endpoint"
+                setText(aiEndpointDraft)
+                setSingleLine(true)
+            }
+            aiKey = EditText(this@MainActivity).apply {
+                hint = "AI API Key (গোপন)"
+                setSingleLine(true)
+                inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                    android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            }
+            aiPrompt = EditText(this@MainActivity).apply {
+                hint = "AI-কে প্রশ্ন লিখুন"
+                setText(aiPromptDraft)
+                minLines = 2
+            }
+            addView(aiModel)
+            addView(aiEndpoint)
+            addView(aiKey)
+            addButton("Gemini সেটিং সংরক্ষণ") { saveAiConfig(AiEngine.Provider.GEMINI) }
+            addButton("OpenAI-compatible সেটিং সংরক্ষণ") {
+                saveAiConfig(AiEngine.Provider.OPENAI_COMPATIBLE)
+            }
+            addView(aiPrompt)
+            addButton("AI-কে প্রশ্ন পাঠান") { runAi() }
+            addButton("AI সেটিংসের অবস্থা") {
+                report.text = AiEngine.configurationSummary(this@MainActivity)
+            }
+
+            addHeading(this, "Relay সংযোগ")
             relayUrl = EditText(this@MainActivity).apply {
                 hint = "Cloudflare Worker URL (https://…workers.dev)"
+                setText(relayUrlDraft)
                 setSingleLine(true)
             }
             setupToken = EditText(this@MainActivity).apply {
-                hint = "Device setup token (secret)"
+                hint = "Device setup token (গোপন)"
                 setSingleLine(true)
             }
             addView(relayUrl)
@@ -81,17 +349,12 @@ class MainActivity : Activity() {
                 RelayClient.clear(this@MainActivity)
                 status.text = "Relay token মুছে ফেলা হয়েছে; সংযোগ বিচ্ছিন্ন।"
             }
-            addButton("স্টোরেজ ও RAM পরীক্ষা") { refreshDiagnostics() }
-            addButton("Android সক্ষমতা ও অনুমতি পরীক্ষা") { showCapabilities() }
-            addButton("অনুমতি কেন্দ্র খুলুন") { PermissionCenter.show(this@MainActivity) }
-            addButton("স্ক্রিনের লেখা ও বাটন শনাক্ত করুন") { showAccessibilitySnapshot() }
-            addButton("Accessibility অনুমতি চালু করুন") {
-                startActivity(Intent("android.settings.ACCESSIBILITY_SETTINGS"))
-            }
-            addButton("ফোল্ডার নির্বাচন / পরিবর্তন") { openFolderPicker() }
-            addButton("নির্বাচিত ফোল্ডারের ফাইল তালিকা") { scanSelectedFolder(false) }
-            addButton("ডুপ্লিকেট ফাইল শনাক্ত") { scanSelectedFolder(true) }
-            addButton("অডিও ফাইলের তথ্য দেখুন") { scanAudioMetadata() }
+        }
+    }
+
+    private fun showTermuxPage() {
+        showPage("Termux ও কমান্ড") {
+            addHeading(this, "অনুমোদিত read-only কমান্ড")
             addButton("Termux: Python সংস্করণ") { runTermux("termux.python_version") }
             addButton("Termux: ভিডিও প্রজেক্ট Git অবস্থা") { runTermux("termux.git_video_status") }
             addButton("Termux: স্টোরেজ রিপোর্ট") { runTermux("termux.storage_report") }
@@ -99,18 +362,46 @@ class MainActivity : Activity() {
             addButton("Termux ফলাফল দেখুন") {
                 report.text = TermuxBridge.lastResult(this@MainActivity)
             }
-            addView(report, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            addView(TextView(this@MainActivity).apply {
-                text = "\nনিরাপত্তা: Termux-এ কেবল নির্দিষ্ট read-only কমান্ড চলে। কোনো arbitrary shell, ফাইল মোছা বা পরিবর্তন নেই।"
-                textSize = 13f; setPadding(12, 20, 12, 12)
-            })
+            addTextNote(this, "নিরাপত্তা: arbitrary shell, ফাইল মোছা বা পরিবর্তনের কমান্ড এখানে চালানো হয় না।")
         }
-        setContentView(ScrollView(this).apply { addView(content) })
-        refreshDiagnostics()
+    }
+
+    private fun showToolsPage() {
+        showPage("ডিভাইস পর্যবেক্ষণ") {
+            addHeading(this, "ডিভাইস ডায়াগনস্টিক")
+            addButton("স্টোরেজ ও RAM পরীক্ষা") { refreshDiagnostics() }
+            addButton("Android সক্ষমতা ও অনুমতি পরীক্ষা") { showCapabilities() }
+            addButton("Engine Self-Test চালান") { runEngineSelfTest() }
+        }
+    }
+
+    private fun addTextNote(parent: LinearLayout, message: String) {
+        parent.addView(TextView(this).apply {
+            text = message
+            textSize = 12f
+            setTextColor(mutedColor)
+            setPadding(12, 12, 12, 12)
+            background = roundedBackground(Color.rgb(232, 243, 238), 14)
+        }, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = 8; bottomMargin = 10 })
     }
 
     private fun LinearLayout.addButton(label: String, action: () -> Unit) {
-        addView(Button(this@MainActivity).apply { text = label; setOnClickListener { action() } })
+        val button = Button(this@MainActivity).apply {
+            text = label
+            textSize = 13f
+            isAllCaps = false
+            setTextColor(Color.WHITE)
+            background = roundedBackground(teal, 14)
+            setPadding(12, 8, 12, 8)
+            setOnClickListener { action() }
+        }
+        addView(button, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { bottomMargin = 8; topMargin = 3 })
     }
 
     private fun showAccessibilitySnapshot() {
@@ -119,6 +410,63 @@ class MainActivity : Activity() {
             "স্ক্রিন শনাক্তকরণ সম্পন্ন — শুধু পড়া হয়েছে; কোনো টাচ বা ক্লিক করা হয়নি।"
         } else {
             "Accessibility অনুমতি চালু করুন, তারপর আবার চেষ্টা করুন।"
+        }
+    }
+
+    private fun saveAiConfig(provider: AiEngine.Provider) {
+        val model = aiModel.text.toString().trim()
+        val endpoint = aiEndpoint.text.toString().trim()
+        val key = aiKey.text.toString()
+
+        runCatching {
+            AiEngine.saveConfig(this, provider, model, endpoint, key)
+        }.onSuccess {
+            aiKey.text.clear()
+            status.text = "AI সেটিং সংরক্ষিত। API Key এনক্রিপ্ট করে রাখা হয়েছে।"
+            report.text = AiEngine.configurationSummary(this)
+        }.onFailure {
+            status.text = "AI সেটিং সংরক্ষণ হয়নি: ${it.message}"
+        }
+    }
+
+    private fun runAi() {
+        val prompt = aiPrompt.text.toString().trim()
+        if (prompt.isBlank()) {
+            status.text = "আগে AI-কে করার প্রশ্ন লিখুন।"
+            return
+        }
+        if (!AiEngine.isConfigured(this)) {
+            status.text = "আগে AI Provider, মডেল ও API Key সংরক্ষণ করুন।"
+            return
+        }
+
+        status.text = "AI উত্তর তৈরি করছে…"
+        worker.execute {
+            val result = runCatching { AiEngine.ask(this@MainActivity, prompt) }
+            runOnUiThread {
+                result.onSuccess {
+                    report.text = "AI উত্তর\n\n$it"
+                    status.text = "AI উত্তর পাওয়া গেছে।"
+                }.onFailure {
+                    status.text = "AI অনুরোধ ব্যর্থ: ${it.message}"
+                }
+            }
+        }
+    }
+
+    private fun runEngineSelfTest() {
+        status.text = "Engine পরীক্ষা চলছে…"
+        worker.execute {
+            val result = EngineSelfTest.run(this@MainActivity)
+            runOnUiThread {
+                report.text = result.joinToString("\n")
+                val failures = result.count { it.startsWith("FAIL:") }
+                status.text = if (failures == 0) {
+                    "Self-Test শেষ: সব প্রাথমিক পরীক্ষা সফল।"
+                } else {
+                    "Self-Test-এ $failuresটি সমস্যা পাওয়া গেছে।"
+                }
+            }
         }
     }
 
