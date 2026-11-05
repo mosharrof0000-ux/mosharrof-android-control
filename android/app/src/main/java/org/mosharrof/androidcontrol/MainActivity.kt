@@ -82,6 +82,7 @@ class MainActivity : Activity() {
                 status.text = "Relay token মুছে ফেলা হয়েছে; সংযোগ বিচ্ছিন্ন।"
             }
             addButton("স্টোরেজ ও RAM পরীক্ষা") { refreshDiagnostics() }
+            addButton("Android সক্ষমতা ও অনুমতি পরীক্ষা") { showCapabilities() }
             addButton("ফোল্ডার নির্বাচন / পরিবর্তন") { openFolderPicker() }
             addButton("নির্বাচিত ফোল্ডারের ফাইল তালিকা") { scanSelectedFolder(false) }
             addButton("ডুপ্লিকেট ফাইল শনাক্ত") { scanSelectedFolder(true) }
@@ -172,6 +173,24 @@ class MainActivity : Activity() {
             append("Android low-memory: ${if (memory.lowMemory) "হ্যাঁ" else "না"}\n")
             append("\nএটি ডেটা পার্টিশনের হিসাব; সব SD/USB স্টোরেজের মোট নয়।")
         }
+    }
+
+    private fun showCapabilities() {
+        val capabilities = CapabilityRegistry.snapshot(
+            this,
+            selectedTree != null
+        )
+
+        report.text = buildString {
+            append("Android সক্ষমতা ও অনুমতির অবস্থা\n\n")
+            capabilities.forEach { capability ->
+                append("${if (capability.available) "✓" else "○"} ${capability.name}\n")
+                append("অবস্থা: ${capability.status}\n")
+                append("প্রয়োজন: ${capability.requirement}\n\n")
+            }
+        }
+
+        status.text = "সক্ষমতা পরীক্ষা সম্পন্ন — কোনো অনুমতি পরিবর্তন করা হয়নি।"
     }
 
     private fun openFolderPicker() {
