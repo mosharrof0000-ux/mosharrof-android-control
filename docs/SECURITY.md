@@ -2,20 +2,35 @@
 
 ## Non-negotiable rules
 - No unauthenticated listener and no generic remote shell endpoint.
-- Pair devices explicitly; use TLS and short-lived, revocable credentials for any future relay.
-- Every future remote job must have a typed schema, scope, expiry, unique ID, idempotency/replay check, rate limit, and audit record.
+- Pair devices explicitly; use TLS and short-lived, revocable credentials for any relay.
 - Read-only inspection is the default.
+- Every remote operation must map to a typed, fixed allowlist entry; never accept caller-supplied executable paths or shell text.
 - Destructive actions require a clear preview and a separate confirmation; prefer reversible quarantine.
 - Never bypass Android permission dialogs, lock screens, OTP, banking controls, or app security boundaries.
-- Never store API keys in source control or plain-text preferences.
+- Never store API keys in source control or plaintext preferences.
 
-## Termux bridge boundary
+## MCP connector boundary
+- MCP endpoints must be HTTPS; the connector rejects endpoint user-info and fragments.
+- Connector bearer tokens are encrypted with Android Keystore AES-GCM and authenticated additional data bound to the connector ID.
+- Tool definitions and input schemas are validated before registration/call.
+- Tool calls display the tool risk and exact input JSON. Each call requires a deliberate user action.
+- Write-capable tool calls require a short-lived, single-use approval grant bound to the connector, tool ID, and exact arguments.
+- Disconnect unregisters connector tools and revokes outstanding approval grants.
+- A successful unit test or CI build is not proof of real-server or real-device security.
+
+## Termux and relay boundary
 - Requests are mapped by a hard-coded operation ID to a fixed executable path and fixed argument vector.
 - No shell interpreter, arbitrary command text, or user-supplied arguments are accepted.
 - Initial Termux operations are read-only diagnostics and a fixed Git status query.
-- Termux's own `com.termux.permission.RUN_COMMAND` permission and `allow-external-apps` setting are both required and must be enabled by the user.
+- Termux's own com.termux.permission.RUN_COMMAND permission and allow-external-apps setting are both required and must be enabled by the user.
 - The result receiver is private to this app; returned output is truncated before local storage.
-- Termux output may contain private filenames or project information; the user should only enable this bridge on a device they control.
+- Relay traffic uses HTTPS and bearer authentication. The device token is encrypted with Android Keystore AES-GCM.
+- The app-side relay accepts only the four predefined read-only Termux operation IDs. Relay deployment and server-side enforcement have not yet been verified.
 
-## Remaining threats before remote control
-Stolen pairing credentials, replayed jobs, malicious payloads, compromised relay, accidental bulk operations, privilege escalation, and logs leaking private data. Mitigations include revocation, strict schemas, bounded output, redacted logs, explicit consent, and security tests.
+## Remaining threats and release gates
+- Verify relay-side job expiry, replay/idempotency protection, rate limits, and audit records in the deployed Worker.
+- Review relay command ID/path handling and bounded response parsing before production deployment.
+- Verify credential revocation and token invalidation behavior on a physical Android device.
+- Run a real HTTPS MCP server through connect, discovery, approval, tool execution, and disconnect.
+- Inspect logs and error surfaces for credential or private-data leakage.
+Until these gates pass, describe remote relay and physical-device behavior as implemented in code but not end-to-end verified.
