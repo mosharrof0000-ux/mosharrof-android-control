@@ -181,12 +181,14 @@ class GeminiFunctionCallingAdapter : AiProviderAdapter {
         require(config.endpoint == null) { "Gemini endpoint override is not supported by this adapter version." }
     }
 
-    override fun capabilityProfile(model: String, apiVersion: String) =
+    override fun capabilityProfile(model: String, apiVersion: String): AiCapabilityProfile {
+        require(apiVersion == "v1beta") { "Unsupported Gemini API version." }
+        return
         AiCapabilityProfile(
             provider, model, apiVersion, adapterVersion,
             mapOf(
-                AiCapability.TOOL_CALLING to CapabilitySupport.SUPPORTED,
-                AiCapability.PARALLEL_TOOL_CALLS to CapabilitySupport.SUPPORTED,
+                AiCapability.TOOL_CALLING to CapabilitySupport.UNKNOWN,
+                AiCapability.PARALLEL_TOOL_CALLS to CapabilitySupport.UNKNOWN,
                 AiCapability.STREAMING to CapabilitySupport.UNKNOWN,
                 AiCapability.CANCELLATION to CapabilitySupport.UNKNOWN,
                 AiCapability.JSON_SCHEMA to CapabilitySupport.UNKNOWN,
@@ -194,6 +196,8 @@ class GeminiFunctionCallingAdapter : AiProviderAdapter {
                 AiCapability.MODEL_DISCOVERY to CapabilitySupport.UNSUPPORTED
             )
         )
+
+    }
 
     override fun encodeToolDefinitions(
         config: AiProviderConfig,
@@ -273,12 +277,14 @@ class OpenAiResponsesFunctionCallingAdapter : AiProviderAdapter {
         require(config.endpoint == null) { "Official OpenAI Responses endpoint is fixed in this adapter version." }
     }
 
-    override fun capabilityProfile(model: String, apiVersion: String) =
+    override fun capabilityProfile(model: String, apiVersion: String): AiCapabilityProfile {
+        require(apiVersion == "v1") { "Unsupported OpenAI Responses API version." }
+        return
         AiCapabilityProfile(
             provider, model, apiVersion, adapterVersion,
             mapOf(
-                AiCapability.TOOL_CALLING to CapabilitySupport.SUPPORTED,
-                AiCapability.PARALLEL_TOOL_CALLS to CapabilitySupport.SUPPORTED,
+                AiCapability.TOOL_CALLING to CapabilitySupport.UNKNOWN,
+                AiCapability.PARALLEL_TOOL_CALLS to CapabilitySupport.UNKNOWN,
                 AiCapability.STREAMING to CapabilitySupport.UNKNOWN,
                 AiCapability.CANCELLATION to CapabilitySupport.UNKNOWN,
                 AiCapability.JSON_SCHEMA to CapabilitySupport.UNKNOWN,
@@ -286,6 +292,8 @@ class OpenAiResponsesFunctionCallingAdapter : AiProviderAdapter {
                 AiCapability.MODEL_DISCOVERY to CapabilitySupport.UNSUPPORTED
             )
         )
+
+    }
 
     override fun encodeToolDefinitions(
         config: AiProviderConfig,
@@ -392,12 +400,14 @@ class XaiChatCompletionsFunctionCallingAdapter : AiProviderAdapter {
         require(config.endpoint == null) { "xAI official endpoint is fixed in this adapter version." }
     }
 
-    override fun capabilityProfile(model: String, apiVersion: String) =
+    override fun capabilityProfile(model: String, apiVersion: String): AiCapabilityProfile {
+        require(apiVersion == "v1") { "Unsupported xAI API version." }
+        return
         AiCapabilityProfile(
             provider, model, apiVersion, adapterVersion,
             mapOf(
-                AiCapability.TOOL_CALLING to CapabilitySupport.SUPPORTED,
-                AiCapability.PARALLEL_TOOL_CALLS to CapabilitySupport.SUPPORTED,
+                AiCapability.TOOL_CALLING to CapabilitySupport.UNKNOWN,
+                AiCapability.PARALLEL_TOOL_CALLS to CapabilitySupport.UNKNOWN,
                 AiCapability.STREAMING to CapabilitySupport.UNKNOWN,
                 AiCapability.CANCELLATION to CapabilitySupport.UNKNOWN,
                 AiCapability.JSON_SCHEMA to CapabilitySupport.UNKNOWN,
@@ -405,6 +415,8 @@ class XaiChatCompletionsFunctionCallingAdapter : AiProviderAdapter {
                 AiCapability.MODEL_DISCOVERY to CapabilitySupport.UNSUPPORTED
             )
         )
+
+    }
 
     override fun encodeToolDefinitions(
         config: AiProviderConfig,
@@ -476,12 +488,14 @@ class AnthropicMessagesToolUseAdapter : AiProviderAdapter {
         require(config.endpoint == null) { "Anthropic official endpoint is fixed in this adapter version." }
     }
 
-    override fun capabilityProfile(model: String, apiVersion: String) =
+    override fun capabilityProfile(model: String, apiVersion: String): AiCapabilityProfile {
+        require(apiVersion == "2023-06-01") { "Unsupported Anthropic Messages API version." }
+        return
         AiCapabilityProfile(
             provider, model, apiVersion, adapterVersion,
             mapOf(
-                AiCapability.TOOL_CALLING to CapabilitySupport.SUPPORTED,
-                AiCapability.PARALLEL_TOOL_CALLS to CapabilitySupport.SUPPORTED,
+                AiCapability.TOOL_CALLING to CapabilitySupport.UNKNOWN,
+                AiCapability.PARALLEL_TOOL_CALLS to CapabilitySupport.UNKNOWN,
                 AiCapability.STREAMING to CapabilitySupport.UNKNOWN,
                 AiCapability.CANCELLATION to CapabilitySupport.UNKNOWN,
                 AiCapability.JSON_SCHEMA to CapabilitySupport.UNKNOWN,
@@ -489,6 +503,8 @@ class AnthropicMessagesToolUseAdapter : AiProviderAdapter {
                 AiCapability.MODEL_DISCOVERY to CapabilitySupport.UNSUPPORTED
             )
         )
+
+    }
 
     override fun encodeToolDefinitions(
         config: AiProviderConfig,
