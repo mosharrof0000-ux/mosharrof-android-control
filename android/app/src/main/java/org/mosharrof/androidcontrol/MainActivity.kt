@@ -550,17 +550,9 @@ class MainActivity : Activity() {
             }
             .setPositiveButton("অনুমোদন করে চালান") { _, _ ->
                 worker.execute {
-                    val result = runCatching {
-                        RelayClient.markCommandHandled(this@MainActivity, job.commandId)
-                    }
-                    if (result.isFailure) {
-                        runOnUiThread {
-                            lastRelayCommand = ""
-                            status.text = "স্থানীয় duplicate guard সংরক্ষণ হয়নি; কমান্ড চালানো হয়নি।"
-                            finishRelayApproval()
-                        }
-                        return@execute
-                    }
+                    // Do not mark a job handled merely because Termux accepted the request.
+                    // TermuxResultReceiver marks it only after the execution result is
+                    // successfully acknowledged by the Relay server.
                     val execution = TermuxBridge.run(this@MainActivity, job.operationId, job.commandId)
                     runOnUiThread {
                         status.text = execution.fold(
@@ -577,6 +569,7 @@ class MainActivity : Activity() {
                                 execution.exceptionOrNull()?.message ?: "Termux request failed",
                                 -1
                             )
+                            RelayClient.markCommandHandled(this@MainActivity, job.commandId)
                         }
                     }
                 }
