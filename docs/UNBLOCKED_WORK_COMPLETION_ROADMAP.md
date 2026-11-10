@@ -88,7 +88,8 @@ Independent work may proceed concurrently, but shared contracts and UI integrati
 - [x] Expose pending recovery candidates through the service and persist snapshots returned by `tasks/get`, `tasks/update` and `tasks/cancel`.
 - [x] Keep synchronous polling bounded by caller-supplied elapsed-time and poll-count limits; it stops on terminal or input-required states.
 - [x] Add service-level reconnect/recovery tests: pending candidates survive service recreation, are revalidated through `tasks/get`, and terminal server state removes them from the pending list.
-- [ ] Add polling cancellation/interruption tests and integrate task-result handling with the approved Android UI.
+- [x] Add bounded polling cancellation regression coverage; cancellation prevents the next remote request.
+- [ ] Integrate MCP task start/result/input-required handling with the approved Android UI.
 - **Gate:** task recovery works in deterministic store and service tests; stale candidates are revalidated against the server before use; unsupported task-start/tool flows remain fail-closed until UI approval and orchestration are integrated.
 
 ### Phase 6 — Android UX
@@ -125,7 +126,7 @@ Independent work may proceed concurrently, but shared contracts and UI integrati
 - Worker typecheck run #42870348894 completed SUCCESS on the same commit.
 - Debug APK artifact `mosharrof-android-control-debug`, artifact ID `13788863906`, SHA-256 `bd1efc5cfa6208d306f24edda681e2e6f5a26085a730f1947add4dfed615e93c`. This is a CI artifact only; it has not been installed or device-tested.
 - Recovery tests verify store persistence across service recreation, remote revalidation via `refreshPendingTasks`, terminal-state removal, and explicit-disconnect cleanup.
-- Follow-up added cancellable polling (`shouldCancel` checked before network work and after each delay) plus a regression test proving cancellation prevents the next request. Android CI #42870719715 is pending for commit `dd61f3cd68239c25821f87332d89de8c8102d43b`; Worker CI #42870719771 PASS.
+- Follow-up added cancellable polling (`shouldCancel` checked before network work and after each delay) plus a regression test proving cancellation prevents the next request. Android CI #42870719715 PASS for commit `dd61f3cd68239c25821f87332d89de8c8102d43b`; Worker CI #42870719771 PASS.
 - Task execution remains fail-closed for `resultType=task`; task start/result handling is not yet wired into the approved Android UI.
 
 ## External gates excluded from this roadmap
@@ -151,4 +152,6 @@ Independent work may proceed concurrently, but shared contracts and UI integrati
 
 | Latest MCP task recovery source commit `6db8d5dc93fe7a51c0dc74c45ed4cab81c2fda59` | PENDING CI | Durable metadata store and process-recreation regression tests added; final service integration commits are recorded above |
 
-| MCP cancellation test commit `dd61f3cd68239c25821f87332d89de8c8102d43b` | Android CI PENDING; Worker CI PASS | Added regression test proving cancellation prevents the next MCP task poll request |
+| MCP cancellation test commit `dd61f3cd68239c25821f87332d89de8c8102d43b` | Android CI #42870719715 PASS; Worker CI #42870719771 PASS | Added regression test proving cancellation prevents the next MCP task poll request |
+
+| MCP cancellation test APK artifact | Uploaded | Artifact ID `13788908067`; SHA-256 `b54daa85508bf88ea5db1a8d9d27225ed46fdfe0ac3b538753f373fac6823b82`; CI artifact only, not installed |
