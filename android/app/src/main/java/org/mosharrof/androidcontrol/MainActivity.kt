@@ -516,12 +516,12 @@ class MainActivity : Activity() {
         val profiles = AiEngine.providerProfiles(this)
         val activeId = runCatching { AiProviderProfileStore.active(this)?.summary?.id }.getOrNull()
         return buildString {
-            append("সংরক্ষিত AI Provider Profile: ${profiles.size}\\n\\n")
+            append("সংরক্ষিত AI Provider Profile: ${profiles.size}\n\n")
             profiles.forEach { profile ->
-                append("${if (profile.id == activeId) "● ACTIVE" else "○"} ${profile.id}\\n")
-                append("Provider: ${profile.provider} | Model: ${profile.model}\\n")
-                profile.endpoint?.let { append("Endpoint: $it\\n") }
-                append("Credential: encrypted / hidden\\n\\n")
+                append("${if (profile.id == activeId) "● ACTIVE" else "○"} ${profile.id}\n")
+                append("Provider: ${profile.provider} | Model: ${profile.model}\n")
+                profile.endpoint?.let { append("Endpoint: $it\n") }
+                append("Credential: encrypted / hidden\n\n")
             }
             if (profiles.isEmpty()) append("কোনো Profile সংরক্ষিত নেই।")
         }
