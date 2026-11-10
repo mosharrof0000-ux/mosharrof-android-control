@@ -17,7 +17,7 @@ Open the android/ directory in Android Studio (Ladybug or newer), sync Gradle, a
 6. HTTPS MCP discovery, tools/list, schema validation, and tools/call.
 7. Explicit approval dialog for each tool invocation; WRITE tools require a short-lived, single-use approval grant.
 8. Android Keystore AES-GCM storage for MCP bearer tokens.
-9. Optional HTTPS device relay client with encrypted device-token storage and a fixed allowlist of read-only Termux diagnostics.
+9. Optional HTTPS device relay client with encrypted device-token storage, bounded responses, validated job IDs, and a fixed allowlist of read-only Termux diagnostics; every incoming job requires an in-app approval before execution.
 
 ## Limits and verification status
 - The app only sees the selected tree and what its document provider exposes.
