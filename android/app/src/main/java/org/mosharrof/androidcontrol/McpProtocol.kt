@@ -102,19 +102,24 @@ object McpProtocol {
         toolName: String,
         arguments: Map<String, Any?> = emptyMap(),
         clientName: String,
-        clientVersion: String
+        clientVersion: String,
+        inputResponses: Map<String, Any?>? = null,
+        requestState: String? = null
     ): Request {
         require(id.isNotBlank())
         require(isSafeName(toolName))
-        return Request(
-            id = id,
-            method = "tools/call",
-            params = mapOf(
-                "name" to toolName,
-                "arguments" to arguments,
-                "_meta" to modernMetadata(clientName, clientVersion)
-            )
+        require(inputResponses == null || inputResponses.keys.all { it.isNotBlank() }) {
+            "MRTR inputResponses-এর key খালি হতে পারবে না।"
+        }
+        val params = linkedMapOf<String, Any?>(
+            "name" to toolName,
+            "arguments" to arguments,
+            "_meta" to modernMetadata(clientName, clientVersion)
         )
+        // requestState is opaque server-owned state: preserve it byte-for-byte.
+        if (inputResponses != null) params["inputResponses"] = inputResponses
+        if (requestState != null) params["requestState"] = requestState
+        return Request(id = id, method = "tools/call", params = params)
     }
 
     fun initializedNotification(): Request =
