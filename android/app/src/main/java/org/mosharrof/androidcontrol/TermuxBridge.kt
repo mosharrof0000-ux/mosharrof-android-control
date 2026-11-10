@@ -91,8 +91,9 @@ class TermuxResultReceiver : BroadcastReceiver() {
         } else {
             val stdout = bundle.getString("stdout").orEmpty()
             val stderr = bundle.getString("stderr").orEmpty()
-            val exitCode = bundle.getInt("exitCode", -999)
-            val termuxError = bundle.getInt("err", -999)
+            val shellExitCode = bundle.getInt("exitCode", -1)
+            val termuxError = bundle.getInt("err", -1)
+            val exitCode = if (termuxError != -1) termuxError else shellExitCode
             val errorMessage = bundle.getString("errmsg").orEmpty()
             buildString {
                 append("Exit code: ").append(exitCode)
