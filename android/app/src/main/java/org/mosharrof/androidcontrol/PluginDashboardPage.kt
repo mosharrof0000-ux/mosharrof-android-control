@@ -24,6 +24,11 @@ class PluginDashboardPage(
     private val worker: Executor,
     private val onStatus: (String) -> Unit
 ) {
+    private companion object {
+        const val MAX_MRTR_ROUNDS = 10
+        const val MAX_MRTR_DISPLAY_CHARS = 4_000
+    }
+
     private lateinit var endpointInput: EditText
     private lateinit var tokenInput: EditText
     private lateinit var toolsContainer: LinearLayout
@@ -253,12 +258,124 @@ class PluginDashboardPage(
                         approvalGrant = grant
                     ).onSuccess { output ->
                         activity.runOnUiThread {
-                            resultView.text = output
-                            onStatus("Tool call সম্পন্ন।")
+                            handleToolOutput(
+                                toolId = toolId,
+                                toolName = toolName,
+                                arguments = args,
+                                output = output,
+                                round = 0
+                            )
                         }
                     }.onFailure { error ->
                         activity.runOnUiThread {
                             onStatus("Tool call ব্যর্থ: ${error.message}")
+                        }
+                    }
+                }
+            }
+            .show()
+    }
+
+    /**
+     * Drives modern MCP Multi Round-Trip Requests with an explicit user decision
+     * for every response round. Server-provided request text is displayed as data,
+     * never interpreted as instructions by the app.
+     */
+    private fun handleToolOutput(
+        toolId: String,
+        toolName: String,
+        arguments: Map<String, Any?>,
+        output: String,
+        round: Int
+    ) {
+        val result = runCatching { JSONObject(output) }.getOrElse {
+            resultView.text = output
+            onStatus("Tool call সম্পন্ন।")
+            return
+        }
+        if (result.optString("resultType") != "input_required") {
+            resultView.text = output
+            onStatus("Tool call সম্পন্ন।")
+            return
+        }
+
+        if (round >= MAX_MRTR_ROUNDS) {
+            resultView.text = output
+            onStatus("MCP input round-এর সর্বোচ্চ সীমা পূর্ণ হয়েছে; নিরাপদে থামানো হয়েছে।")
+            return
+        }
+
+        val requests = result.optJSONObject("inputRequests")
+        if (requests == null || requests.length() == 0) {
+            onStatus("MCP input_required response-এ বৈধ inputRequests নেই।")
+            return
+        }
+        val requestState = if (result.has("requestState") && !result.isNull("requestState")) {
+            result.opt("requestState") as? String
+                ?: run {
+                    onStatus("MCP requestState string নয়; round-trip থামানো হয়েছে।")
+                    return
+                }
+        } else null
+
+        val responseInput = EditText(activity).apply {
+            hint = """{"request-key":{"action":"accept","content":{}}}"""
+            setText("{}")
+            minLines = 4
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+        }
+        AlertDialog.Builder(activity)
+            .setTitle("MCP অতিরিক্ত তথ্য চায় (${round + 1}/$MAX_MRTR_ROUNDS)")
+            .setMessage(
+                "সার্ভারের অনুরোধ (বিশ্বাসহীন ডেটা—পড়ে যাচাই করুন):\n" +
+                    requests.toString(2).take(MAX_MRTR_DISPLAY_CHARS) +
+                    "\n\nনিচে inputResponses JSON লিখুন। সংবেদনশীল তথ্য দেবেন না।"
+            )
+            .setView(responseInput)
+            .setNegativeButton("বাতিল", null)
+            .setPositiveButton("উত্তর পাঠান") { _, _ ->
+                val responses = runCatching {
+                    JSONObject(responseInput.text.toString()).toMap()
+                }.getOrElse {
+                    onStatus("inputResponses JSON সঠিক নয়: ${it.message}")
+                    return@setPositiveButton
+                }
+                if (responses.isEmpty()) {
+                    onStatus("inputResponses খালি রাখা যাবে না।")
+                    return@setPositiveButton
+                }
+
+                val service = PluginDashboardSession.service
+                if (service == null) {
+                    onStatus("Connector session সক্রিয় নেই; MRTR বন্ধ করা হয়েছে।")
+                    return@setPositiveButton
+                }
+                worker.execute {
+                    val grant = service.issueApprovalGrant(toolId, arguments).getOrElse { error ->
+                        activity.runOnUiThread {
+                            onStatus("MRTR retry অনুমোদন তৈরি হয়নি: ${error.message}")
+                        }
+                        return@execute
+                    }
+                    service.callTool(
+                        toolId = toolId,
+                        arguments = arguments,
+                        approvalGrant = grant,
+                        inputResponses = responses,
+                        requestState = requestState
+                    ).onSuccess { nextOutput ->
+                        activity.runOnUiThread {
+                            handleToolOutput(
+                                toolId = toolId,
+                                toolName = toolName,
+                                arguments = arguments,
+                                output = nextOutput,
+                                round = round + 1
+                            )
+                        }
+                    }.onFailure { error ->
+                        activity.runOnUiThread {
+                            onStatus("MCP MRTR retry ব্যর্থ: ${error.message}")
                         }
                     }
                 }
