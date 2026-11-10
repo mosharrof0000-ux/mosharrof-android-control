@@ -194,13 +194,15 @@ class GeminiFunctionCallingAdapter : AiProviderAdapter {
         validateConfiguration(config)
         require(tools.size <= 256)
         return mapOf(
-            "functionDeclarations" to tools.map { tool ->
-                mapOf(
-                    "name" to tool.name,
-                    "description" to tool.description,
-                    "parameters" to tool.inputSchema
-                )
-            }
+            "tools" to listOf(
+                mapOf("functionDeclarations" to tools.map { tool ->
+                    mapOf(
+                        "name" to tool.name,
+                        "description" to tool.description,
+                        "parameters" to tool.inputSchema
+                    )
+                })
+            )
         )
     }
 
@@ -209,7 +211,7 @@ class GeminiFunctionCallingAdapter : AiProviderAdapter {
         val content = (candidates.firstOrNull() as? Map<*, *>)
             ?.get("content") as? Map<*, *>
         val parts = content?.get("parts") as? List<*> ?: emptyList<Any?>()
-        val calls = parts.mapNotNull { raw ->
+        val calls = parts.mapIndexedNotNull { index, raw ->
             val functionCall = (raw as? Map<*, *>)?.get("functionCall") as? Map<*, *>
                 ?: return@mapNotNull null
             val name = functionCall["name"] as? String
@@ -218,7 +220,7 @@ class GeminiFunctionCallingAdapter : AiProviderAdapter {
                 ?: throw IllegalArgumentException("Gemini functionCall args must be an object.")
             require(args.keys.all { it is String })
             CanonicalToolCall(
-                providerCallId = "gemini-$name-${callsafeFingerprint(args)}",
+                providerCallId = (functionCall["id"] as? String)?.takeIf { it.isNotBlank() } ?: "gemini-$name-$index",
                 toolName = name,
                 arguments = args.entries.associate { it.key as String to it.value }
             )
@@ -241,6 +243,7 @@ class GeminiFunctionCallingAdapter : AiProviderAdapter {
                 mapOf(
                     "functionResponse" to mapOf(
                         "name" to result.toolName,
+                        "id" to result.providerCallId,
                         "response" to mapOf(
                             "result" to result.content,
                             "isError" to result.isError
@@ -368,7 +371,4 @@ private fun org.json.JSONArray.toAnyList(): List<Any?> =
         }
     }
 
-private fun callsafeFingerprint(arguments: Map<*, *>): String =
-    arguments.entries.sortedBy { it.key.toString() }.joinToString("|") {
-        "${it.key}=${it.value}"
-    }.hashCode().toUInt().toString(16)
+// JSON conversion helpers above intentionally preserve nested maps and arrays.
