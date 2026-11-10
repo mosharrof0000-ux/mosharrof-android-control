@@ -16,6 +16,15 @@ data class McpTaskRecord(
     val pollIntervalMs: Long,
     val observedAtEpochMs: Long
 ) {
+    init {
+        require(connectorId.isNotBlank())
+        require(taskId.isNotBlank() && taskId.length <= 256 && taskId.all { it.code in 0x21..0x7E })
+        require(status in setOf("WORKING", "INPUT_REQUIRED", "COMPLETED", "CANCELLED", "FAILED"))
+        require(ttlMs == null || ttlMs >= 0L)
+        require(pollIntervalMs in 1L..300_000L)
+        require(observedAtEpochMs >= 0L)
+    }
+
     val isPending: Boolean
         get() = status == "WORKING" || status == "INPUT_REQUIRED"
 
@@ -147,7 +156,9 @@ class SharedPreferencesMcpTaskStore(
                 put("observedAtEpochMs", record.observedAtEpochMs)
             })
         }
-        preferences.edit().putString(KEY, array.toString()).apply()
+        check(preferences.edit().putString(KEY, array.toString()).commit()) {
+            "MCP Task recovery metadata disk-এ সংরক্ষণ করা যায়নি।"
+        }
     }
 
     private companion object {
