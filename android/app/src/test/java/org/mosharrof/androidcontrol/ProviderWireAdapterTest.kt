@@ -117,8 +117,8 @@ class ProviderWireAdapterTest {
     }
 
     @Test fun responsesAdapterRejectsExcessivelyNestedJsonArguments() {
-        val nestedJson = """{"x":""".repeat(0) + buildString {
-            repeat(CanonicalArgumentBounds.MAX_DEPTH + 2) { append("""{"x":""") }
+        val nestedJson = buildString {
+            repeat(CanonicalArgumentBounds.MAX_DEPTH + 2) { append("{\"x\":") }
             append("\"leaf\"")
             repeat(CanonicalArgumentBounds.MAX_DEPTH + 2) { append("}") }
         }
