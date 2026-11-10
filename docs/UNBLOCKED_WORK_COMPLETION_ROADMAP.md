@@ -89,7 +89,7 @@ Independent work may proceed concurrently, but shared contracts and UI integrati
 - [x] Keep synchronous polling bounded by caller-supplied elapsed-time and poll-count limits; it stops on terminal or input-required states.
 - [x] Add service-level reconnect/recovery tests: pending candidates survive service recreation, are revalidated through `tasks/get`, and terminal server state removes them from the pending list.
 - [x] Add bounded polling cancellation regression coverage; cancellation prevents the next remote request.
-- [ ] Integrate MCP task start/result/input-required handling with the approved Android UI.
+- [x] Integrate MCP task-handle persistence and start/result/input-required handling with the approved Android UI; task input and cancellation require explicit user confirmation.
 - **Gate:** task recovery works in deterministic store and service tests; stale candidates are revalidated against the server before use; unsupported task-start/tool flows remain fail-closed until UI approval and orchestration are integrated.
 
 ### Phase 6 — Android UX
@@ -98,7 +98,7 @@ Independent work may proceed concurrently, but shared contracts and UI integrati
 - [ ] Credential replace/revoke UX and explicit active-profile state.
 - [x] AI-generated tool approval and rejection dialog wired into the runtime.
 - [x] Basic AI request status and safe failure display.
-- [ ] UI state regression tests for provider/profile/approval transitions.
+- [ ] UI state regression tests for provider/profile/approval/task transitions.
 - **Gate:** UI decisions match the underlying permission and profile state.
 
 ### Phase 7 — Security, integration, and release readiness
@@ -117,7 +117,7 @@ Independent work may proceed concurrently, but shared contracts and UI integrati
 - Unit coverage added for connector isolation, pending-state filtering, TTL expiry, 100-record cap, explicit cleanup, and persistence across store recreation using a fake SharedPreferences implementation.
 - Service integration records snapshots returned by `tasks/get/update/cancel`, exposes pending candidates, and provides `refreshPendingTasks` to revalidate each restored candidate against the server before use.
 - Bounded polling supports caller cancellation before the first request and after each delay; cancellation prevents the next remote request.
-- Android UI task-start/approval/result integration remains pending; `resultType=task` continues to fail closed.
+- Android UI now recognizes `resultType=task`, persists only bounded task metadata, supports explicit status refresh, revalidates restored candidates with `tasks/get`, and presents input/cancel actions behind explicit user confirmation. Server-provided request data is shown as untrusted; input JSON keys must exactly match the request keys.
 - Commits: `a8172fa` (store), `92198dc` / `cf00f16` (service integration), `743b763` (Android wiring), `c469594` / `6db8d5d` (store tests), `e44e10c` (initial service persistence), `d7ba354` (deterministic test clock fix), `dec0006` (service recovery tests), `ad29dd3` (remote refresh helper), `735bfd6` (refresh regression), `ca7c247` (poll cancellation), `dd61f3c` (cancellation regression test).
 - Android CI #42870349189 and Worker CI #42870348894 PASS on `735bfd6514a8d3a1b768fc72d7fbef18a1f80696`; latest cancellation test CI is tracked separately below.
 
@@ -127,7 +127,7 @@ Independent work may proceed concurrently, but shared contracts and UI integrati
 - Debug APK artifact `mosharrof-android-control-debug`, artifact ID `13788863906`, SHA-256 `bd1efc5cfa6208d306f24edda681e2e6f5a26085a730f1947add4dfed615e93c`. This is a CI artifact only; it has not been installed or device-tested.
 - Recovery tests verify store persistence across service recreation, remote revalidation via `refreshPendingTasks`, terminal-state removal, and explicit-disconnect cleanup.
 - Follow-up added cancellable polling (`shouldCancel` checked before network work and after each delay) plus a regression test proving cancellation prevents the next request. Android CI #42870719715 PASS for commit `dd61f3cd68239c25821f87332d89de8c8102d43b`; Worker CI #42870719771 PASS.
-- Task execution remains fail-closed for `resultType=task`; task start/result handling is not yet wired into the approved Android UI.
+- `resultType=task` is now accepted only when a valid task handle parses and its bounded metadata is persisted. Invalid handles fail closed. UI status refresh, input response and cancellation are explicit user-triggered actions; no background polling is enabled.
 
 ## External gates excluded from this roadmap
 
@@ -155,3 +155,10 @@ Independent work may proceed concurrently, but shared contracts and UI integrati
 | MCP cancellation test commit `dd61f3cd68239c25821f87332d89de8c8102d43b` | Android CI #42870719715 PASS; Worker CI #42870719771 PASS | Added regression test proving cancellation prevents the next MCP task poll request |
 
 | MCP cancellation test APK artifact | Uploaded | Artifact ID `13788908067`; SHA-256 `b54daa85508bf88ea5db1a8d9d27225ed46fdfe0ac3b538753f373fac6823b82`; CI artifact only, not installed |
+
+
+### MCP task UI integration CI evidence
+- Source commit `f68aec3d012f46eb1c1794f03bbdcbce3e811f6d` passed Android CI run #42872350018 (unit tests, debug APK assembly and artifact upload) and Worker typecheck run #42872350226.
+- Debug APK artifact `mosharrof-android-control-debug`, artifact ID `13789243666`, size 2,407,912 bytes, SHA-256 `abd961f495a2b78f5c3c2db34b2f5eb56c4a73867054e963f31f754ecf0f8352`. CI artifact only; not installed or device-tested.
+- The source adds task-handle validation/persistence, explicit task refresh and cancellation, revalidation of restored candidates, and user-confirmed task input submission. No automatic polling or implicit task input is performed.
+- PR #7 remains open and unmerged. Physical Android QA, live MCP interoperability, provider API round-trips and production deployment remain external gates.
