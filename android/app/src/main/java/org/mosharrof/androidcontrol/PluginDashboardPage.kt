@@ -7,9 +7,12 @@ import android.net.Uri
 import android.graphics.Color
 import android.text.InputType
 import android.view.ViewGroup
+import android.widget.ArrayAdapter
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.Spinner
 import android.widget.TextView
 import org.json.JSONArray
 import org.json.JSONObject
@@ -215,6 +218,122 @@ class PluginDashboardPage(
     }
 
     private fun requestToolCall(toolId: String, toolName: String, risk: String) {
+        val tool = ConnectorRegistry.toolSnapshot().firstOrNull { it.id == toolId }
+        val fields = tool?.let { McpSchemaForm.fields(it.inputSchema) }
+        if (tool != null && !fields.isNullOrEmpty()) {
+            requestSchemaToolCall(toolId, toolName, risk, tool.inputSchema, tool.requiredFields, fields)
+        } else {
+            requestJsonToolCall(toolId, toolName, risk)
+        }
+    }
+
+    private fun requestSchemaToolCall(
+        toolId: String,
+        toolName: String,
+        risk: String,
+        schema: Map<String, Any?>,
+        requiredFields: Collection<String>,
+        fields: List<McpSchemaForm.Field>
+    ) {
+        val form = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(20, 8, 20, 8)
+        }
+        val textInputs = linkedMapOf<String, EditText>()
+        val booleanInputs = linkedMapOf<String, CheckBox>()
+        val enumInputs = linkedMapOf<String, Spinner>()
+        fields.forEach { field ->
+            note(form, field.name + if (field.required) " · প্রয়োজনীয়" else " · ঐচ্ছিক")
+            when {
+                field.enumValues.isNotEmpty() -> {
+                    val spinner = Spinner(activity)
+                    val labels = field.enumValues.map { it?.toString() ?: "null" }
+                    spinner.adapter = ArrayAdapter(
+                        activity,
+                        android.R.layout.simple_spinner_item,
+                        labels
+                    ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+                    if (field.hasDefault) {
+                        val selected = field.enumValues.indexOf(field.defaultValue)
+                        if (selected >= 0) spinner.setSelection(selected)
+                    }
+                    enumInputs[field.name] = spinner
+                    form.addView(spinner, matchParams())
+                }
+                field.type == "boolean" -> {
+                    val check = CheckBox(activity).apply {
+                        text = field.name
+                        isChecked = field.defaultValue as? Boolean ?: false
+                    }
+                    booleanInputs[field.name] = check
+                    form.addView(check, matchParams())
+                }
+                else -> {
+                    val edit = EditText(activity).apply {
+                        hint = field.name
+                        setSingleLine(true)
+                        if (field.hasDefault) setText(field.defaultValue?.toString().orEmpty())
+                        inputType = when (field.type) {
+                            "integer" -> InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_SIGNED
+                            "number" -> InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_SIGNED or InputType.TYPE_NUMBER_FLAG_DECIMAL
+                            else -> InputType.TYPE_CLASS_TEXT
+                        }
+                    }
+                    textInputs[field.name] = edit
+                    form.addView(edit, matchParams())
+                }
+            }
+        }
+
+        AlertDialog.Builder(activity)
+            .setTitle("Tool অনুমোদন")
+            .setMessage("Tool: $toolName\\nRisk: $risk\\n\\nSchema অনুযায়ী তথ্য দিন। চালালে এই call-এর জন্য স্পষ্ট অনুমোদন দেওয়া হবে।")
+            .setView(form)
+            .setNegativeButton("বাতিল", null)
+            .setPositiveButton("অনুমোদন করে চালান") { _, _ ->
+                val textValues = textInputs.mapValues { it.value.text.toString() }
+                val boolValues = booleanInputs.mapValues { it.value.isChecked }
+                val enumIndices = enumInputs.mapValues { it.value.selectedItemPosition }
+                val args = McpSchemaForm.parse(fields, textValues, boolValues, enumIndices)
+                    .getOrElse {
+                        onStatus("Form input সঠিক নয়: ${it.message}")
+                        return@setPositiveButton
+                    }
+                if (!McpArgumentsValidator.validate(schema, args, requiredFields)) {
+                    onStatus("Form-এর তথ্য JSON Schema অনুযায়ী বৈধ নয়।")
+                    return@setPositiveButton
+                }
+                executeApprovedToolCall(toolId, toolName, args)
+            }
+            .show()
+    }
+
+    private fun executeApprovedToolCall(
+        toolId: String,
+        toolName: String,
+        args: Map<String, Any?>
+    ) {
+        val service = PluginDashboardSession.service
+        if (service == null) {
+            onStatus("Connector session সক্রিয় নেই।")
+            return
+        }
+        worker.execute {
+            val grant = service.issueApprovalGrant(toolId, args).getOrElse { error ->
+                activity.runOnUiThread { onStatus("অনুমোদন তৈরি হয়নি: ${error.message}") }
+                return@execute
+            }
+            service.callTool(toolId, args, approvalGrant = grant).onSuccess { output ->
+                activity.runOnUiThread {
+                    handleToolOutput(toolId, toolName, args, output, 0)
+                }
+            }.onFailure { error ->
+                activity.runOnUiThread { onStatus("Tool call ব্যর্থ: ${error.message}") }
+            }
+        }
+    }
+
+    private fun requestJsonToolCall(toolId: String, toolName: String, risk: String) {
         val input = EditText(activity).apply {
             hint = """{"key":"value"}"""
             setText("{}")
