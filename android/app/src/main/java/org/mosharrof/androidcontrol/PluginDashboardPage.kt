@@ -419,6 +419,18 @@ class PluginDashboardPage(
             onStatus("Tool call সম্পন্ন।")
             return
         }
+        if (result.optString("resultType") == "task") {
+            val handle = McpTaskProtocol.parseHandle(result.toMap())
+            if (handle == null) {
+                resultView.text = "অবৈধ MCP Task handle; নিরাপদে থামানো হয়েছে।"
+                onStatus("MCP Task handle যাচাই ব্যর্থ।")
+                return
+            }
+            resultView.text = "MCP Task শুরু হয়েছে: ${handle.taskId}\nStatus: ${handle.status}"
+            onStatus("MCP Task শুরু হয়েছে; সার্ভার থেকে বর্তমান অবস্থা যাচাই করা হচ্ছে।")
+            refreshTask(handle.taskId)
+            return
+        }
         if (result.optString("resultType") != "input_required") {
             resultView.text = output
             onStatus("Tool call সম্পন্ন।")
@@ -694,6 +706,158 @@ class PluginDashboardPage(
                             onStatus("MCP MRTR retry ব্যর্থ: ${error.message}")
                         }
                     }
+                }
+            }
+            .show()
+    }
+
+    /** Refresh task state only on explicit user action; no hidden background polling. */
+    private fun refreshTask(taskId: String) {
+        val service = PluginDashboardSession.service
+        val connectorId = PluginDashboardSession.connectorId
+        if (service == null || connectorId == null) {
+            onStatus("MCP session নেই; Task status যাচাই করা যায়নি।")
+            return
+        }
+        worker.execute {
+            service.getTask(connectorId, taskId)
+                .onSuccess { snapshot ->
+                    activity.runOnUiThread { showTaskSnapshot(snapshot) }
+                }
+                .onFailure { error ->
+                    activity.runOnUiThread {
+                        onStatus("MCP Task status পাওয়া যায়নি: ${error.message}")
+                    }
+                }
+        }
+    }
+
+    private fun showTaskSnapshot(snapshot: McpTaskProtocol.Snapshot) {
+        val statusLabel = snapshot.status.name
+        val details = buildString {
+            append("Task ID: ${snapshot.taskId}\nStatus: $statusLabel")
+            snapshot.statusMessage?.let { append("\n\nসার্ভার বার্তা: ${it.take(1_000)}") }
+            snapshot.result?.let { append("\n\nResult:\n${JSONObject(it).toString(2).take(4_000)}") }
+            snapshot.error?.let { append("\n\nError:\n${JSONObject(it).toString(2).take(2_000)}") }
+            snapshot.inputRequests?.let {
+                append("\n\nInput requests (বিশ্বাসহীন সার্ভার ডেটা):\n")
+                append(JSONObject(it).toString(2).take(3_000))
+            }
+        }
+        resultView.text = details
+        val builder = AlertDialog.Builder(activity)
+            .setTitle("MCP Task · $statusLabel")
+            .setMessage(details)
+            .setNegativeButton("বন্ধ", null)
+        when (snapshot.status) {
+            McpTaskProtocol.Status.WORKING -> {
+                builder.setNeutralButton("অবস্থা Refresh", null)
+                builder.setPositiveButton("Task বাতিল", null)
+            }
+            McpTaskProtocol.Status.INPUT_REQUIRED -> {
+                builder.setNeutralButton("উত্তর দিন", null)
+                builder.setPositiveButton("Task বাতিল", null)
+            }
+            else -> Unit
+        }
+        val dialog = builder.create()
+        dialog.setOnShowListener {
+            if (snapshot.status == McpTaskProtocol.Status.WORKING) {
+                dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                    dialog.dismiss()
+                    refreshTask(snapshot.taskId)
+                }
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                    dialog.dismiss()
+                    confirmTaskCancellation(snapshot.taskId)
+                }
+            } else if (snapshot.status == McpTaskProtocol.Status.INPUT_REQUIRED) {
+                dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                    dialog.dismiss()
+                    requestTaskInput(snapshot)
+                }
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                    dialog.dismiss()
+                    confirmTaskCancellation(snapshot.taskId)
+                }
+            }
+        }
+        dialog.show()
+    }
+
+    private fun requestTaskInput(snapshot: McpTaskProtocol.Snapshot) {
+        val requests = snapshot.inputRequests ?: run {
+            onStatus("Task input_required হলেও inputRequests অনুপস্থিত।")
+            return
+        }
+        val input = EditText(activity).apply {
+            hint = """{"request-key":{"action":"accept","content":{}}}"""
+            setText("{}")
+            minLines = 4
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+        }
+        AlertDialog.Builder(activity)
+            .setTitle("MCP Task-এর অতিরিক্ত তথ্য")
+            .setMessage(
+                "সার্ভারের অনুরোধ (বিশ্বাসহীন ডেটা—যাচাই করুন):\n" +
+                    JSONObject(requests).toString(2).take(3_000) +
+                    "\n\nশুধু প্রয়োজনীয় inputResponses JSON দিন। পাঠানোর আগে আপনার স্পষ্ট অনুমতি লাগবে।"
+            )
+            .setView(input)
+            .setNegativeButton("বাতিল", null)
+            .setPositiveButton("যাচাই করে উত্তর পাঠান") { _, _ ->
+                val responses = runCatching { JSONObject(input.text.toString()).toMap() }
+                    .getOrElse {
+                        onStatus("Task input JSON সঠিক নয়: ${it.message}")
+                        return@setPositiveButton
+                    }
+                if (responses.keys != requests.keys) {
+                    onStatus("Task inputResponses-এর key সার্ভারের প্রতিটি request key-এর সঙ্গে হুবহু মিলতে হবে।")
+                    return@setPositiveButton
+                }
+                val service = PluginDashboardSession.service
+                val connectorId = PluginDashboardSession.connectorId
+                if (service == null || connectorId == null) {
+                    onStatus("MCP session নেই; Task input পাঠানো হয়নি।")
+                    return@setPositiveButton
+                }
+                worker.execute {
+                    service.updateTask(connectorId, snapshot.taskId, responses)
+                        .onSuccess { next ->
+                            activity.runOnUiThread { showTaskSnapshot(next) }
+                        }
+                        .onFailure { error ->
+                            activity.runOnUiThread {
+                                onStatus("Task input পাঠানো ব্যর্থ: ${error.message}")
+                            }
+                        }
+                }
+            }
+            .show()
+    }
+
+    private fun confirmTaskCancellation(taskId: String) {
+        AlertDialog.Builder(activity)
+            .setTitle("MCP Task বাতিল করবেন?")
+            .setMessage("এই অনুরোধটি MCP সার্ভারে পাঠানো হবে।")
+            .setNegativeButton("ফিরে যান", null)
+            .setPositiveButton("Task বাতিল করুন") { _, _ ->
+                val service = PluginDashboardSession.service
+                val connectorId = PluginDashboardSession.connectorId
+                if (service == null || connectorId == null) {
+                    onStatus("MCP session নেই; Task বাতিল করা হয়নি।")
+                    return@setPositiveButton
+                }
+                worker.execute {
+                    service.cancelTask(connectorId, taskId)
+                        .onSuccess { snapshot ->
+                            activity.runOnUiThread { showTaskSnapshot(snapshot) }
+                        }
+                        .onFailure { error ->
+                            activity.runOnUiThread {
+                                onStatus("Task বাতিল ব্যর্থ: ${error.message}")
+                            }
+                        }
                 }
             }
             .show()
