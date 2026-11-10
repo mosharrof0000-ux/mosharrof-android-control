@@ -728,7 +728,7 @@ object AiProviderCatalog {
             AiProviderId.XAI, "xAI Grok",
             AiProviderIntegrationDirection.OUTBOUND_MODEL_API,
             AiProviderImplementationStatus.TRANSLATION_ONLY,
-            listOf("https://docs.x.ai/developers/tools/function-calling")
+            listOf("https://docs.x.ai/developers/rest-api-reference/inference/responses", "https://docs.x.ai/developers/tools/function-calling")
         ),
         Definition(
             AiProviderId.ANTHROPIC, "Anthropic Claude",
@@ -736,7 +736,7 @@ object AiProviderCatalog {
             AiProviderImplementationStatus.TRANSLATION_ONLY,
             listOf(
                 "https://platform.claude.com/docs/en/agents-and-tools/tool-use/how-tool-use-works",
-                "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+                "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls",\n                "https://platform.claude.com/docs/en/api/versioning"
             )
         ),
         Definition(
