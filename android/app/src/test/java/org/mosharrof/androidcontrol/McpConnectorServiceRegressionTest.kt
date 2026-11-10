@@ -23,9 +23,11 @@ class McpConnectorServiceRegressionTest {
         private val discoveryErrorCode: Int? = null,
         private val paginatedTools: Boolean = false,
         private val repeatCursor: Boolean = false,
-        private val toolResultType: String = "complete"
+        private val toolResultType: String = "complete",
+        private val taskGetStatuses: List<String> = listOf("working", "completed")
     ) {
         val toolCalls = AtomicInteger(0)
+        val taskGetCalls = AtomicInteger(0)
         val methods = mutableListOf<String>()
         val toolCallMetadata = mutableListOf<Boolean>()
         val toolCallHeaders = mutableListOf<Map<String, String?>>()
@@ -178,6 +180,24 @@ class McpConnectorServiceRegressionTest {
                             page
                         }
 
+                        "tasks/get" -> {
+                            val index = taskGetCalls.getAndIncrement()
+                            val taskStatus = taskGetStatuses.getOrElse(index) {
+                                taskGetStatuses.lastOrNull() ?: "working"
+                            }
+                            JSONObject()
+                                .put("resultType", "complete")
+                                .put("task", taskSnapshot(taskStatus))
+                        }
+
+                        "tasks/update" -> JSONObject()
+                            .put("resultType", "complete")
+                            .put("task", taskSnapshot("working"))
+
+                        "tasks/cancel" -> JSONObject()
+                            .put("resultType", "complete")
+                            .put("task", taskSnapshot("cancelled"))
+
                         "tools/call" -> {
                             toolCalls.incrementAndGet()
                             JSONObject()
@@ -214,6 +234,21 @@ class McpConnectorServiceRegressionTest {
                         .put("result", result)
                         .toString()
                 }
+                private fun taskSnapshot(status: String): JSONObject {
+                    val task = JSONObject()
+                        .put("taskId", "task-1")
+                        .put("status", status)
+                        .put("ttlMs", 60_000)
+                        .put("pollIntervalMs", 10)
+                    if (status == "completed") {
+                        task.put("result", JSONObject().put("content", JSONArray()))
+                    }
+                    if (status == "failed") {
+                        task.put("error", JSONObject().put("code", -1).put("message", "failed"))
+                    }
+                    return task
+                }
+
                 private fun tool(name: String, invalid: Boolean): JSONObject {
                     val schema = if (invalid) {
                         JSONObject().put("type", "string")
@@ -372,6 +407,72 @@ class McpConnectorServiceRegressionTest {
         assertEquals("opaque-state-from-server", retryParams.optString("requestState"))
         assertEquals("hello", retryParams.optJSONObject("arguments")?.optString("text"))
         assertEquals(2, server.toolCalls.get())
+    }
+
+    @Test
+    fun taskGetUpdateAndCancelUseModernTaskEndpoints() {
+        registerConnector()
+        val server = FakeServer()
+        val connectorService = service(server)
+        connectorService.connect("test.mcp").getOrThrow()
+
+        val fetched = connectorService.getTask("test.mcp", "task-1").getOrThrow()
+        assertEquals(McpTaskProtocol.Status.WORKING, fetched.status)
+        val updated = connectorService.updateTask(
+            "test.mcp",
+            "task-1",
+            mapOf("confirm" to mapOf("action" to "accept"))
+        ).getOrThrow()
+        assertEquals(McpTaskProtocol.Status.WORKING, updated.status)
+        val cancelled = connectorService.cancelTask("test.mcp", "task-1").getOrThrow()
+        assertEquals(McpTaskProtocol.Status.CANCELLED, cancelled.status)
+        assertTrue(server.methods.containsAll(listOf("tasks/get", "tasks/update", "tasks/cancel")))
+    }
+
+    @Test
+    fun taskPollingStopsOnTerminalStateAndRespectsInjectedDelay() {
+        registerConnector()
+        val server = FakeServer(taskGetStatuses = listOf("working", "completed"))
+        val connectorService = service(server)
+        connectorService.connect("test.mcp").getOrThrow()
+        val delays = mutableListOf<Long>()
+
+        val snapshot = connectorService.pollTask(
+            connectorId = "test.mcp",
+            taskId = "task-1",
+            maxWaitMs = 1_000,
+            maxPolls = 5,
+            sleeper = { delays.add(it) }
+        ).getOrThrow()
+
+        assertEquals(McpTaskProtocol.Status.COMPLETED, snapshot.status)
+        assertEquals(listOf(10L), delays)
+        assertEquals(2, server.taskGetCalls.get())
+    }
+
+    @Test
+    fun taskPollingRejectsUnboundedArgumentsBeforeNetworkCalls() {
+        registerConnector()
+        val server = FakeServer()
+        val connectorService = service(server)
+        connectorService.connect("test.mcp").getOrThrow()
+
+        assertTrue(connectorService.pollTask("test.mcp", "task-1", maxWaitMs = 300_001).isFailure)
+        assertTrue(connectorService.pollTask("test.mcp", "task-1", maxPolls = 101).isFailure)
+        assertEquals(0, server.taskGetCalls.get())
+    }
+
+    @Test
+    fun taskOperationsRejectDisconnectedConnectorAndEmptyAnswers() {
+        registerConnector()
+        val server = FakeServer()
+        val connectorService = service(server)
+
+        assertTrue(connectorService.getTask("test.mcp", "task-1").isFailure)
+        connectorService.connect("test.mcp").getOrThrow()
+        assertTrue(connectorService.updateTask("test.mcp", "task-1", emptyMap()).isFailure)
+        connectorService.disconnect("test.mcp").getOrThrow()
+        assertTrue(connectorService.cancelTask("test.mcp", "task-1").isFailure)
     }
 
     @Test
