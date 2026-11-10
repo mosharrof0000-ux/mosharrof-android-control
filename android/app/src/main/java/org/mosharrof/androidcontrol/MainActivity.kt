@@ -333,9 +333,20 @@ class MainActivity : Activity() {
             addView(aiModel)
             addView(aiEndpoint)
             addView(aiKey)
-            addButton("Gemini সেটিং সংরক্ষণ") { saveAiConfig(AiEngine.Provider.GEMINI) }
-            addButton("OpenAI-compatible সেটিং সংরক্ষণ") {
+            addButton("পুরোনো Gemini সেটিং সংরক্ষণ") { saveAiConfig(AiEngine.Provider.GEMINI) }
+            addButton("পুরোনো OpenAI-compatible সেটিং সংরক্ষণ") {
                 saveAiConfig(AiEngine.Provider.OPENAI_COMPATIBLE)
+            }
+            addHeading(this, "Multi-AI Profile Manager")
+            addButton("নতুন Provider Profile যোগ করুন") { showAddProviderProfileDialog() }
+            addButton("সংরক্ষিত Profile দেখুন / Active নির্বাচন") { showProviderProfilesDialog() }
+            addButton("পুরোনো Gemini সেটিং Profile-এ স্থানান্তর") {
+                val migrated = runCatching { AiEngine.migrateLegacyConfigToProfile(this@MainActivity) }
+                status.text = migrated.fold(
+                    { if (it) "পুরোনো Gemini সেটিং Profile-এ স্থানান্তরিত হয়েছে।" else "স্থানান্তর করা হয়নি: সক্রিয় Profile আছে বা পুরোনো Gemini সেটিং নেই।" },
+                    { "স্থানান্তর ব্যর্থ: ${it.message}" }
+                )
+                report.text = providerProfilesReport()
             }
             addView(aiPrompt)
             addButton("AI-কে প্রশ্ন পাঠান") { runAi() }
@@ -440,6 +451,116 @@ class MainActivity : Activity() {
         } else {
             "Accessibility অনুমতি চালু করুন, তারপর আবার চেষ্টা করুন।"
         }
+    }
+
+    private fun showAddProviderProfileDialog() {
+        val providers = arrayOf("Gemini", "OpenAI Responses", "xAI Responses", "Anthropic Messages", "Custom OpenAI-compatible")
+        val ids = arrayOf(AiProviderId.GEMINI, AiProviderId.OPENAI, AiProviderId.XAI, AiProviderId.ANTHROPIC, AiProviderId.CUSTOM)
+        AlertDialog.Builder(this)
+            .setTitle("Provider নির্বাচন করুন")
+            .setItems(providers) { _, index -> buildProviderProfileForm(ids[index]) }
+            .setNegativeButton("বাতিল", null)
+            .show()
+    }
+
+    private fun buildProviderProfileForm(provider: AiProviderId) {
+        val form = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 8, 24, 0)
+        }
+        fun field(hintText: String, secret: Boolean = false): EditText =
+            EditText(this).apply {
+                hint = hintText
+                setSingleLine(true)
+                if (secret) inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                    android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+                form.addView(this)
+            }
+        val id = field("Profile ID (যেমন: gemini-main)")
+        val model = field("Model ID")
+        val endpoint = if (provider == AiProviderId.CUSTOM) field("Custom HTTPS endpoint") else null
+        val key = field("API Key (গোপন)", secret = true)
+        val scroll = ScrollView(this).apply { addView(form) }
+        AlertDialog.Builder(this)
+            .setTitle("নতুন ${provider.name} Profile")
+            .setView(scroll)
+            .setNegativeButton("বাতিল", null)
+            .setPositiveButton("এনক্রিপ্ট করে সংরক্ষণ", null)
+            .create().also { dialog ->
+                dialog.setOnShowListener {
+                    dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                        runCatching {
+                            AiEngine.saveProviderProfile(
+                                this,
+                                id.text.toString().trim(),
+                                provider,
+                                model.text.toString().trim(),
+                                key.text.toString(),
+                                endpoint?.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                            )
+                        }.onSuccess {
+                            key.text.clear()
+                            dialog.dismiss()
+                            status.text = "Provider Profile নিরাপদে সংরক্ষিত হয়েছে।"
+                            report.text = providerProfilesReport()
+                        }.onFailure {
+                            status.text = "Profile সংরক্ষণ ব্যর্থ: ${it.message}"
+                        }
+                    }
+                }
+                dialog.show()
+            }
+    }
+
+    private fun providerProfilesReport(): String {
+        val profiles = AiEngine.providerProfiles(this)
+        val activeId = runCatching { AiProviderProfileStore.active(this)?.summary?.id }.getOrNull()
+        return buildString {
+            append("সংরক্ষিত AI Provider Profile: ${profiles.size}\\n\\n")
+            profiles.forEach { profile ->
+                append("${if (profile.id == activeId) "● ACTIVE" else "○"} ${profile.id}\\n")
+                append("Provider: ${profile.provider} | Model: ${profile.model}\\n")
+                profile.endpoint?.let { append("Endpoint: $it\\n") }
+                append("Credential: encrypted / hidden\\n\\n")
+            }
+            if (profiles.isEmpty()) append("কোনো Profile সংরক্ষিত নেই।")
+        }
+    }
+
+    private fun showProviderProfilesDialog() {
+        val profiles = AiEngine.providerProfiles(this)
+        if (profiles.isEmpty()) {
+            report.text = providerProfilesReport()
+            status.text = "কোনো Provider Profile নেই।"
+            return
+        }
+        val labels = profiles.map { "${it.id} — ${it.provider} — ${it.model}" }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Active Profile নির্বাচন করুন")
+            .setItems(labels) { _, index ->
+                val selected = profiles[index]
+                AlertDialog.Builder(this)
+                    .setTitle(selected.id)
+                    .setItems(arrayOf("এই Profile Active করুন", "Profile মুছে ফেলুন")) { _, action ->
+                        when (action) {
+                            0 -> runCatching { AiEngine.setActiveProviderProfile(this, selected.id) }
+                                .onSuccess { status.text = "Active Provider: ${selected.id}"; report.text = providerProfilesReport() }
+                                .onFailure { status.text = "Active নির্বাচন ব্যর্থ: ${it.message}" }
+                            1 -> AlertDialog.Builder(this)
+                                .setTitle("Profile মুছে ফেলবেন?")
+                                .setMessage("Profile metadata ও encrypted credential মুছে যাবে।")
+                                .setNegativeButton("না", null)
+                                .setPositiveButton("মুছে ফেলুন") { _, _ ->
+                                    runCatching { AiEngine.deleteProviderProfile(this, selected.id) }
+                                        .onSuccess { status.text = "Profile মুছে ফেলা হয়েছে।"; report.text = providerProfilesReport() }
+                                        .onFailure { status.text = "মুছতে ব্যর্থ: ${it.message}" }
+                                }.show()
+                        }
+                    }.setNegativeButton("ফিরে যান", null).show()
+            }
+            .setNegativeButton("বন্ধ", null)
+            .show()
+        report.text = providerProfilesReport()
     }
 
     private fun saveAiConfig(provider: AiEngine.Provider) {
