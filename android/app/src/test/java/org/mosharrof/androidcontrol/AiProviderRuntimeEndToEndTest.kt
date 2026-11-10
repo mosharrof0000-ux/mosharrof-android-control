@@ -16,6 +16,7 @@ import java.util.concurrent.atomic.AtomicInteger
 class AiProviderRuntimeEndToEndTest {
     private class FakeMcpServer {
         val calls = AtomicInteger(0)
+        @Volatile var failToolCall: Boolean = false
 
         fun connection(url: URL): HttpURLConnection = object : HttpURLConnection(url) {
             private val request = ByteArrayOutputStream()
@@ -60,6 +61,17 @@ class AiProviderRuntimeEndToEndTest {
                         ))
                     "tools/call" -> {
                         calls.incrementAndGet()
+                        if (failToolCall) {
+                            status = 200
+                            response = JSONObject()
+                                .put("jsonrpc", "2.0")
+                                .put("id", id)
+                                .put("error", JSONObject()
+                                    .put("code", -32000)
+                                    .put("message", "simulated MCP execution failure"))
+                                .toString()
+                            return
+                        }
                         JSONObject()
                             .put("resultType", "complete")
                             .put("content", JSONArray().put(
@@ -231,4 +243,94 @@ class AiProviderRuntimeEndToEndTest {
         assertEquals(0, server.calls.get())
         assertEquals(2, requests.size)
     }
+
+    @Test fun mcpExecutionFailureIsReturnedToProviderAndConversationContinues() {
+        val server = FakeMcpServer().apply { failToolCall = true }
+        val service = connectedService(server)
+        val requests = mutableListOf<AiProviderHttpRequest>()
+        val responses = ArrayDeque(listOf(functionCall(), finalText()))
+
+        val answer = AiProviderRuntime.runConversation(
+            profile = profile(),
+            prompt = "look this up",
+            service = service,
+            approve = { true },
+            post = { request ->
+                requests += request
+                if (requests.size == 2) {
+                    val input = request.body["input"] as List<*>
+                    val result = input.filterIsInstance<Map<*, *>>()
+                        .first { it["type"] == "function_result" }
+                    assertEquals(true, result["is_error"])
+                    assertTrue(result.toString().contains("simulated MCP execution failure"))
+                }
+                responses.removeFirst()
+            }
+        )
+
+        assertEquals("final answer", answer)
+        assertEquals(1, server.calls.get())
+        assertEquals(2, requests.size)
+    }
+
+    @Test fun unknownToolIsDeniedAndNeverSentToMcp() {
+        val server = FakeMcpServer()
+        val service = connectedService(server)
+        val requests = mutableListOf<AiProviderHttpRequest>()
+        val unknownCall = mapOf<String, Any?>(
+            "steps" to listOf(mapOf(
+                "type" to "function_call",
+                "id" to "provider-call-unknown",
+                "name" to "delete_everything",
+                "arguments" to emptyMap<String, Any?>()
+            ))
+        )
+        val responses = ArrayDeque(listOf(unknownCall, finalText()))
+
+        val answer = AiProviderRuntime.runConversation(
+            profile = profile(),
+            prompt = "run a plugin",
+            service = service,
+            approve = { error("Unknown tool must not request approval") },
+            post = { request ->
+                requests += request
+                if (requests.size == 2) {
+                    val input = request.body["input"] as List<*>
+                    val result = input.filterIsInstance<Map<*, *>>()
+                        .first { it["type"] == "function_result" }
+                    assertEquals(true, result["is_error"])
+                    assertTrue(result.toString().contains("Unknown"))
+                }
+                responses.removeFirst()
+            }
+        )
+
+        assertEquals("final answer", answer)
+        assertEquals(0, server.calls.get())
+        assertEquals(2, requests.size)
+    }
+
+    @Test fun continuationRoundLimitStopsFurtherToolExecution() {
+        val server = FakeMcpServer()
+        val service = connectedService(server)
+        var requests = 0
+
+        val failure = runCatching {
+            AiProviderRuntime.runConversation(
+                profile = profile(),
+                prompt = "keep using the tool",
+                service = service,
+                approve = { true },
+                post = {
+                    requests++
+                    functionCall()
+                }
+            )
+        }.exceptionOrNull()
+
+        assertTrue(failure?.message.orEmpty().contains("continuation limit"))
+        assertEquals(AiProviderRuntime.MAX_CONTINUATION_ROUNDS + 1, requests)
+        assertEquals(AiProviderRuntime.MAX_CONTINUATION_ROUNDS, server.calls.get())
+    }
+
 }
