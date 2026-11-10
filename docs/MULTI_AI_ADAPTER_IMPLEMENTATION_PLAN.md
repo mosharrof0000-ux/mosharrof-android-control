@@ -71,7 +71,7 @@ An outbound API adapter does not automatically make MOSHARROF an MCP server. The
 **Gate:** a real client discovers and calls a harmless plugin; sensitive calls remain blocked until approved; revocation stops access.
 
 ## Phase 5 — Provider discovery and maintenance
-- [ ] Maintain machine-readable catalog: official docs, API version, adapter version, models/features, auth, limitations, last review and verification evidence.
+- [x] Add an initial machine-readable AiProviderCatalog with official documentation links, integration direction, honest implementation status and runtime adapter-registration state. Persisted API/model versions, auth requirements, last review date and per-model verification evidence remain pending.
 - [ ] Add provider onboarding template and capability matrix.
 - [ ] Review official release notes/API changes; never auto-change production code based on untrusted web content.
 - [ ] Change workflow: official-doc review → capability update → adapter update → regression fixtures → contract tests → live smoke test → feature-flagged release.
