@@ -148,7 +148,33 @@ object RelayClient {
         return output.toString(Charsets.UTF_8.name())
     }
 
+    private class RelayHttpException(val statusCode: Int, message: String) : IOException(message)
+
     private fun request(url: String, method: String, bearer: String, body: String? = null): JSONObject {
+        // Pairing creates a new device token and is intentionally never retried.
+        // GET polling and result submission are idempotent and may use bounded retries.
+        val retryable = method == "GET" || (method == "POST" && url.endsWith("/result"))
+        var attempt = 0
+        while (true) {
+            try {
+                return requestOnce(url, method, bearer, body)
+            } catch (error: IOException) {
+                val retryableStatus = error !is RelayHttpException ||
+                    error.statusCode in setOf(408, 425, 429, 500, 502, 503, 504)
+                if (!retryable || !retryableStatus || attempt >= 2) throw error
+                val delayMs = (500L shl attempt).coerceAtMost(2000L)
+                try {
+                    Thread.sleep(delayMs)
+                } catch (interrupted: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    throw IOException("Relay retry interrupted.", interrupted)
+                }
+                attempt++
+            }
+        }
+    }
+
+    private fun requestOnce(url: String, method: String, bearer: String, body: String?): JSONObject {
         val connection = URL(url).openConnection() as HttpURLConnection
         try {
             connection.requestMethod = method
@@ -167,7 +193,8 @@ object RelayClient {
             val stream = if (status in 200..299) connection.inputStream else connection.errorStream
             val text = readLimited(stream)
             val json = runCatching { JSONObject(text) }.getOrElse { JSONObject() }
-            if (status !in 200..299) throw IllegalStateException(
+            if (status !in 200..299) throw RelayHttpException(
+                status,
                 "Relay HTTP $status: " + json.optString("error", "unexpected_response").take(200)
             )
             return json
