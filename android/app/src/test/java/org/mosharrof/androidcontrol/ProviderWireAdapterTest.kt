@@ -168,4 +168,19 @@ class ProviderWireAdapterTest {
         }
     }
 
+
+    @Test fun vendorProfilesRequireKnownApiVersionAndKeepUnverifiedModelsUnknown() {
+        val gemini = GeminiFunctionCallingAdapter().capabilityProfile("gemini-model", "v1beta")
+        assertEquals(CapabilitySupport.UNKNOWN, gemini.capabilities[AiCapability.TOOL_CALLING])
+        assertThrows(IllegalArgumentException::class.java) {
+            OpenAiResponsesFunctionCallingAdapter().capabilityProfile("model", "v2")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            XaiChatCompletionsFunctionCallingAdapter().capabilityProfile("model", "v2")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            AnthropicMessagesToolUseAdapter().capabilityProfile("model", "v1")
+        }
+    }
+
 }
