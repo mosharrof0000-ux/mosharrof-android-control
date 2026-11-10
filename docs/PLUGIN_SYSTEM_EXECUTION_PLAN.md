@@ -6,19 +6,21 @@ This is the working completion ledger for PR #7 and the Android Plugin System. S
 
 | Workstream | Status | Acceptance gate |
 |---|---|---|
-| Connector registry and least-privilege authorization | Implemented; audit ongoing | Registry and approval-grant unit tests pass |
-| Single-use, argument-bound approval grants | Implemented; audit ongoing | Expiry, replay, mismatch, revoke and capacity tests pass |
+| Connector registry and least-privilege authorization | Implemented; audit ongoing | Registry and approval-grant unit tests pass; re-audit edge cases before release |
+| Single-use, argument-bound approval grants | Implemented; recursive input bound added and CI verified | Expiry, replay, mismatch, revoke, capacity, timestamp overflow and deep-input tests; Android CI run 42804238420 passed |
 | MCP 2026-07-28 discovery and tools/list pagination | Implemented in source | Current-head Android tests pass; real server interoperability remains separate |
 | MCP 2026-07-28 MRTR request envelope | Implemented in source | Input request validation and request-state round-trip tests pass |
 | MRTR user interaction | Implemented as manual JSON entry | Android build passes; real-device UX and server tests remain |
-| Native schema-driven elicitation forms | Pending | Safe typed form generation and schema validation tests |
-| Elicitation URL mode / browser handoff | Implemented in source; current-head CI pending | HTTPS-only URL validation, external browser launch, explicit user response remains required; Android CI run 42803439551 pending |
+| Native schema-driven elicitation forms | Pending | MRTR elicitation/create form mode still uses manual JSON; safe typed response generation and schema validation tests |
+| Native schema-driven tool argument forms | Implemented for flat string/number/integer/boolean/enum fields; complex schemas fall back to JSON | Android unit tests and APK build pass at commit c5ff3c61b830c7f0416e0cbc4c9f9840f42caab9; run 42804709728 |
+| Elicitation URL mode / browser handoff | Implemented and Android CI verified | HTTPS-only URL validation, external browser launch, explicit user response remains required; Android CI run 42803567809 passed |
 | MCP Tasks extension | Pending | Capability negotiation, task polling/update/cancel, bounded lifecycle and recovery tests |
 | OAuth 2.1 / CIMD | Pending | Protected-resource and authorization-server discovery, PKCE browser flow, token refresh and encrypted storage tests |
 | Relay Android client recovery | Implemented in source; audit ongoing | Current-head unit tests and physical-device QA |
 | Relay Worker leases/idempotency/rate limits | Implemented in source | Worker behavioral tests pass; deployed Worker still needs live verification |
 | OpenAPI/Worker/Android contract consistency | Audit pending | Contract tests and generated/import validation |
 | Credential/log leakage review | Pending | Static review plus failure-path tests |
+| MCP argument traversal bounds | Implemented and CI verified | Validation and approval fingerprinting cap depth at 32 and nodes at 2,048; Android CI run 42804238420 passed |
 | Documentation accuracy | Updated for MRTR status; URL-mode ledger updated | Docs match tested code and remaining gaps |
 
 ## External verification gates
