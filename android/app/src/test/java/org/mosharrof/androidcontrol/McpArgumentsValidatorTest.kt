@@ -60,6 +60,44 @@ class McpArgumentsValidatorTest {
     }
 
     @Test
+    fun acceptsNullForRequiredPropertyWhenNullTypeIsDeclared() {
+        val nullableSchema = mapOf<String, Any?>(
+            "type" to "object",
+            "properties" to mapOf(
+                "maybe" to mapOf("type" to listOf("string", "null"))
+            ),
+            "required" to listOf("maybe"),
+            "additionalProperties" to false
+        )
+
+        assertTrue(McpArgumentsValidator.validate(nullableSchema, mapOf("maybe" to null), listOf("maybe")))
+    }
+
+    @Test
+    fun acceptsNullForNestedRequiredPropertyWhenNullTypeIsDeclared() {
+        val nullableNestedSchema = mapOf<String, Any?>(
+            "type" to "object",
+            "properties" to mapOf(
+                "nested" to mapOf(
+                    "type" to "object",
+                    "properties" to mapOf("maybe" to mapOf("type" to "null")),
+                    "required" to listOf("maybe")
+                )
+            ),
+            "required" to listOf("nested"),
+            "additionalProperties" to false
+        )
+
+        assertTrue(
+            McpArgumentsValidator.validate(
+                nullableNestedSchema,
+                mapOf("nested" to mapOf("maybe" to null)),
+                listOf("nested")
+            )
+        )
+    }
+
+    @Test
     fun rejectsWrongPrimitiveType() {
         assertFalse(
             McpArgumentsValidator.validate(
