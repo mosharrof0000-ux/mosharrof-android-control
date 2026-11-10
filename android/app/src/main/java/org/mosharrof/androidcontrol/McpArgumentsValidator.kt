@@ -13,13 +13,125 @@ object McpArgumentsValidator {
         arguments: Map<String, Any?>,
         requiredFields: Collection<String>
     ): Boolean {
-        if (schema["type"] != "object") return false
+        if (schema["type"] != "object" || !supportsSchema(schema)) return false
 
         if (requiredFields.any {
             !arguments.containsKey(it) || arguments[it] == null
         }) return false
 
         return validateValue(schema, arguments, 0, ValidationBudget())
+    }
+
+
+    /**
+     * Validates the schema vocabulary before a remote tool is registered.
+     * Unknown keywords are rejected: silently ignoring a JSON Schema assertion
+     * could make the app approve arguments the server considers invalid.
+     */
+    fun supportsSchema(schema: Map<String, Any?>): Boolean =
+        validateSchemaNode(schema, 0, ValidationBudget())
+
+    private val supportedSchemaKeys = setOf(
+        "$" + "schema", "$" + "id", "$" + "comment",
+        "title", "description", "default", "examples", "deprecated", "readOnly", "writeOnly",
+        "type", "const", "enum", "properties", "required", "additionalProperties", "items",
+        "minItems", "maxItems", "minProperties", "maxProperties", "minLength", "maxLength",
+        "pattern", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"
+    )
+
+    private fun schemaInteger(schema: Map<*, *>, key: String): Int? {
+        if (!schema.containsKey(key)) return null
+        val number = decimal(schema[key]) ?: return null
+        return runCatching { number.intValueExact() }.getOrNull()
+    }
+
+    private fun validateSchemaNode(
+        schema: Map<*, *>,
+        depth: Int,
+        budget: ValidationBudget
+    ): Boolean {
+        if (depth > MAX_ARGUMENT_DEPTH || ++budget.visited > MAX_ARGUMENT_NODES) return false
+        if (schema.keys.any { it !is String || it !in supportedSchemaKeys }) return false
+
+        when (val type = schema["type"]) {
+            null -> Unit
+            is String -> if (type !in setOf("object", "array", "string", "boolean", "integer", "number", "null")) return false
+            is List<*> -> {
+                if (type.isEmpty() || type.size > 7 ||
+                    type.any { it !is String || it !in setOf("object", "array", "string", "boolean", "integer", "number", "null") } ||
+                    type.distinct().size != type.size
+                ) return false
+            }
+            else -> return false
+        }
+
+        if (schema.containsKey("enum")) {
+            val values = schema["enum"] as? List<*> ?: return false
+            if (values.isEmpty() || values.size > 256) return false
+        }
+
+        if (schema.containsKey("required")) {
+            val required = schema["required"] as? List<*> ?: return false
+            if (required.size > 256 || required.any { it !is String || it.isBlank() || it.length > 256 }) return false
+            if (required.distinct().size != required.size) return false
+        }
+
+        if (schema.containsKey("properties")) {
+            val properties = schema["properties"] as? Map<*, *> ?: return false
+            if (properties.size > MAX_ARGUMENT_NODES) return false
+            for ((name, child) in properties) {
+                if (name !is String || name.isBlank() || name.length > 256) return false
+                if (child !is Map<*, *> || !validateSchemaNode(child, depth + 1, budget)) return false
+            }
+        }
+
+        when (val additional = schema["additionalProperties"]) {
+            null, is Boolean -> Unit
+            is Map<*, *> -> if (!validateSchemaNode(additional, depth + 1, budget)) return false
+            else -> return false
+        }
+
+        if (schema.containsKey("items")) {
+            val items = schema["items"] as? Map<*, *> ?: return false
+            if (!validateSchemaNode(items, depth + 1, budget)) return false
+        }
+
+        for (key in listOf("minItems", "maxItems", "minProperties", "maxProperties", "minLength", "maxLength")) {
+            if (schema.containsKey(key)) {
+                val value = schemaInteger(schema, key) ?: return false
+                if (value < 0 || value > 1_000_000) return false
+            }
+        }
+        val minItems = schemaInteger(schema, "minItems")
+        val maxItems = schemaInteger(schema, "maxItems")
+        val minProperties = schemaInteger(schema, "minProperties")
+        val maxProperties = schemaInteger(schema, "maxProperties")
+        val minLength = schemaInteger(schema, "minLength")
+        val maxLength = schemaInteger(schema, "maxLength")
+        if (minItems != null && maxItems != null && minItems > maxItems) return false
+        if (minProperties != null && maxProperties != null && minProperties > maxProperties) return false
+        if (minLength != null && maxLength != null && minLength > maxLength) return false
+
+        if (schema.containsKey("pattern")) {
+            val pattern = schema["pattern"] as? String ?: return false
+            if (pattern.length > 2_048 || runCatching { Regex(pattern) }.isFailure) return false
+        }
+
+        for (key in listOf("minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum")) {
+            if (schema.containsKey(key) && decimal(schema[key]) == null) return false
+        }
+        if (schema.containsKey("multipleOf")) {
+            val divisor = decimal(schema["multipleOf"]) ?: return false
+            if (divisor <= BigDecimal.ZERO) return false
+        }
+        for (key in listOf("$" + "schema", "$" + "id", "$" + "comment", "title", "description")) {
+            if (schema.containsKey(key) && (schema[key] !is String || (schema[key] as String).length > 4_096)) return false
+        }
+        for (key in listOf("deprecated", "readOnly", "writeOnly")) {
+            if (schema.containsKey(key) && schema[key] !is Boolean) return false
+        }
+        if (schema.containsKey("examples") && (schema["examples"] !is List<*> || (schema["examples"] as List<*>).size > 16)) return false
+        return true
     }
 
     private fun decimal(value: Any?): BigDecimal? {
