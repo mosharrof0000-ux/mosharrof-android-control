@@ -107,6 +107,10 @@ class McpConnectorService(
                     val schemaObject = item.optJSONObject("inputSchema")
                         ?: error("MCP Tool inputSchema অনুপস্থিত: $name")
 
+                    val inputSchema = schemaObject.toMap()
+                    require(inputSchema["type"] == "object" && McpArgumentsValidator.supportsSchema(inputSchema)) {
+                        "MCP Tool inputSchema-এ অসমর্থিত বা অবৈধ JSON Schema keyword আছে: $name"
+                    }
                     val required = schemaObject.optJSONArray("required").toStringSet()
 
                     val safePart = name
@@ -124,7 +128,7 @@ class McpConnectorService(
                         description = description,
                         risk = ConnectorRegistry.Risk.WRITE,
                         requiredFields = required,
-                        inputSchema = schemaObject.toMap()
+                        inputSchema = inputSchema
                     )
 
                     // A partial registration must fail the whole connection.
