@@ -12,14 +12,14 @@ This is the working completion ledger for PR #7 and the Android Plugin System. S
 | MCP 2026-07-28 MRTR request envelope | Implemented in source | Input request validation and request-state round-trip tests pass |
 | MRTR user interaction | Implemented as manual JSON entry | Android build passes; real-device UX and server tests remain |
 | Native schema-driven elicitation forms | Pending | Safe typed form generation and schema validation tests |
-| Elicitation URL mode / browser handoff | Pending | HTTPS-only external handoff and explicit return/consent handling |
+| Elicitation URL mode / browser handoff | Implemented in source; current-head CI pending | HTTPS-only URL validation, external browser launch, explicit user response remains required; Android CI run 42803439551 pending |
 | MCP Tasks extension | Pending | Capability negotiation, task polling/update/cancel, bounded lifecycle and recovery tests |
 | OAuth 2.1 / CIMD | Pending | Protected-resource and authorization-server discovery, PKCE browser flow, token refresh and encrypted storage tests |
 | Relay Android client recovery | Implemented in source; audit ongoing | Current-head unit tests and physical-device QA |
 | Relay Worker leases/idempotency/rate limits | Implemented in source | Worker behavioral tests pass; deployed Worker still needs live verification |
 | OpenAPI/Worker/Android contract consistency | Audit pending | Contract tests and generated/import validation |
 | Credential/log leakage review | Pending | Static review plus failure-path tests |
-| Documentation accuracy | Updated for MRTR status | Docs match tested code and remaining gaps |
+| Documentation accuracy | Updated for MRTR status; URL-mode ledger updated | Docs match tested code and remaining gaps |
 
 ## External verification gates
 
