@@ -143,13 +143,24 @@ class McpHttpClient(
                 JSONObject(detail).optJSONObject("error")
             }.getOrNull()
             val rpcCode = (rpcError?.opt("code") as? Number)?.toInt()
-            val rpcData = rpcError?.optJSONObject("data")?.let {
-                JSONObject(it.toString())
+            // Keep only the protocol-version hint needed for safe negotiation.
+            // Arbitrary server error bodies can echo Authorization headers or tokens.
+            val rpcData = if (rpcCode == -32022) {
+                rpcError?.optJSONObject("data")?.optJSONArray("supported")?.let { raw ->
+                    val supported = org.json.JSONArray()
+                    for (index in 0 until raw.length()) {
+                        val version = raw.opt(index) as? String ?: continue
+                        if (version.length <= 64) supported.put(version)
+                    }
+                    JSONObject().put("supported", supported)
+                }
+            } else {
+                null
             }
             throw McpHttpException(
                 status,
                 rpcCode,
-                "MCP HTTP $status: ${detail.take(240)}",
+                "MCP HTTP $status request failed",
                 rpcData
             )
             }
