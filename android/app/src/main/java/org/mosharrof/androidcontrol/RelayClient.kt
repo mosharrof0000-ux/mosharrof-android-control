@@ -148,21 +148,29 @@ object RelayClient {
         return output.toString(Charsets.UTF_8.name())
     }
 
+    internal fun isRetryableRequest(method: String, url: String): Boolean =
+        method == "GET" || (method == "POST" && url.endsWith("/result"))
+
+    internal fun isRetryableStatus(statusCode: Int): Boolean =
+        statusCode in setOf(408, 425, 429, 500, 502, 503, 504)
+
+    internal fun retryDelayMs(attempt: Int): Long =
+        (500L shl attempt.coerceIn(0, 2)).coerceAtMost(2000L)
+
     private class RelayHttpException(val statusCode: Int, message: String) : IOException(message)
 
     private fun request(url: String, method: String, bearer: String, body: String? = null): JSONObject {
         // Pairing creates a new device token and is intentionally never retried.
         // GET polling and result submission are idempotent and may use bounded retries.
-        val retryable = method == "GET" || (method == "POST" && url.endsWith("/result"))
+        val retryable = isRetryableRequest(method, url)
         var attempt = 0
         while (true) {
             try {
                 return requestOnce(url, method, bearer, body)
             } catch (error: IOException) {
-                val retryableStatus = error !is RelayHttpException ||
-                    error.statusCode in setOf(408, 425, 429, 500, 502, 503, 504)
+                val retryableStatus = error !is RelayHttpException || isRetryableStatus(error.statusCode)
                 if (!retryable || !retryableStatus || attempt >= 2) throw error
-                val delayMs = (500L shl attempt).coerceAtMost(2000L)
+                val delayMs = retryDelayMs(attempt)
                 try {
                     Thread.sleep(delayMs)
                 } catch (interrupted: InterruptedException) {
