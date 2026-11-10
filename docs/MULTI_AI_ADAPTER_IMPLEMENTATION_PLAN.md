@@ -14,7 +14,7 @@ An outbound API adapter does not automatically make MOSHARROF an MCP server. The
 ## Phase 0 — Baseline and canonical contract
 - [ ] Inventory current AI code, MCP client, relay, connector registry, approval grants, secret storage, UI and tests.
 - [ ] Record provider-specific assumptions. Current AiEngine supports Gemini generateContent text requests and a generic OpenAI-compatible chat-completions format; this is not a complete multi-provider tool-calling layer.
-- [ ] Define canonical models: ProviderId, ModelId, ProviderConfig, CapabilityProfile, PluginDefinition, CanonicalToolCall, CanonicalToolResult, CanonicalError, stream event and cancellation.
+- [x] Define initial canonical models: ProviderId, ModelId, ProviderConfig, CapabilityProfile, PluginDefinition, CanonicalToolCall and CanonicalToolResult. CanonicalError, stream event and cancellation contracts remain pending.
 - [ ] Define a versioned canonical JSON Schema subset.
 - [ ] Define lifecycle: proposed → validated → approval-pending → approved/denied → executing → completed/failed/cancelled.
 - [ ] Preserve call IDs and argument integrity across conversions; reject ambiguous or malformed payloads.
@@ -22,15 +22,15 @@ An outbound API adapter does not automatically make MOSHARROF an MCP server. The
 **Gate:** canonical contract tests pass; provider-specific payloads do not leak into core runtime.
 
 ## Phase 1 — Core adapter framework
-- [ ] Add AiProviderAdapter interface for identity, configuration validation, capabilities, model listing where supported, request translation, tool-call parsing, result continuation, streaming, cancellation and normalized errors.
-- [ ] Add AiProviderRegistry with deterministic registration, duplicate rejection, adapter version and provider status.
-- [ ] Add capability profiles with SUPPORTED / UNSUPPORTED / UNKNOWN per feature, model and API version.
-- [ ] Project ConnectorRegistry tools into a provider-neutral ToolCatalog.
+- [x] Add initial AiProviderAdapter interface for provider identity, configuration validation, capability profiles, tool-definition translation, tool-call parsing and result continuation. Model listing, streaming, cancellation and normalized transport errors remain pending.
+- [x] Add AiProviderRegistry with duplicate rejection, adapter version and built-in registration for Gemini/OpenAI. Provider health/status persistence remains pending.
+- [x] Add capability profiles with SUPPORTED / UNSUPPORTED / UNKNOWN per feature, model and API version; initial profiles are conservative and leave unverified capabilities UNKNOWN.
+- [x] Project ConnectorRegistry tools into a provider-neutral ToolCatalog snapshot.
 - [ ] Add schema conversion; unsupported constraints must be rejected or explicitly explained, never silently dropped.
 - [ ] Add common bounded HTTPS transport: redirects disabled, timeouts, response caps, retry classification and redacted diagnostics.
 - [ ] Store provider/account credentials separately using Android Keystore; never log secrets.
 - [ ] Keep ConnectorRegistry authorization and ToolApprovalGrants as the final authority for every adapter.
-- [ ] Add a shared adapter contract test suite.
+- [x] Add initial shared adapter contract and Gemini/OpenAI wire-format tests; broaden with fuzzing, malformed payload and live fixtures.
 **Gate:** fake adapter passes contract suite; malformed provider responses cannot bypass validation or approval.
 
 ## Phase 2 — Safe tool execution loop
@@ -47,8 +47,8 @@ An outbound API adapter does not automatically make MOSHARROF an MCP server. The
 **Gate:** identical mock plugin behavior and approval outcomes across adapters; replay, duplicate, mismatch and timeout tests pass.
 
 ## Phase 3 — Provider adapters, one at a time
-- [ ] Google Gemini API: native function declarations, functionCall/functionResponse round-trip, schema subset, safety/finish reasons, streaming and model capability matrix. Existing text-only request path is insufficient.
-- [ ] OpenAI official API: current Responses API tool flow, result continuation, streaming and structured outputs; keep legacy compatibility separate if needed. Do not equate generic OpenAI-compatible APIs with official OpenAI.
+- [x] Initial Google Gemini generateContent function declaration, functionCall parsing and functionResponse encoding adapter added. Safety/finish reasons, model-specific capability verification, streaming and live API round-trip remain pending.
+- [x] Initial official OpenAI Responses API function-tool definition, function_call parsing and function_call_output continuation adapter added. Network orchestration, streaming, strict-schema normalization and live API round-trip remain pending.
 - [ ] xAI Grok: official API auth, tool declarations/calls, result continuation, streaming and model-specific capabilities.
 - [ ] Anthropic Claude: Messages API tool-use/tool-result blocks, stop reasons, streaming and schema limitations.
 - [ ] Microsoft: first identify exact product (Copilot Studio, Microsoft 365 Copilot extensibility, or another official API). Implement only against documented permitted interfaces. Do not assume consumer Copilot has a general public tool-calling API.
