@@ -2,6 +2,8 @@ package org.mosharrof.androidcontrol
 
 internal object EncryptedSecretEnvelope {
 
+    private const val MAX_ENVELOPE_CHARS = 48_000
+
     data class Payload(
         val iv: ByteArray,
         val ciphertext: ByteArray
@@ -12,6 +14,9 @@ internal object EncryptedSecretEnvelope {
         expectedVersion: String,
         decode: (String) -> ByteArray
     ): Payload {
+        require(value.length <= MAX_ENVELOPE_CHARS) {
+            "সংরক্ষিত encrypted secret নির্ধারিত আকার অতিক্রম করেছে।"
+        }
         val parts = value.split(".", limit = 3)
         require(parts.size == 3 && parts[0] == expectedVersion) {
             "সংরক্ষিত encrypted secret-এর format বা version সঠিক নয়।"
@@ -23,6 +28,9 @@ internal object EncryptedSecretEnvelope {
         value: String,
         decode: (String) -> ByteArray
     ): Payload {
+        require(value.length <= MAX_ENVELOPE_CHARS) {
+            "সংরক্ষিত encrypted secret নির্ধারিত আকার অতিক্রম করেছে।"
+        }
         val parts = value.split(".", limit = 2)
         require(parts.size == 2) {
             "সংরক্ষিত encrypted secret-এর তথ্য সঠিক নয়।"
