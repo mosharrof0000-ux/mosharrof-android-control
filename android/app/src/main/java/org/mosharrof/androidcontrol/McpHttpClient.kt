@@ -184,8 +184,8 @@ class McpHttpClient(
                 "MCP response-এ result অথবা error—একটি থাকতে হবে।"
             }
 
-            // MCP 2026-07-28 requires resultType on successful results.
-            // This client currently implements only the complete result type.
+            // Preserve the modern wire discriminator here; the service layer decides
+            // whether this app can safely consume the returned result type.
             if (modern && response.has("result")) {
                 val resultObject = response.optJSONObject("result")
                     ?: throw IOException("আধুনিক MCP result অবজেক্ট নয়।")
