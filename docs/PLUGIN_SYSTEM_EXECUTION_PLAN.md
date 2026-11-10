@@ -26,8 +26,8 @@ This is the working completion ledger for PR #7 and the Android Plugin System. S
 | OpenAPI/Worker/Android contract consistency | Audit pending | Contract tests and generated/import validation |
 | Credential/log leakage review | Partial static audit and regression tests pass | HTTP error bodies are no longer copied into exception messages; only the supported-version hint is retained for -32022; encrypted secret envelopes are capped at 48,000 characters before Base64 decoding. A focused regex scan of 10 security-sensitive source/config files found no common API-key/token/PEM/Bearer patterns (not a whole-repository/history audit). Android Keystore instrumentation and full tracked-source/history log audit remain pending |
 | MCP argument traversal bounds | Implemented and CI verified | Validation and approval fingerprinting cap depth at 32 and nodes at 2,048; Android CI run 42804238420 passed |
-| AI request/response resource bounds | Implemented and current-head CI verified | API key ≤8,192 chars, model ≤128 chars, prompt ≤64 KiB, response ≤256 KiB; bounded stream reader regression tests; Android CI run 42819796245 passed at head 1b668ede28ff3f7641a20343b3627be8991d4dff |
-| Documentation accuracy | Updated with current evidence-backed Tasks, OAuth, AI-bounds, Worker and credential-audit status | Android CI run 42819796245 passed (unit tests, debug APK assemble, APK upload) and Worker CI run 42819796066 passed for head 1b668ede28ff3f7641a20343b3627be8991d4dff; external and release gates remain explicitly pending |
+| AI request/response resource bounds | Implemented and CI verified at 73df7108318f84d5684cbed367970254b395d5ba | API key ≤8,192 chars, model ≤128 chars, prompt ≤64 KiB, response ≤256 KiB; provider tool arguments bounded to depth 32 / 2,048 nodes; Android CI run 42825622524 passed |
+| Documentation accuracy | Updated with current evidence-backed Tasks, OAuth, AI-bounds, Worker and credential-audit status | Android CI run 42825622524 passed (unit tests, debug APK assemble, APK upload) and Worker CI run 42825622132 passed for head 73df7108318f84d5684cbed367970254b395d5ba; external and release gates remain explicitly pending |
 
 ## External verification gates
 
@@ -91,3 +91,14 @@ This is the working completion ledger for PR #7 and the Android Plugin System. S
 - `AiEngine.ask` now routes its existing Gemini generateContent and OpenAI-compatible Chat Completions requests through `AiProviderHttpTransport`, removing its separate direct `HttpURLConnection` implementation and duplicate JSON request construction.
 - This does not yet enable Gemini Interactions, official OpenAI Responses, xAI Responses or Anthropic Messages in the UI. The new request factory, provider adapters, per-provider credential profiles, provider-specific conversation continuation and tool-call execution loop remain pending integration.
 - Fresh CI verification is pending for commit `d006ddd2f64a63590d944cb379990429af95af74` and subsequent documentation updates. Earlier passing CI at `1b668ede28ff3f7641a20343b3627be8991d4dff` does not verify this new source change.
+
+
+## 2026-11-10 verified provider transport and argument hardening
+
+- Latest verified PR head: `73df7108318f84d5684cbed367970254b395d5ba`.
+- Android CI run `42825622524` passed: Android unit tests, debug APK assembly and artifact upload all succeeded.
+- Cloudflare Worker CI run `42825622132` passed.
+- CI artifact `mosharrof-android-control-debug`, artifact ID `13768487632`, size 2,362,235 bytes; artifact is build output only and has not been installed or physically tested.
+- `AiEngine.ask` now uses the shared bounded HTTPS transport for its legacy Gemini generateContent / generic OpenAI-compatible Chat Completions requests. Direct `HttpURLConnection` usage and duplicate legacy request-body construction were removed. Custom endpoints reject URL query strings, userinfo and fragments.
+- Provider-generated tool arguments now have canonical depth/node/key/string bounds, and recursive JSON conversion is bounded. Regression tests for deep and oversized arguments passed in Android CI.
+- The four new provider adapters and request factory are still not integrated into the UI/engine. Per-provider credential profiles, provider-specific continuation/history, tool orchestration and native approval UI wiring remain pending.

@@ -135,3 +135,13 @@ Do not code five unrelated clients in parallel. Stabilize the common contract fi
 - `AiEngine.ask` now builds its existing Gemini generateContent / generic OpenAI-compatible Chat Completions request through `AiProviderHttpRequest` and sends it with `AiProviderHttpTransport`; the duplicate direct `HttpURLConnection` path and duplicate JSON request builder were removed.
 - This is a transport consolidation only. The legacy two-provider text API is unchanged. The new Gemini Interactions, OpenAI Responses, xAI Responses and Anthropic Messages adapters and `AiProviderRequestFactory` are not yet integrated into `AiEngine`; tool execution and continuation remain pending.
 - The new source commit requires a fresh Android CI run. The previously successful CI run `42819796245` applies to the earlier head `1b668ede28ff3f7641a20343b3627be8991d4dff`, not this code change.
+
+
+## 2026-11-10 provider argument hardening and verified build
+
+- Added `CanonicalArgumentBounds` to reject provider tool-call arguments deeper than 32 levels, wider than 2,048 visited nodes, keys longer than 256 characters, oversized string values and unsupported value types before the call reaches the authorization guard.
+- Bounded recursive JSON object/array conversion in the Responses and legacy compatibility adapters so hostile nested JSON cannot recurse without a depth/node ceiling before canonical validation.
+- Added regression tests for deeply nested JSON and oversized canonical argument trees.
+- Consolidated the legacy AiEngine text path onto `AiProviderHttpTransport`; the new four-provider request factory and adapters remain unintegrated, and tool-call continuation remains pending.
+- Android CI run `42825622524` passed on head `73df7108318f84d5684cbed367970254b395d5ba`: unit tests, debug APK assembly and artifact upload succeeded. Cloudflare Worker CI run `42825622132` passed on the same head.
+- Debug APK artifact `mosharrof-android-control-debug` (artifact ID `13768487632`, 2,362,235 bytes) was uploaded by CI. It has not been installed on a physical device.
