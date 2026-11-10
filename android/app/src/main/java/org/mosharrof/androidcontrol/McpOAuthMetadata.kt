@@ -62,9 +62,18 @@ internal object McpOAuthMetadata {
     private fun isValidRedirectUri(value: String?): Boolean = runCatching {
         if (value.isNullOrBlank() || value.length > 2_048) return false
         val uri = URI(value)
-        !uri.scheme.isNullOrBlank() &&
-            uri.userInfo == null &&
-            uri.fragment == null &&
-            !uri.scheme.equals("javascript", true)
+        val scheme = uri.scheme ?: return false
+        val safeScheme = scheme.matches(Regex("[A-Za-z][A-Za-z0-9+.-]*")) &&
+            !scheme.equals("javascript", true) &&
+            !scheme.equals("data", true) &&
+            !scheme.equals("file", true) &&
+            !scheme.equals("content", true) &&
+            !scheme.equals("intent", true)
+        val safeHttpRedirect = if (scheme.equals("http", true)) {
+            uri.host in setOf("localhost", "127.0.0.1", "::1") && uri.userInfo == null
+        } else {
+            true
+        }
+        safeScheme && safeHttpRedirect && uri.userInfo == null && uri.fragment == null
     }.getOrDefault(false)
 }
