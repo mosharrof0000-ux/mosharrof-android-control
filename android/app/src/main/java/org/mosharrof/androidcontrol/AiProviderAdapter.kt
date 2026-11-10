@@ -819,7 +819,7 @@ object AiProviderCatalog {
             AiProviderId.GEMINI, "Google Gemini",
             AiProviderIntegrationDirection.OUTBOUND_MODEL_API,
             AiProviderImplementationStatus.TRANSLATION_ONLY,
-            listOf("https://ai.google.dev/gemini-api/docs/function-calling")
+            listOf("https://ai.google.dev/gemini-api/docs/interactions-overview", "https://ai.google.dev/gemini-api/docs/function-calling")
         ),
         Definition(
             AiProviderId.OPENAI, "OpenAI",
