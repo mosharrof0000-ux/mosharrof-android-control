@@ -342,4 +342,47 @@ class McpProtocolTest {
             assertNull("Expected URL to be rejected: $value", McpProtocol.validateElicitationUrl(value))
         }
     }
+
+    @Test
+    fun buildsMcpTaskExtensionRequests() {
+        val get = McpProtocol.modernTasksGetRequest("1", "task-123", "Mosharrof", "1.0")
+        assertEquals("tasks/get", get.method)
+        assertEquals("task-123", get.params["taskId"])
+
+        val update = McpProtocol.modernTasksUpdateRequest(
+            "2", "task-123", mapOf("request-1" to mapOf("action" to "accept")),
+            "Mosharrof", "1.0"
+        )
+        assertEquals("tasks/update", update.method)
+        assertEquals("task-123", update.params["taskId"])
+        assertTrue(update.params.containsKey("inputResponses"))
+
+        val cancel = McpProtocol.modernTasksCancelRequest("3", "task-123", "Mosharrof", "1.0")
+        assertEquals("tasks/cancel", cancel.method)
+        assertEquals("task-123", cancel.params["taskId"])
+    }
+
+    @Test
+    fun taskRequestsRejectInvalidIdsAndEmptyResponses() {
+        assertTrue(
+            runCatching {
+                McpProtocol.modernTasksGetRequest("1", "", "Mosharrof", "1.0")
+            }.isFailure
+        )
+        assertTrue(
+            runCatching {
+                McpProtocol.modernTasksUpdateRequest(
+                    "2", "task-1", emptyMap(), "Mosharrof", "1.0"
+                )
+            }.isFailure
+        )
+        assertTrue(
+            runCatching {
+                McpProtocol.modernTasksCancelRequest(
+                    "3", "x".repeat(257), "Mosharrof", "1.0"
+                )
+            }.isFailure
+        )
+    }
+
 }
