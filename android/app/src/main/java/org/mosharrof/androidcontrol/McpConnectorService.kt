@@ -27,6 +27,11 @@ class McpConnectorService(
 
     private val connected = linkedSetOf<String>()
 
+    private companion object {
+        const val MAX_TOOL_LIST_PAGES = 100
+        const val MAX_DISCOVERED_TOOLS = 5000
+    }
+
     @Synchronized
     fun connect(connectorId: String): Result<ConnectionInfo> = runCatching {
         val connector = ConnectorRegistry.connectorSnapshot()
@@ -46,60 +51,95 @@ class McpConnectorService(
             val negotiated = negotiateProtocol()
             val version = negotiated.version
 
-            val listRequest = if (version == McpProtocol.MODERN_VERSION) {
-                McpProtocol.modernToolsListRequest(
-                    id = UUID.randomUUID().toString(),
-                    clientName = clientName,
-                    clientVersion = clientVersion
-                )
-            } else {
-                McpProtocol.toolsListRequest(UUID.randomUUID().toString())
-            }
-
-            val listResponse = client.post(listRequest)
-            val listResult = listResponse.optJSONObject("result")
-                ?: error(
-                    listResponse.optJSONObject("error")?.optString("message")
-                        ?: "MCP tools/list ব্যর্থ হয়েছে।"
-                )
-
-            val toolsArray = listResult.optJSONArray("tools")
-                ?: JSONArray()
-
             var registered = 0
+            var cursor: String? = null
+            var pageCount = 0
+            val seenCursors = mutableSetOf<String>()
 
-            for (index in 0 until toolsArray.length()) {
-                val item = toolsArray.optJSONObject(index) ?: continue
-                val name = item.optString("name").trim()
-                if (name.isBlank()) continue
+            while (true) {
+                require(pageCount < MAX_TOOL_LIST_PAGES) {
+                    "MCP tools/list পৃষ্ঠা সীমা অতিক্রম করেছে।"
+                }
+                val listRequest = if (version == McpProtocol.MODERN_VERSION) {
+                    McpProtocol.modernToolsListRequest(
+                        id = UUID.randomUUID().toString(),
+                        clientName = clientName,
+                        clientVersion = clientVersion,
+                        cursor = cursor
+                    )
+                } else {
+                    McpProtocol.toolsListRequest(UUID.randomUUID().toString(), cursor)
+                }
 
-                val description = item.optString("description", name)
-                val schemaObject = item.optJSONObject("inputSchema")
-                    ?: JSONObject("""{"type":"object"}""")
+                val listResponse = client.post(listRequest)
+                val listResult = listResponse.optJSONObject("result")
+                    ?: error(
+                        listResponse.optJSONObject("error")?.optString("message")
+                            ?: "MCP tools/list ব্যর্থ হয়েছে।"
+                    )
 
-                val required = schemaObject.optJSONArray("required").toStringSet()
+                if (version == McpProtocol.MODERN_VERSION) {
+                    require(listResult.optString("resultType") == "complete") {
+                        "Modern MCP tools/list resultType complete নয়।"
+                    }
+                    validateModernCacheHints(listResult, "tools/list")
+                }
 
-                val safePart = name
-                    .replace(Regex("[^a-zA-Z0-9._-]"), "_")
-                    .take(24)
-                    .ifBlank { "tool" }
+                val toolsArray = listResult.optJSONArray("tools")
+                    ?: error("MCP tools/list response-এ tools array অনুপস্থিত।")
 
-                val nameHash = sha256(name).take(12)
-                val toolId = "${connectorId.take(40)}.$safePart.$nameHash"
+                for (index in 0 until toolsArray.length()) {
+                    require(registered < MAX_DISCOVERED_TOOLS) {
+                        "MCP Tool সংখ্যা নির্ধারিত সীমা অতিক্রম করেছে।"
+                    }
+                    val item = toolsArray.optJSONObject(index)
+                        ?: error("MCP tools/list-এর Tool entry অবজেক্ট নয়।")
+                    val name = item.optString("name").trim()
+                    require(name.isNotBlank()) { "MCP Tool name অনুপস্থিত।" }
 
-                val tool = ConnectorRegistry.Tool(
-                    id = toolId,
-                    connectorId = connectorId,
-                    name = name,
-                    description = description,
-                    risk = ConnectorRegistry.Risk.WRITE,
-                    requiredFields = required,
-                    inputSchema = schemaObject.toMap()
-                )
+                    val description = item.optString("description", name)
+                    val schemaObject = item.optJSONObject("inputSchema")
+                        ?: error("MCP Tool inputSchema অনুপস্থিত: $name")
 
-                // A partial registration must fail the whole connection.
-                ConnectorRegistry.registerTool(tool).getOrThrow()
-                registered++
+                    val required = schemaObject.optJSONArray("required").toStringSet()
+
+                    val safePart = name
+                        .replace(Regex("[^a-zA-Z0-9._-]"), "_")
+                        .take(24)
+                        .ifBlank { "tool" }
+
+                    val nameHash = sha256(name).take(12)
+                    val toolId = "${connectorId.take(40)}.$safePart.$nameHash"
+
+                    val tool = ConnectorRegistry.Tool(
+                        id = toolId,
+                        connectorId = connectorId,
+                        name = name,
+                        description = description,
+                        risk = ConnectorRegistry.Risk.WRITE,
+                        requiredFields = required,
+                        inputSchema = schemaObject.toMap()
+                    )
+
+                    // A partial registration must fail the whole connection.
+                    ConnectorRegistry.registerTool(tool).getOrThrow()
+                    registered++
+                }
+
+                pageCount++
+                val nextCursor = when {
+                    !listResult.has("nextCursor") || listResult.isNull("nextCursor") -> null
+                    else -> listResult.opt("nextCursor") as? String
+                        ?: error("MCP tools/list nextCursor string নয়।")
+                }
+                if (nextCursor == null) break
+                require(seenCursors.add(nextCursor)) {
+                    "MCP tools/list একই nextCursor পুনরায় দিয়েছে; pagination থামানো হয়েছে।"
+                }
+                require(pageCount < MAX_TOOL_LIST_PAGES) {
+                    "MCP tools/list পৃষ্ঠা সীমা অতিক্রম করেছে।"
+                }
+                cursor = nextCursor
             }
 
             ConnectorRegistry.updateConnectionState(
@@ -206,13 +246,7 @@ class McpConnectorService(
             require(result.optJSONObject("capabilities") != null) {
                 "Modern MCP discovery-এ capabilities অনুপস্থিত।"
             }
-            require(result.optString("cacheScope").isNotBlank()) {
-                "Modern MCP discovery-এ cacheScope অনুপস্থিত।"
-            }
-            val ttlValue = result.opt("ttlMs")
-            require(ttlValue is Number && ttlValue.toLong() >= 0) {
-                "Modern MCP discovery-এ ttlMs অবৈধ বা অনুপস্থিত।"
-            }
+            validateModernCacheHints(result, "server/discover")
 
             val serverInfo = result.optJSONObject("_meta")
                 ?.optJSONObject("io.modelcontextprotocol/serverInfo")
@@ -225,6 +259,20 @@ class McpConnectorService(
         }
 
         return negotiateLegacyProtocol()
+    }
+
+    private fun validateModernCacheHints(result: JSONObject, operation: String) {
+        require(result.optString("cacheScope") in setOf("public", "private")) {
+            "Modern MCP $operation cacheScope অবৈধ বা অনুপস্থিত।"
+        }
+        val ttlValue = result.opt("ttlMs") as? Number
+            ?: error("Modern MCP $operation ttlMs অবৈধ বা অনুপস্থিত।")
+        val ttlMillis = runCatching {
+            java.math.BigDecimal(ttlValue.toString()).longValueExact()
+        }.getOrNull()
+        require(ttlMillis != null && ttlMillis >= 0) {
+            "Modern MCP $operation ttlMs অবশ্যই non-negative integer হতে হবে।"
+        }
     }
 
     private fun negotiateLegacyProtocol(
@@ -385,8 +433,21 @@ class McpConnectorService(
             error(rpcError?.optString("message") ?: "MCP Tool call ব্যর্থ হয়েছে।")
         }
 
-        response.optJSONObject("result")?.toString()
+        val result = response.optJSONObject("result")
             ?: error("MCP Tool response-এ result পাওয়া যায়নি।")
+        if (clientProtocolVersion() == McpProtocol.MODERN_VERSION) {
+            val resultType = result.optString("resultType")
+            require(resultType == "complete") {
+                when (resultType) {
+                    "input_required" ->
+                        "MCP input_required multi-round-trip এখনো সমর্থিত নয়; Tool execution থামানো হয়েছে।"
+                    "task" ->
+                        "MCP Tasks extension এখনো সমর্থিত নয়; Tool execution থামানো হয়েছে।"
+                    else -> "অসমর্থিত MCP resultType: $resultType"
+                }
+            }
+        }
+        result.toString()
     }
 
     private fun clientProtocolVersion(): String {
