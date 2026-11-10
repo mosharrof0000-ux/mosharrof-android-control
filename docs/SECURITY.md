@@ -29,6 +29,7 @@
 - Relay URLs reject credentials, query strings, and fragments; redirects are disabled; response bodies are bounded; command IDs are validated before use in request paths; the client stores a bounded local handled-ID set.
 
 ## Remaining threats and release gates
+- MCP `tools/list` follows opaque `nextCursor` values, rejects repeated cursors, and caps discovery at 100 pages / 5,000 tools. Modern list/discovery cache hints must use `public`/`private` scope and a non-negative integer `ttlMs`.
 - Verify server-side job expiry, replay/idempotency protection, rate limits, and audit records in the deployed Worker.
 - Verify credential revocation and token invalidation behavior on a physical Android device.
 - Implement and test MCP 2026-07-28 `input_required` multi-round-trip handling before claiming full modern protocol support; optional Tasks extension support is also pending.
