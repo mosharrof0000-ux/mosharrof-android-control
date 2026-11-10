@@ -19,7 +19,7 @@ import org.json.JSONObject
 import java.security.MessageDigest
 import java.util.concurrent.Executor
 
-private object PluginDashboardSession {
+internal object PluginDashboardSession {
     var connectorId: String? = null
     var service: McpConnectorService? = null
 }
