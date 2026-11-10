@@ -162,3 +162,213 @@ object CanonicalPluginCatalog {
             )
         }
 }
+
+/** Google Gemini generateContent function-calling wire adapter. */
+class GeminiFunctionCallingAdapter : AiProviderAdapter {
+    override val provider = AiProviderId.GEMINI
+    override val adapterVersion = "1"
+
+    override fun validateConfiguration(config: AiProviderConfig) {
+        require(config.provider == provider) { "Gemini adapter received another provider config." }
+        require(config.endpoint == null) { "Gemini endpoint override is not supported by this adapter version." }
+    }
+
+    override fun capabilityProfile(model: String, apiVersion: String) =
+        AiCapabilityProfile(
+            provider, model, apiVersion, adapterVersion,
+            mapOf(
+                AiCapability.TOOL_CALLING to CapabilitySupport.SUPPORTED,
+                AiCapability.PARALLEL_TOOL_CALLS to CapabilitySupport.SUPPORTED,
+                AiCapability.STREAMING to CapabilitySupport.UNKNOWN,
+                AiCapability.CANCELLATION to CapabilitySupport.UNKNOWN,
+                AiCapability.JSON_SCHEMA to CapabilitySupport.UNKNOWN,
+                AiCapability.STRUCTURED_OUTPUTS to CapabilitySupport.UNKNOWN,
+                AiCapability.MODEL_DISCOVERY to CapabilitySupport.UNSUPPORTED
+            )
+        )
+
+    override fun encodeToolDefinitions(
+        config: AiProviderConfig,
+        tools: List<CanonicalPluginDefinition>
+    ): Map<String, Any?> {
+        validateConfiguration(config)
+        require(tools.size <= 256)
+        return mapOf(
+            "functionDeclarations" to tools.map { tool ->
+                mapOf(
+                    "name" to tool.name,
+                    "description" to tool.description,
+                    "parameters" to tool.inputSchema
+                )
+            }
+        )
+    }
+
+    override fun decodeResponse(payload: Map<String, Any?>): CanonicalAiResult {
+        val candidates = payload["candidates"] as? List<*> ?: emptyList<Any?>()
+        val content = (candidates.firstOrNull() as? Map<*, *>)
+            ?.get("content") as? Map<*, *>
+        val parts = content?.get("parts") as? List<*> ?: emptyList<Any?>()
+        val calls = parts.mapNotNull { raw ->
+            val functionCall = (raw as? Map<*, *>)?.get("functionCall") as? Map<*, *>
+                ?: return@mapNotNull null
+            val name = functionCall["name"] as? String
+                ?: throw IllegalArgumentException("Gemini functionCall name is missing.")
+            val args = functionCall["args"] as? Map<*, *>
+                ?: throw IllegalArgumentException("Gemini functionCall args must be an object.")
+            require(args.keys.all { it is String })
+            CanonicalToolCall(
+                providerCallId = "gemini-$name-${callsafeFingerprint(args)}",
+                toolName = name,
+                arguments = args.entries.associate { it.key as String to it.value }
+            )
+        }
+        if (calls.isNotEmpty()) return CanonicalAiResult.ToolCalls(calls)
+        val text = parts.mapNotNull { (it as? Map<*, *>)?.get("text") as? String }
+            .joinToString("")
+        return if (text.isNotBlank()) CanonicalAiResult.Text(text)
+        else CanonicalAiResult.Failure("EMPTY_RESPONSE", "Gemini returned no text or function call.")
+    }
+
+    override fun encodeToolResults(
+        config: AiProviderConfig,
+        results: List<CanonicalToolResult>
+    ): Map<String, Any?> {
+        validateConfiguration(config)
+        require(results.size in 1..32)
+        return mapOf(
+            "parts" to results.map { result ->
+                mapOf(
+                    "functionResponse" to mapOf(
+                        "name" to result.toolName,
+                        "response" to mapOf(
+                            "result" to result.content,
+                            "isError" to result.isError
+                        )
+                    )
+                )
+            }
+        )
+    }
+}
+
+/** OpenAI Responses API function-calling wire adapter (not Chat Completions). */
+class OpenAiResponsesFunctionCallingAdapter : AiProviderAdapter {
+    override val provider = AiProviderId.OPENAI
+    override val adapterVersion = "1"
+
+    override fun validateConfiguration(config: AiProviderConfig) {
+        require(config.provider == provider) { "OpenAI adapter received another provider config." }
+        require(config.endpoint == null) { "Official OpenAI Responses endpoint is fixed in this adapter version." }
+    }
+
+    override fun capabilityProfile(model: String, apiVersion: String) =
+        AiCapabilityProfile(
+            provider, model, apiVersion, adapterVersion,
+            mapOf(
+                AiCapability.TOOL_CALLING to CapabilitySupport.SUPPORTED,
+                AiCapability.PARALLEL_TOOL_CALLS to CapabilitySupport.SUPPORTED,
+                AiCapability.STREAMING to CapabilitySupport.UNKNOWN,
+                AiCapability.CANCELLATION to CapabilitySupport.UNKNOWN,
+                AiCapability.JSON_SCHEMA to CapabilitySupport.UNKNOWN,
+                AiCapability.STRUCTURED_OUTPUTS to CapabilitySupport.UNKNOWN,
+                AiCapability.MODEL_DISCOVERY to CapabilitySupport.UNSUPPORTED
+            )
+        )
+
+    override fun encodeToolDefinitions(
+        config: AiProviderConfig,
+        tools: List<CanonicalPluginDefinition>
+    ): Map<String, Any?> {
+        validateConfiguration(config)
+        require(tools.size <= 256)
+        return mapOf(
+            "tools" to tools.map { tool ->
+                mapOf(
+                    "type" to "function",
+                    "name" to tool.name,
+                    "description" to tool.description,
+                    "parameters" to tool.inputSchema,
+                    "strict" to false
+                )
+            }
+        )
+    }
+
+    override fun decodeResponse(payload: Map<String, Any?>): CanonicalAiResult {
+        val output = payload["output"] as? List<*> ?: emptyList<Any?>()
+        val calls = output.mapNotNull { raw ->
+            val item = raw as? Map<*, *> ?: return@mapNotNull null
+            if (item["type"] != "function_call") return@mapNotNull null
+            val callId = item["call_id"] as? String
+                ?: throw IllegalArgumentException("OpenAI function_call call_id is missing.")
+            val name = item["name"] as? String
+                ?: throw IllegalArgumentException("OpenAI function_call name is missing.")
+            val rawArguments = item["arguments"] as? String
+                ?: throw IllegalArgumentException("OpenAI function_call arguments are missing.")
+            val parsed = org.json.JSONObject(rawArguments)
+            CanonicalToolCall(callId, name, parsed.toStringMap())
+        }
+        if (calls.isNotEmpty()) return CanonicalAiResult.ToolCalls(calls)
+
+        val text = output.mapNotNull { raw ->
+            val item = raw as? Map<*, *> ?: return@mapNotNull null
+            if (item["type"] != "message") return@mapNotNull null
+            val content = item["content"] as? List<*> ?: return@mapNotNull null
+            content.mapNotNull { part ->
+                val entry = part as? Map<*, *> ?: return@mapNotNull null
+                if (entry["type"] == "output_text") entry["text"] as? String else null
+            }.joinToString("")
+        }.joinToString("")
+        return if (text.isNotBlank()) CanonicalAiResult.Text(text)
+        else CanonicalAiResult.Failure("EMPTY_RESPONSE", "OpenAI returned no text or function call.")
+    }
+
+    override fun encodeToolResults(
+        config: AiProviderConfig,
+        results: List<CanonicalToolResult>
+    ): Map<String, Any?> {
+        validateConfiguration(config)
+        require(results.size in 1..32)
+        return mapOf(
+            "input" to results.map { result ->
+                mapOf(
+                    "type" to "function_call_output",
+                    "call_id" to result.providerCallId,
+                    "output" to if (result.isError) "ERROR: ${result.content}" else result.content
+                )
+            }
+        )
+    }
+}
+
+private fun org.json.JSONObject.toStringMap(): Map<String, Any?> {
+    val result = linkedMapOf<String, Any?>()
+    val keys = keys()
+    while (keys.hasNext()) {
+        val key = keys.next()
+        val value = opt(key)
+        result[key] = when (value) {
+            org.json.JSONObject.NULL -> null
+            is org.json.JSONObject -> value.toStringMap()
+            is org.json.JSONArray -> value.toAnyList()
+            else -> value
+        }
+    }
+    return result
+}
+
+private fun org.json.JSONArray.toAnyList(): List<Any?> =
+    (0 until length()).map { index ->
+        when (val value = opt(index)) {
+            org.json.JSONObject.NULL -> null
+            is org.json.JSONObject -> value.toStringMap()
+            is org.json.JSONArray -> value.toAnyList()
+            else -> value
+        }
+    }
+
+private fun callsafeFingerprint(arguments: Map<*, *>): String =
+    arguments.entries.sortedBy { it.key.toString() }.joinToString("|") {
+        "${it.key}=${it.value}"
+    }.hashCode().toUInt().toString(16)
