@@ -82,9 +82,13 @@ Independent work may proceed concurrently, but shared contracts and UI integrati
 - [x] Bounded tools/list pagination and repeated-cursor rejection.
 - [x] Input schema and canonical argument bounds.
 - [ ] Explicit local trust/risk classification workflow for discovered tools.
-- [ ] Durable task-state abstraction and recovery tests.
-- [ ] Reconnect invalidation and bounded polling tests.
-- **Gate:** malformed/unknown tools fail closed; task recovery works in deterministic tests.
+- [x] Add a bounded durable task metadata store backed by Android SharedPreferences; persist only connector/task IDs, status, TTL, poll interval and observation time (never server payloads, results, elicitation data or credentials).
+- [x] Restore pending task IDs after process recreation as untrusted recovery candidates; require a fresh `tasks/get` response before the caller may rely on a recovered state.
+- [x] Expire task metadata by server TTL, cap storage at 100 records, synchronously commit metadata, and clear a connector's records on explicit disconnect.
+- [x] Expose pending recovery candidates through the service and persist snapshots returned by `tasks/get`, `tasks/update` and `tasks/cancel`.
+- [x] Keep synchronous polling bounded by caller-supplied elapsed-time and poll-count limits; it stops on terminal or input-required states.
+- [ ] Add service-level reconnect/recovery and polling interruption tests, and integrate task-result handling with the approved Android UI.
+- **Gate:** task recovery works in deterministic store and service tests; stale candidates are revalidated against the server before use; unsupported task-start/tool flows remain fail-closed until UI approval and orchestration are integrated.
 
 ### Phase 6 — Android UX
 - [x] Provider profile add/select/delete UI.
@@ -102,6 +106,16 @@ Independent work may proceed concurrently, but shared contracts and UI integrati
 - [ ] Dependency/license review and known-limitations register.
 - [ ] Update architecture and ToolHub handoff materials.
 - **Gate:** no unresolved critical/high findings; all automated checks pass.
+
+### MCP Tasks recovery metadata implementation (pending CI)
+- Added `McpTaskStore`: bounded in-memory test implementation and Android SharedPreferences durable implementation.
+- Store schema deliberately excludes task result/error/inputRequests/requestState and credentials; only identifiers, status and bounded timing metadata are persisted.
+- Pending records restored after process recreation are candidates only. Callers must query `tasks/get` against the connected server before relying on their state.
+- Explicit connector disconnect clears persisted records. Connector reconnect keeps candidates available for server revalidation.
+- Unit coverage added for connector isolation, pending-state filtering, TTL expiry, 100-record cap, explicit cleanup, and persistence across store recreation using a fake SharedPreferences implementation.
+- Service integration records snapshots returned by tasks/get/update/cancel and exposes pending candidates; Android UI task-start/approval integration remains pending.
+- Commits: `a8172fa` (store), `92198dc` / `cf00f16` (service integration), `743b763` (Android wiring), `c469594` / `6db8d5d` (tests), `9efee46` (synchronous persistence).
+- CI: PENDING for latest source head.
 
 ## External gates excluded from this roadmap
 
@@ -122,3 +136,6 @@ Independent work may proceed concurrently, but shared contracts and UI integrati
 | Production deployment | NOT RUN | Requires user approval |
 
 | Latest source commit `642ca45db7f76fa66286aa956231c51cd63c8457` | PENDING CI | Profile-backed first-turn runtime and provider response contract tests added; latest-head CI evidence not yet returned |\n\nUpdate this ledger only with run IDs and commit SHAs verified from CI.
+
+
+| Latest MCP task recovery source commit `6db8d5dc93fe7a51c0dc74c45ed4cab81c2fda59` | PENDING CI | Durable metadata store and process-recreation regression tests added; final service integration commits are recorded above |
