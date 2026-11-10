@@ -86,14 +86,15 @@ object McpProtocol {
     fun modernToolsListRequest(
         id: String,
         clientName: String,
-        clientVersion: String
+        clientVersion: String,
+        cursor: String? = null
     ): Request {
         require(id.isNotBlank())
-        return Request(
-            id = id,
-            method = "tools/list",
-            params = mapOf("_meta" to modernMetadata(clientName, clientVersion))
+        val params = linkedMapOf<String, Any?>(
+            "_meta" to modernMetadata(clientName, clientVersion)
         )
+        if (cursor != null) params["cursor"] = cursor
+        return Request(id = id, method = "tools/list", params = params)
     }
 
     fun modernToolsCallRequest(
@@ -119,9 +120,10 @@ object McpProtocol {
     fun initializedNotification(): Request =
         Request(id = null, method = "notifications/initialized")
 
-    fun toolsListRequest(id: String): Request {
+    fun toolsListRequest(id: String, cursor: String? = null): Request {
         require(id.isNotBlank())
-        return Request(id = id, method = "tools/list")
+        val params = if (cursor == null) emptyMap() else mapOf("cursor" to cursor)
+        return Request(id = id, method = "tools/list", params = params)
     }
 
     fun toolsCallRequest(
