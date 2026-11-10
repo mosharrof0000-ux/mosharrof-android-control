@@ -42,8 +42,9 @@ Independent work may proceed concurrently, but shared contracts and UI integrati
 - [x] First-turn request builders for Gemini Interactions, OpenAI Responses, xAI Responses, and Anthropic Messages.
 - [x] Route active provider profiles through the shared first-turn runtime and all four registered adapters for normalized text responses.
 - [x] Add bounded JSON response conversion and adapter response decoding tests for Gemini, OpenAI, xAI and Anthropic.
-- [ ] Integrate provider tool calls into the approved continuation loop; first-turn runtime intentionally sends no tool declarations yet.
-- [ ] Verify schema conversion rejects unsupported constraints.
+- [x] Integrate provider tool calls into the bounded approval-gated continuation loop; active profiles advertise only tools from the exact connected MCP service session. `MainActivity.runAi()` passes the active `PluginDashboardSession.service` and the explicit `requestAiToolApproval` callback into `AiEngine.askWithMcpApproval()`.
+- [x] Add provider-specific continuation request builders for Gemini Interactions, OpenAI Responses, xAI Responses, Anthropic Messages and Custom OpenAI-compatible format.
+- [ ] Verify schema conversion rejects unsupported constraints with provider-specific end-to-end fixtures.
 - **Gate:** all adapters pass common mock contract and malformed-response tests.
 
 ### Phase 2 — Encrypted provider profiles
@@ -51,27 +52,29 @@ Independent work may proceed concurrently, but shared contracts and UI integrati
 - [x] Add profile CRUD and active-profile selection APIs.
 - [x] Add explicit legacy Gemini configuration migration; legacy OpenAI-compatible configuration remains on its existing path until a compatible adapter is available.
 - [x] Integrate active profile selection into AiEngine's first-turn text runtime.
-- [ ] Add provider management UI.
+- [x] Add provider management UI for profile creation, selection, deletion and explicit legacy Gemini migration.
+- [x] Wire active profile requests into `AiProviderRuntime` and the Android AI prompt action.
+- [ ] Add model/capability display and credential replace/revoke UX.
 - [x] Verify metadata separation and resolved-profile secret redaction with repository tests.
 - [ ] Verify Android Keystore failure behavior on supported Android runtimes.
 - **Gate:** profile CRUD, encryption boundaries, migration, and no-secret-leak tests pass.
 
 ### Phase 3 — Conversation continuation
-- [ ] Provider-specific conversation state model.
-- [ ] Gemini interaction continuation.
-- [ ] OpenAI and xAI response continuation.
-- [ ] Anthropic full-history continuation.
-- [ ] Bounded history, token/payload, turn and time limits.
-- [ ] Mock multi-turn and interrupted-continuation tests.
+- [x] Provider-specific stateless continuation request builders for Gemini, OpenAI, xAI and Anthropic; previous provider output is replayed with matching tool results.
+- [x] Bounded history item count, prompt, request/response bytes, JSON depth/nodes, tool-call count and continuation rounds.
+- [x] Mock continuation request-shape tests for Gemini, OpenAI, xAI, Anthropic and custom OpenAI-compatible providers.
+- [ ] Add interrupted-continuation/retry-state tests and provider-specific malformed continuation fixtures.
+- [ ] Confirm live continuation behavior against each official provider API (requires credentials and authorization).
 - **Gate:** each provider completes mock text → tool call → tool result → assistant response flow.
 
 ### Phase 4 — Tool orchestration and approval
-- [x] Initial canonical tool-call guard and bounded orchestrator.
-- [ ] Connect provider response parsing to orchestrator planning.
-- [ ] Connect exact-argument one-time approval grants to Android UI.
-- [ ] Connect approved execution to MCP service.
-- [ ] Add bounded serial execution, cancellation and unknown-outcome handling.
-- [ ] Add redacted audit events.
+- [x] Canonical tool-call guard and bounded orchestrator.
+- [x] Connect provider response parsing to orchestrator planning in `AiProviderRuntime`.
+- [x] Connect exact-argument one-time approval grants to Android approval UI via `MainActivity.requestAiToolApproval`.
+- [x] Connect approved execution to the exact active `McpConnectorService` session.
+- [x] Add bounded serial execution, duplicate-call rejection, denial/error continuation and maximum call/round limits.
+- [ ] Add explicit cancellation and unknown-outcome recovery for provider/MCP requests.
+- [ ] Add redacted audit events and verify no credential/argument leakage.
 - **Gate:** read-only, approval, denial, revocation, replay, mismatch, and failure tests pass.
 
 ### Phase 5 — MCP policy and task lifecycle
@@ -83,12 +86,12 @@ Independent work may proceed concurrently, but shared contracts and UI integrati
 - **Gate:** malformed/unknown tools fail closed; task recovery works in deterministic tests.
 
 ### Phase 6 — Android UX
-- [ ] Provider profile management UI.
-- [ ] Model and capability display.
-- [ ] Credential add/replace/revoke flow.
-- [ ] AI-generated tool approval and rejection UI.
-- [ ] Tool execution status and safe error display.
-- [ ] UI state regression tests.
+- [x] Provider profile add/select/delete UI.
+- [ ] Model and verified capability display.
+- [ ] Credential replace/revoke UX and explicit active-profile state.
+- [x] AI-generated tool approval and rejection dialog wired into the runtime.
+- [x] Basic AI request status and safe failure display.
+- [ ] UI state regression tests for provider/profile/approval transitions.
 - **Gate:** UI decisions match the underlying permission and profile state.
 
 ### Phase 7 — Security, integration, and release readiness
