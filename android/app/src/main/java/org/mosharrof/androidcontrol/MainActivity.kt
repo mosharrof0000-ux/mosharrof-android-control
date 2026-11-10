@@ -615,7 +615,7 @@ class MainActivity : Activity() {
                     this@MainActivity,
                     prompt,
                     PluginDashboardSession.service,
-                    ::requestAiToolApproval,
+                    { plan -> requestAiToolApproval(plan, cancellation) },
                     cancellation
                 )
             }
@@ -645,11 +645,15 @@ class MainActivity : Activity() {
      * provider-generated arguments. Timeout, cancellation, or activity exit
      * always means denial; no grant is issued by this dialog.
      */
-    private fun requestAiToolApproval(plan: AiToolCallPlan.Ready): Boolean {
+    private fun requestAiToolApproval(
+        plan: AiToolCallPlan.Ready,
+        cancellation: AiProviderCancellation
+    ): Boolean {
         val decision = CountDownLatch(1)
+        val dialogRef = java.util.concurrent.atomic.AtomicReference<AlertDialog?>(null)
         var approved = false
         runOnUiThread {
-            if (isFinishing || isDestroyed) {
+            if (isFinishing || isDestroyed || cancellation.isCancelled()) {
                 decision.countDown()
                 return@runOnUiThread
             }
@@ -679,12 +683,25 @@ class MainActivity : Activity() {
                     decision.countDown()
                 }
                 .create()
-            dialog.show()
+            dialogRef.set(dialog)
+            if (cancellation.isCancelled()) {
+                decision.countDown()
+            } else {
+                dialog.show()
+            }
         }
         return try {
-            decision.await(120, TimeUnit.SECONDS) && approved
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(120)
+            while (!cancellation.isCancelled() && System.nanoTime() < deadline) {
+                if (decision.await(100, TimeUnit.MILLISECONDS)) return approved
+            }
+            if (cancellation.isCancelled()) {
+                runOnUiThread { dialogRef.get()?.dismiss() }
+            }
+            false
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()
+            runOnUiThread { dialogRef.get()?.dismiss() }
             false
         }
     }
