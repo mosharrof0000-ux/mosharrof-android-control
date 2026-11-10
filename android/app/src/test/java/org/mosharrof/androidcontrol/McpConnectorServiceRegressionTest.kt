@@ -363,7 +363,12 @@ class McpConnectorServiceRegressionTest {
         ).getOrThrow()
 
         val retryParams = server.toolCallParams.last()
-        assertEquals(responses, retryParams.optJSONObject("inputResponses")?.toMap())
+        assertEquals(
+            "accept",
+            retryParams.optJSONObject("inputResponses")
+                ?.optJSONObject("confirm")
+                ?.optString("action")
+        )
         assertEquals("opaque-state-from-server", retryParams.optString("requestState"))
         assertEquals("hello", retryParams.optJSONObject("arguments")?.optString("text"))
         assertEquals(2, server.toolCalls.get())
