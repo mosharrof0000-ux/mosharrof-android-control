@@ -19,7 +19,8 @@ class McpConnectorServiceRegressionTest {
         private val legacy: Boolean = false,
         private val invalidSecondTool: Boolean = false,
         private val discoveryVersions: List<String> = listOf(McpProtocol.MODERN_VERSION),
-        private val versionErrorSupported: List<String>? = null
+        private val versionErrorSupported: List<String>? = null,
+        private val discoveryErrorCode: Int? = null
     ) {
         val toolCalls = AtomicInteger(0)
         val methods = mutableListOf<String>()
@@ -63,6 +64,16 @@ class McpConnectorServiceRegressionTest {
                 )
             }
             val id = request.opt("id")
+
+            if (method == "server/discover" && discoveryErrorCode != null) {
+                status = 404
+                responseBody = JSONObject()
+                    .put("jsonrpc", "2.0")
+                    .put("id", id)
+                    .put("error", JSONObject().put("code", discoveryErrorCode).put("message", "Method not found"))
+                    .toString()
+                return
+            }
 
             if (method == "server/discover" && versionErrorSupported != null) {
                 val supported = JSONArray()
@@ -226,6 +237,18 @@ class McpConnectorServiceRegressionTest {
         assertEquals(1, result.discoveredTools)
         assertTrue(server.methods.contains("server/discover"))
         assertTrue(server.methods.contains("tools/list"))
+    }
+
+    @Test
+    fun modernMethodNotFoundDoesNotTriggerLegacyFallback() {
+        registerConnector()
+        val server = FakeServer(discoveryErrorCode = -32601)
+
+        val failure = service(server).connect("test.mcp")
+
+        assertTrue("Modern method-not-found must remain a connection error", failure.isFailure)
+        assertEquals(listOf("server/discover"), server.methods)
+        assertFalse("Do not send legacy initialize after modern -32601", server.methods.contains("initialize"))
     }
 
     @Test
