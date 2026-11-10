@@ -159,6 +159,7 @@ class MainActivity : Activity() {
         addNavButton(nav, "স্ক্রিন") { showScreenPage() }
         addNavButton(nav, "ফাইল") { showFilesPage() }
         addNavButton(nav, "টুলস") { showToolsPage() }
+        addNavButton(nav, "MCP") { showMcpPage() }
         root.addView(nav)
 
         setContentView(root)
@@ -251,6 +252,7 @@ class MainActivity : Activity() {
             addCard(this, "ফাইল ব্যবস্থাপনা", "ফোল্ডার, ফাইল তালিকা, ডুপ্লিকেট ও অডিও", ::showFilesPage)
             addCard(this, "অনুমতি ও সক্ষমতা", "Android API, অনুমতি এবং Module Manager", ::showPermissionsPage)
             addCard(this, "AI ও Relay", "AI সংযোগ, নিরাপদ Pairing এবং Relay", ::showAiRelayPage)
+            addCard(this, "MCP Plugin Connector", "HTTPS MCP Server যুক্ত করুন, Tools দেখুন ও অনুমোদন দিয়ে চালান", ::showMcpPage)
             addCard(this, "Termux ও কমান্ড", "অনুমোদিত কমান্ড এবং ফলাফল", ::showTermuxPage)
             addCard(this, "ডিভাইস পর্যবেক্ষণ", "স্টোরেজ, RAM ও সিস্টেম তথ্য", ::showToolsPage)
             addHeading(this, "দ্রুত অবস্থা")
@@ -374,6 +376,17 @@ class MainActivity : Activity() {
             addButton("স্টোরেজ ও RAM পরীক্ষা") { refreshDiagnostics() }
             addButton("Android সক্ষমতা ও অনুমতি পরীক্ষা") { showCapabilities() }
             addButton("Engine Self-Test চালান") { runEngineSelfTest() }
+        }
+    }
+
+    private fun showMcpPage() {
+        showPage("MCP Plugin Connector") {
+            addTextNote(this, "শুধু HTTPS MCP endpoint ব্যবহার করুন। Tool চালানোর আগে ঝুঁকি ও input দেখে স্পষ্ট অনুমতি দিতে হবে।")
+            PluginDashboardPage(
+                activity = this@MainActivity,
+                worker = worker,
+                onStatus = { message -> status.text = message }
+            ).render(this)
         }
     }
 
