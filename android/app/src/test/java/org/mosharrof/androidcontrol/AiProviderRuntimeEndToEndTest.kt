@@ -261,8 +261,11 @@ class AiProviderRuntimeEndToEndTest {
                     val input = request.body["input"] as List<*>
                     val result = input.filterIsInstance<Map<*, *>>()
                         .first { it["type"] == "function_result" }
-                    assertEquals(true, result["is_error"])
-                    assertTrue(result.toString().contains("simulated MCP execution failure"))
+                    val resultContent = (result["result"] as List<*>)
+                        .filterIsInstance<Map<*, *>>()
+                        .first()["text"] as String
+                    assertTrue(resultContent.startsWith("ERROR: "))
+                    assertTrue(resultContent.contains("simulated MCP execution failure"))
                 }
                 responses.removeFirst()
             }
@@ -298,7 +301,10 @@ class AiProviderRuntimeEndToEndTest {
                     val input = request.body["input"] as List<*>
                     val result = input.filterIsInstance<Map<*, *>>()
                         .first { it["type"] == "function_result" }
-                    assertEquals(true, result["is_error"])
+                    val resultContent = (result["result"] as List<*>)
+                        .filterIsInstance<Map<*, *>>()
+                        .first()["text"] as String
+                    assertTrue(resultContent.startsWith("ERROR: "))
                 }
                 responses.removeFirst()
             }
