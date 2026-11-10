@@ -178,6 +178,7 @@ object AiProviderRegistry {
         if (AiProviderId.OPENAI !in adapters) register(OpenAiResponsesFunctionCallingAdapter())
         if (AiProviderId.XAI !in adapters) register(XaiResponsesFunctionCallingAdapter())
         if (AiProviderId.ANTHROPIC !in adapters) register(AnthropicMessagesToolUseAdapter())
+        if (AiProviderId.CUSTOM !in adapters) register(CustomOpenAiCompatibleAdapter())
     }
 
     fun get(provider: AiProviderId): AiProviderAdapter? = adapters[provider]
@@ -813,6 +814,96 @@ class AnthropicMessagesToolUseAdapter : AiProviderAdapter {
     }
 }
 
+
+
+/** Generic OpenAI Chat Completions adapter for a user-supplied HTTPS endpoint. */
+class CustomOpenAiCompatibleAdapter : AiProviderAdapter {
+    override val provider = AiProviderId.CUSTOM
+    override val adapterVersion = "1"
+
+    override fun validateConfiguration(config: AiProviderConfig) {
+        require(config.provider == provider) { "Custom adapter received another provider config." }
+        val endpoint = config.endpoint?.let { java.net.URI(it) }
+            ?: throw IllegalArgumentException("Custom OpenAI-compatible endpoint is required.")
+        require(
+            endpoint.scheme.equals("https", ignoreCase = true) &&
+                !endpoint.host.isNullOrBlank() &&
+                endpoint.userInfo == null &&
+                endpoint.query == null &&
+                endpoint.fragment == null
+        ) { "Custom endpoint must be HTTPS without userinfo, query or fragment." }
+    }
+
+    override fun capabilityProfile(model: String, apiVersion: String): AiCapabilityProfile {
+        require(apiVersion == "v1") { "Unsupported custom Chat Completions adapter version." }
+        return AiCapabilityProfile(
+            provider, model, apiVersion, adapterVersion,
+            mapOf(
+                AiCapability.TOOL_CALLING to CapabilitySupport.UNKNOWN,
+                AiCapability.PARALLEL_TOOL_CALLS to CapabilitySupport.UNKNOWN,
+                AiCapability.STREAMING to CapabilitySupport.UNKNOWN,
+                AiCapability.CANCELLATION to CapabilitySupport.UNKNOWN,
+                AiCapability.JSON_SCHEMA to CapabilitySupport.UNKNOWN,
+                AiCapability.STRUCTURED_OUTPUTS to CapabilitySupport.UNKNOWN,
+                AiCapability.MODEL_DISCOVERY to CapabilitySupport.UNSUPPORTED
+            )
+        )
+    }
+
+    override fun encodeToolDefinitions(
+        config: AiProviderConfig,
+        tools: List<CanonicalPluginDefinition>
+    ): Map<String, Any?> {
+        validateConfiguration(config)
+        require(tools.size <= 256)
+        return mapOf("tools" to tools.map { tool ->
+            mapOf(
+                "type" to "function",
+                "function" to mapOf(
+                    "name" to tool.name,
+                    "description" to tool.description,
+                    "parameters" to tool.inputSchema
+                )
+            )
+        })
+    }
+
+    override fun decodeResponse(payload: Map<String, Any?>): CanonicalAiResult {
+        val message = ((payload["choices"] as? List<*>)?.firstOrNull() as? Map<*, *>)
+            ?.get("message") as? Map<*, *>
+            ?: return CanonicalAiResult.Failure("EMPTY_RESPONSE", "Custom provider returned no message.")
+        val rawCalls = message["tool_calls"] as? List<*> ?: emptyList<Any?>()
+        val calls = rawCalls.map { raw ->
+            val item = raw as? Map<*, *> ?: error("Custom tool call must be an object.")
+            val id = item["id"] as? String ?: error("Custom tool call ID is missing.")
+            val function = item["function"] as? Map<*, *>
+                ?: error("Custom tool function is missing.")
+            val name = function["name"] as? String ?: error("Custom tool name is missing.")
+            val arguments = function["arguments"] as? String
+                ?: error("Custom tool arguments are missing.")
+            CanonicalToolCall(id, name, org.json.JSONObject(arguments).toStringMap())
+        }
+        if (calls.isNotEmpty()) return CanonicalAiResult.ToolCalls(calls)
+        val text = message["content"] as? String
+        return if (!text.isNullOrBlank()) CanonicalAiResult.Text(text)
+        else CanonicalAiResult.Failure("EMPTY_RESPONSE", "Custom provider returned no text or tool call.")
+    }
+
+    override fun encodeToolResults(
+        config: AiProviderConfig,
+        results: List<CanonicalToolResult>
+    ): Map<String, Any?> {
+        validateConfiguration(config)
+        require(results.size in 1..32)
+        return mapOf("messages" to results.map { result ->
+            mapOf(
+                "role" to "tool",
+                "tool_call_id" to result.providerCallId,
+                "content" to if (result.isError) "ERROR: ${result.content}" else result.content
+            )
+        })
+    }
+}
 
 sealed class CanonicalToolCallDecision {
     data class ReadOnlyAllowed(val toolId: String, val call: CanonicalToolCall) : CanonicalToolCallDecision()

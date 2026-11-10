@@ -79,6 +79,50 @@ class AiProviderRequestFactoryTest {
         )
     }
 
+
+    @Test fun customOpenAiCompatibleProfileUsesConfiguredHttpsChatCompletionsEndpoint() {
+        val customConfig = AiProviderConfig(
+            AiProviderId.CUSTOM,
+            "custom-model",
+            endpoint = "https://api.example.test/v1/chat/completions",
+            credentialReference = "keystore:custom"
+        )
+        val request = AiProviderRequestFactory.createInitialRequest(
+            customConfig, "fake-custom-key", "hello", tools()
+        )
+        assertEquals("https://api.example.test/v1/chat/completions", request.url)
+        assertEquals("Bearer fake-custom-key", request.headers["Authorization"])
+        assertEquals("custom-model", request.body["model"])
+        assertEquals("auto", request.body["tool_choice"])
+        assertEquals(false, request.body["parallel_tool_calls"])
+        val messages = request.body["messages"] as List<*>
+        assertEquals("hello", (messages.first() as Map<*, *>)["content"])
+    }
+
+    @Test fun customAdapterDecodesTextAndToolCallsAndEncodesResults() {
+        val adapter = AiProviderRegistry.get(AiProviderId.CUSTOM)!!
+        val customConfig = AiProviderConfig(
+            AiProviderId.CUSTOM, "custom-model",
+            endpoint = "https://api.example.test/v1/chat/completions",
+            credentialReference = "keystore:custom"
+        )
+        assertEquals(
+            CanonicalAiResult.Text("custom hello"),
+            adapter.decodeResponse(mapOf("choices" to listOf(mapOf("message" to mapOf("content" to "custom hello")))))
+        )
+        val call = adapter.decodeResponse(mapOf("choices" to listOf(mapOf("message" to mapOf(
+            "tool_calls" to listOf(mapOf(
+                "id" to "call-1",
+                "function" to mapOf("name" to "lookup", "arguments" to "{\\"query\\":\\"x\\"}")
+            ))
+        )))))
+        assertTrue(call is CanonicalAiResult.ToolCalls)
+        val encoded = adapter.encodeToolResults(customConfig, listOf(
+            CanonicalToolResult("call-1", "lookup", "done")
+        ))
+        assertEquals("call-1", ((encoded["messages"] as List<*>).first() as Map<*, *>)["tool_call_id"])
+    }
+
     @Test fun requestStringRedactsCredentialValues() {
         val secret = "never-print-this-key"
         val request = AiProviderRequestFactory.createInitialRequest(
