@@ -70,8 +70,12 @@ class AiProviderHttpTransport(
         )
     }
 
-    fun post(\n        request: AiProviderHttpRequest,\n        cancellation: AiProviderCancellation = AiProviderCancellation()\n    ): AiProviderHttpResponse {
-        cancellation.throwIfCancelled()\n        val uri = runCatching { URI(request.url) }.getOrElse {
+    fun post(
+        request: AiProviderHttpRequest,
+        cancellation: AiProviderCancellation = AiProviderCancellation()
+    ): AiProviderHttpResponse {
+        cancellation.throwIfCancelled()
+        val uri = runCatching { URI(request.url) }.getOrElse {
             throw IllegalArgumentException("AI provider URL is invalid.")
         }
         require(
@@ -107,6 +111,7 @@ class AiProviderHttpTransport(
 
         val connection = connectionFactory(URL(request.url))
         try {
+            cancellation.attach(connection)
             connection.requestMethod = "POST"
             connection.connectTimeout = CONNECT_TIMEOUT_MS
             connection.readTimeout = READ_TIMEOUT_MS
@@ -117,21 +122,30 @@ class AiProviderHttpTransport(
                 connection.setRequestProperty(name, value)
             }
             connection.setFixedLengthStreamingMode(bodyBytes.size)
+            cancellation.throwIfCancelled()
             connection.outputStream.use { output -> output.write(bodyBytes) }
 
+            cancellation.throwIfCancelled()
             val status = connection.responseCode
             val responseStream = if (status in 200..299) {
                 connection.inputStream
             } else {
                 connection.errorStream
             }
-            val raw = readBoundedAiResponse(responseStream, MAX_RESPONSE_BYTES)
+            val raw = try {
+                readBoundedAiResponse(responseStream, MAX_RESPONSE_BYTES)
+            } catch (failure: Throwable) {
+                cancellation.throwIfCancelled()
+                throw failure
+            }
+            cancellation.throwIfCancelled()
             if (status !in 200..299) {
                 throw AiProviderHttpException(status, classifyStatus(status))
             }
             require(raw.isNotBlank()) { "AI provider returned an empty response." }
             return AiProviderHttpResponse(status, JSONObject(raw))
         } finally {
+            cancellation.detach(connection)
             connection.disconnect()
         }
     }
