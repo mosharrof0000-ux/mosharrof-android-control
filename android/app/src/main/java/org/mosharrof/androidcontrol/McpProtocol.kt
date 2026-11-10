@@ -124,7 +124,7 @@ object McpProtocol {
         return Request(id = id, method = "tools/call", params = params)
     }
 
-    /** Task extension request builders. These are not advertised until lifecycle support is complete. */
+    /** Task extension request builders; callers gate them on negotiated modern protocol and user-mediated UI. */
     fun modernTasksGetRequest(
         id: String,
         taskId: String,
