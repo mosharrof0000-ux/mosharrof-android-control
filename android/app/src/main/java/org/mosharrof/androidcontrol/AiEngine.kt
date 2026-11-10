@@ -4,12 +4,10 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.net.URI
-import java.net.URLEncoder
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -117,18 +115,6 @@ object AiEngine {
                     ?.let { validateEndpoint(it) }
                     ?: throw IllegalStateException("HTTPS endpoint সংরক্ষণ করুন।")
             }
-        }
-
-        val body = when (provider) {
-            Provider.GEMINI -> JSONObject()
-                .put("contents", JSONArray().put(
-                    JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt)))
-                ))
-            Provider.OPENAI_COMPATIBLE -> JSONObject()
-                .put("model", model)
-                .put("messages", JSONArray().put(
-                    JSONObject().put("role", "user").put("content", prompt)
-                ))
         }
 
         val headers = linkedMapOf(
