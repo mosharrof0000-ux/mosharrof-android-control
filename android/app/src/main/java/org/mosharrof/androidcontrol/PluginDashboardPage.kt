@@ -27,6 +27,7 @@ class PluginDashboardPage(
     private companion object {
         const val MAX_MRTR_ROUNDS = 10
         const val MAX_MRTR_DISPLAY_CHARS = 4_000
+        const val MAX_JSON_INPUT_DEPTH = 32
     }
 
     private lateinit var endpointInput: EditText
@@ -340,8 +341,12 @@ class PluginDashboardPage(
                     onStatus("inputResponses JSON সঠিক নয়: ${it.message}")
                     return@setPositiveButton
                 }
-                if (responses.isEmpty()) {
-                    onStatus("inputResponses খালি রাখা যাবে না।")
+                val expectedKeys = buildSet {
+                    val iterator = requests.keys()
+                    while (iterator.hasNext()) add(iterator.next())
+                }
+                if (responses.keys != expectedKeys) {
+                    onStatus("inputResponses-এর key অবশ্যই সার্ভারের প্রতিটি input request-এর key-এর সঙ্গে মিলতে হবে।")
                     return@setPositiveButton
                 }
 
@@ -398,27 +403,27 @@ class PluginDashboardPage(
         return "mcp.$digest"
     }
 
-    private fun JSONObject.toMap(): Map<String, Any?> {
+    private fun JSONObject.toMap(depth: Int = 0): Map<String, Any?> {
+        require(depth <= MAX_JSON_INPUT_DEPTH) { "JSON input nesting limit অতিক্রম করেছে।" }
         val result = linkedMapOf<String, Any?>()
         val iterator = keys()
         while (iterator.hasNext()) {
             val key = iterator.next()
-            val value = opt(key)
-            result[key] = when (value) {
-                is JSONObject -> value.toMap()
-                is JSONArray -> (0 until value.length()).map { index ->
-                    when (val item = value.opt(index)) {
-                        is JSONObject -> item.toMap()
-                        is JSONArray -> item.toString()
-                        JSONObject.NULL -> null
-                        else -> item
-                    }
-                }
-                JSONObject.NULL -> null
-                else -> value
-            }
+            result[key] = jsonValueToKotlin(opt(key), depth + 1)
         }
         return result
+    }
+
+    private fun jsonValueToKotlin(value: Any?, depth: Int): Any? {
+        require(depth <= MAX_JSON_INPUT_DEPTH) { "JSON input nesting limit অতিক্রম করেছে।" }
+        return when (value) {
+            is JSONObject -> value.toMap(depth)
+            is JSONArray -> (0 until value.length()).map { index ->
+                jsonValueToKotlin(value.opt(index), depth + 1)
+            }
+            JSONObject.NULL -> null
+            else -> value
+        }
     }
 
     private fun heading(parent: LinearLayout, value: String) {
