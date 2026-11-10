@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { RelayDO } from "./index.ts";
+import workerEntrypoint, { RelayDO } from "./index.ts";
 
 class FakeStorage {
   values = new Map();
@@ -155,8 +155,14 @@ test("device polling is rate limited", async () => {
 
 
 test("health response exposes configuration state without secret values", async () => {
-  const { worker } = setup();
-  const response = await worker.fetch(new Request("https://relay.test/healthz"));
+  const response = await workerEntrypoint.fetch(
+    new Request("https://relay.test/healthz"),
+    {
+      CHATGPT_CONNECTOR_TOKEN: "connector-secret",
+      DEVICE_SETUP_TOKEN: "setup-secret",
+      RELAY: {},
+    },
+  );
   const body = await response.json();
   assert.equal(response.status, 200);
   assert.equal(body.status, "ok");
