@@ -37,7 +37,8 @@ An outbound API adapter does not automatically make MOSHARROF an MCP server. The
 - [ ] Convert canonical plugin definitions to each provider's native tool declaration.
 - [ ] Parse one or many tool calls while preserving call IDs and order.
 - [ ] Validate tool name, connector state, schema, argument size/depth and risk before execution.
-- [ ] Require explicit, exact-argument, single-use approval for WRITE, EXTERNAL_SIDE_EFFECT and DESTRUCTIVE.
+- [x] Add a fail-closed CanonicalToolCallGuard that resolves provider tool names against registered MOSHARROF tools, validates arguments against the registered schema, rejects ambiguous/unknown/disconnected tools, and separates READ_ONLY from approval-required risks. The guard never issues grants or executes tools.
+- [ ] Connect the approval-required decision to a user-facing confirmation UI and issue an exact-argument, single-use grant only after explicit approval for WRITE, EXTERNAL_SIDE_EFFECT and DESTRUCTIVE.
 - [ ] Execute only through the authorized connector/runtime path; never run provider-supplied shell or arbitrary code.
 - [ ] Convert results/errors back to provider-native continuation format.
 - [ ] Handle parallel calls with bounded concurrency and separate approval per call.
