@@ -23,11 +23,11 @@ An outbound API adapter does not automatically make MOSHARROF an MCP server. The
 
 ## Phase 1 — Core adapter framework
 - [x] Add initial AiProviderAdapter interface for provider identity, configuration validation, capability profiles, tool-definition translation, tool-call parsing and result continuation. Model listing, streaming, cancellation and normalized transport errors remain pending.
-- [x] Add AiProviderRegistry with duplicate rejection, adapter version and built-in registration for Gemini/OpenAI. Provider health/status persistence remains pending.
+- [x] Add AiProviderRegistry with duplicate rejection, adapter version and built-in registration for Gemini Interactions, OpenAI Responses, xAI Responses and Anthropic Messages. Provider health/status persistence remains pending.
 - [x] Add capability profiles with SUPPORTED / UNSUPPORTED / UNKNOWN per feature, model and API version; initial profiles are conservative and leave unverified capabilities UNKNOWN.
 - [x] Project ConnectorRegistry tools into a provider-neutral ToolCatalog snapshot.
 - [ ] Add schema conversion; unsupported constraints must be rejected or explicitly explained, never silently dropped.
-- [ ] Add common bounded HTTPS transport: redirects disabled, timeouts, response caps, retry classification and redacted diagnostics.\n- [x] Add provider-specific first-turn HTTP request construction for Gemini Interactions, OpenAI Responses, xAI Responses and Anthropic Messages, with fixed HTTPS origins, provider auth headers, bounded prompt/credential values and credential-redacted diagnostics. Actual network transport and AiEngine integration remain pending.
+- [x] Add common bounded HTTPS transport: redirects disabled, 20s connect / 60s read timeouts, 512 KiB request and 256 KiB response caps, retry classification, redacted diagnostics, no automatic POST retries, and fake-connection regression tests. AiEngine integration remains pending.\n- [x] Add provider-specific first-turn HTTP request construction for Gemini Interactions, OpenAI Responses, xAI Responses and Anthropic Messages, with fixed HTTPS origins, provider auth headers, bounded prompt/credential values and credential-redacted diagnostics. Actual network transport and AiEngine integration remain pending.
 - [ ] Store provider/account credentials separately using Android Keystore; never log secrets.
 - [ ] Keep ConnectorRegistry authorization and ToolApprovalGrants as the final authority for every adapter.
 - [x] Add initial shared adapter contract and Gemini/OpenAI wire-format tests; broaden with fuzzing, malformed payload and live fixtures.
@@ -35,12 +35,12 @@ An outbound API adapter does not automatically make MOSHARROF an MCP server. The
 
 ## Phase 2 — Safe tool execution loop
 - [ ] Convert canonical plugin definitions to each provider's native tool declaration.
-- [ ] Parse one or many tool calls while preserving call IDs and order.
-- [ ] Validate tool name, connector state, schema, argument size/depth and risk before execution.
+- [x] Add bounded canonical provider tool-call parsing with call-ID preservation and duplicate rejection in the adapters; end-to-end AiEngine integration remains pending.
+- [x] Validate tool name, connector state, schema, argument size/depth and risk before execution through CanonicalToolCallGuard.
 - [x] Add a fail-closed CanonicalToolCallGuard that resolves provider tool names against registered MOSHARROF tools, validates arguments against the registered schema, rejects ambiguous/unknown/disconnected tools, and separates READ_ONLY from approval-required risks. The guard never issues grants or executes tools.
 - [ ] Connect the approval-required decision to a user-facing confirmation UI and issue an exact-argument, single-use grant only after explicit approval for WRITE, EXTERNAL_SIDE_EFFECT and DESTRUCTIVE.
-- [ ] Execute only through the authorized connector/runtime path; never run provider-supplied shell or arbitrary code.
-- [ ] Convert results/errors back to provider-native continuation format.
+- [x] Add AiToolCallOrchestrator bridge for guarded execution through an injected connector executor; arbitrary provider-supplied code is never executed. Runtime/UI wiring remains pending.
+- [x] Add provider-native result translators for Gemini Interactions, OpenAI Responses, xAI Responses and Anthropic Messages. End-to-end continuation state/history orchestration remains pending.
 - [ ] Handle parallel calls with bounded concurrency and separate approval per call.
 - [ ] Add max-turn, max-call, total-time, payload and usage limits.
 - [ ] Add cancellation, timeout, retry and unknown-outcome handling without duplicate side effects.
@@ -115,3 +115,15 @@ Do not code five unrelated clients in parallel. Stabilize the common contract fi
 
 
 - Gemini's Interactions API is now the registered default adapter because Google documents it as the recommended interface for new agentic/tool workflows; the generateContent translator remains available for legacy compatibility. The Interactions adapter accepts `v1beta` and `v1` profile versions and translates function_call/function_result steps. Server-side interaction ID continuation is not yet connected to the HTTP orchestration loop.
+
+
+## 2026-11-10 verified source and CI audit update
+
+- The latest PR head at audit time is `1b668ede28ff3f7641a20343b3627be8991d4dff`.
+- Android CI run `42819796245` completed successfully: Android unit tests, debug APK assembly and APK artifact upload all passed. Cloudflare Worker CI run `42819796066` also passed.
+- Added `AiProviderHttpTransport.kt`: shared bounded HTTPS POST transport, fixed HTTPS validation, header allowlist, redirect/cache disablement, 20s/60s timeouts, request/response caps, safe HTTP status classification, no automatic retries, and fake-connection tests.
+- Added `AiToolCallOrchestrator.kt`: bounded call planning, duplicate ID rejection, guard recheck before execution, READ_ONLY vs approval-required separation, explicit grant forwarding, and bounded results. It is not yet wired into `AiEngine` or the Android approval UI.
+- Current `AiEngine` remains the legacy Gemini generateContent + generic OpenAI-compatible Chat Completions text path. It does not yet call the shared request factory/transport, does not select the four registered provider adapters, and has no provider-specific tool-call continuation loop.
+- Credential storage is still one active AiEngine key plus a separate plugin-token store; per-provider encrypted AI credential profiles and management UI remain pending.
+- MCP task lifecycle APIs are bounded but in-memory; durable persistence/recovery and user-facing task input UI remain pending. Remote tools are currently registered as WRITE by default; this is conservative/fail-closed but leaves a read-only classification workflow pending.
+- These CI results verify the source at the stated PR head only. They do not verify physical Android behavior, live provider APIs, real MCP server interoperability, or full multi-AI support.
