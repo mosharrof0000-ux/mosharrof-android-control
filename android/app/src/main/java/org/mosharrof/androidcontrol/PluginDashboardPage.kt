@@ -66,6 +66,9 @@ class PluginDashboardPage(
         button(parent, "Disconnect") {
             disconnect()
         }
+        button(parent, "সংরক্ষিত MCP Task পুনরুদ্ধার / যাচাই") {
+            loadPendingTasks()
+        }
         button(parent, "সংরক্ষিত Token মুছুন") {
             val id = PluginDashboardSession.connectorId
                 ?: connectorIdFor(endpointInput.text.toString().trim())
@@ -727,6 +730,44 @@ class PluginDashboardPage(
                 .onFailure { error ->
                     activity.runOnUiThread {
                         onStatus("MCP Task status পাওয়া যায়নি: ${error.message}")
+                    }
+                }
+        }
+    }
+
+    /** Local task IDs are untrusted candidates; selection always triggers server-side tasks/get. */
+    private fun loadPendingTasks() {
+        val service = PluginDashboardSession.service
+        val connectorId = PluginDashboardSession.connectorId
+        if (service == null || connectorId == null) {
+            onStatus("আগে MCP Connector সংযুক্ত করুন।")
+            return
+        }
+        worker.execute {
+            service.pendingTasks(connectorId)
+                .onSuccess { candidates ->
+                    activity.runOnUiThread {
+                        if (candidates.isEmpty()) {
+                            onStatus("এই Connector-এর কোনো সংরক্ষিত pending Task নেই।")
+                            return@runOnUiThread
+                        }
+                        val labels = candidates.map {
+                            "${it.taskId} · local candidate status: ${it.status}"
+                        }.toTypedArray()
+                        AlertDialog.Builder(activity)
+                            .setTitle("পুনরুদ্ধারের Task candidate")
+                            .setItems(labels) { _, index ->
+                                // Never trust persisted status; fetch the selected task remotely.
+                                refreshTask(candidates[index].taskId)
+                            }
+                            .setNegativeButton("বন্ধ", null)
+                            .show()
+                        onStatus("${candidates.size}টি local Task candidate পাওয়া গেছে; নির্বাচন করলে server থেকে যাচাই হবে।")
+                    }
+                }
+                .onFailure { error ->
+                    activity.runOnUiThread {
+                        onStatus("Task recovery তালিকা পাওয়া যায়নি: ${error.message}")
                     }
                 }
         }
