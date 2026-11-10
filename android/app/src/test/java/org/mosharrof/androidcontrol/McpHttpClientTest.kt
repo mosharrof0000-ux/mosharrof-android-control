@@ -134,6 +134,8 @@ class McpHttpClientTest {
 
     @Test fun onlyCompleteModernResultTypeIsSupported() {
         assertTrue(McpHttpClient.isSupportedModernResultType("complete"))
+        assertFalse(McpHttpClient.isSupportedModernResultType("input_required"))
+        assertFalse(McpHttpClient.isSupportedModernResultType("task"))
         assertFalse(McpHttpClient.isSupportedModernResultType("partial"))
         assertFalse(McpHttpClient.isSupportedModernResultType("unknown"))
     }
