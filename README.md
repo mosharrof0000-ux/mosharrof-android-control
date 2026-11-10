@@ -9,7 +9,7 @@ A standalone Android companion for user-authorized device inspection, file/media
 - SHA-256 duplicate-content detection; duplicate files are reported, never deleted.
 - Audio metadata inspection (artist, album, duration) for common audio formats.
 - HTTPS MCP connector UI reachable from the Android app home screen and navigation.
-- MCP server discovery, tool listing, schema/argument validation, and tool calls through the Streamable HTTP client.
+- MCP server discovery, tool listing, supported-subset JSON Schema/argument validation (unsupported constraints are rejected), and tool calls through the Streamable HTTP client.
 - Explicit per-call approval for write-capable tools, with short-lived single-use grants bound to the exact tool and arguments; disconnect revokes connector grants.
 - Connector bearer tokens encrypted with Android Keystore AES-GCM; plaintext tokens are not written to SharedPreferences.
 - Optional device-initiated HTTPS relay client with encrypted device-token storage, bounded responses, validated command IDs, local duplicate protection, and a fixed allowlist of read-only Termux diagnostics. Every incoming job requires an in-app approval before Termux execution.
