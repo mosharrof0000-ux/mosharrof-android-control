@@ -152,3 +152,49 @@ test("device polling is rate limited", async () => {
   const limited = await worker.fetch(request("/v1/device/jobs/next", "GET", "device-secret"));
   assert.equal(limited.status, 429);
 });
+
+
+test("health response exposes configuration state without secret values", async () => {
+  const { worker } = setup();
+  const response = await worker.fetch(new Request("https://relay.test/healthz"));
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.status, "ok");
+  assert.equal(body.secrets_configured, true);
+  assert.equal(JSON.stringify(body).includes("connector-secret"), false);
+  assert.equal(JSON.stringify(body).includes("device-secret"), false);
+  assert.equal(JSON.stringify(body).includes("setup-secret"), false);
+});
+
+test("connector authentication and operation allowlist fail closed", async () => {
+  const { worker } = setup();
+  const unauthorized = await worker.fetch(request(
+    "/v1/chat/commands", "POST", "wrong-token",
+    { operation_id: "termux.python_version", idempotency_key: "stable-key-0002" },
+  ));
+  assert.equal(unauthorized.status, 401);
+
+  const unsupported = await worker.fetch(request(
+    "/v1/chat/commands", "POST", "connector-secret",
+    { operation_id: "termux.execute_shell", idempotency_key: "stable-key-0003" },
+  ));
+  assert.equal(unsupported.status, 400);
+  assert.equal((await unsupported.json()).error, "operation_not_allowed");
+});
+
+test("malformed result payload and malformed command identifiers are rejected", async () => {
+  const { worker } = setup();
+  const malformed = await worker.fetch(request(
+    "/v1/device/jobs/not-a-uuid/result", "POST", "device-secret",
+    { output: "ok", exit_code: 0 },
+  ));
+  assert.equal(malformed.status, 404);
+
+  const created = await createJob(worker);
+  const malformedResult = await worker.fetch(request(
+    "/v1/device/jobs/" + created.body.command_id + "/result",
+    "POST", "device-secret", { output: 7, exit_code: "0" },
+  ));
+  assert.equal(malformedResult.status, 400);
+  assert.equal((await malformedResult.json()).error, "invalid_result");
+});
