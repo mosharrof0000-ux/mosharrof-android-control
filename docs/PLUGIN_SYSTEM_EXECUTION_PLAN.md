@@ -59,3 +59,14 @@ This is the working completion ledger for PR #7 and the Android Plugin System. S
 - Tool output and failure text are bounded to 64 KiB; failures are returned as error tool results for provider continuation.
 - Added `AiToolCallOrchestratorTest.kt` covering read-only execution, approval gating, grant forwarding, disconnected/schema-invalid denial, permission recheck, unexpected grants, bounded output, safe errors, batch bounds, duplicate IDs and ordering.
 - **Status: source and tests added; CI verification pending.** This is an orchestration foundation, not yet wired into `AiEngine` or the Android approval UI. The caller must connect its executor to `McpConnectorService.callTool` and obtain grants only after user confirmation.
+
+
+## 2026-11-10 implementation log — provider request construction
+
+- Added `AiProviderRequestFactory.kt` to build fixed-origin HTTPS first-turn requests for Gemini Interactions, OpenAI Responses, xAI Responses and Anthropic Messages.
+- Uses each provider's documented authentication header; credentials are never placed in URL query strings or request bodies.
+- Sets provider-specific request bodies and disables parallel tool calls for OpenAI/xAI/Anthropic to align with the current one-call-at-a-time execution boundary.
+- Requests provider-side storage off where the API supports it (`store=false`); Anthropic Messages remains stateless.
+- Anthropic API version is pinned to the currently documented `2026-10-21`.
+- Added request-factory tests for endpoints, headers, continuation/tool options, prompt/key bounds, unsupported providers and credential redaction in diagnostic string output.
+- **Status: source and tests added; current-head Android CI verification pending.** This is request construction only: actual HTTP transport, stored credential lookup, AiEngine integration and provider conversation continuation are still pending.
