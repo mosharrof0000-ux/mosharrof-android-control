@@ -34,7 +34,7 @@
 ## Remaining threats and release gates
 - Verify the deployed Worker’s lease/retry, idempotency, rate-limit, and audit behavior end-to-end; source-level implementation alone is not deployment evidence.
 - Verify credential revocation and token invalidation behavior on a physical Android device.
-- Implement and test MCP 2026-07-28 `input_required` multi-round-trip handling before claiming full modern protocol support; optional Tasks extension support is also pending.
+- MRTR `input_required` handling now uses a user-reviewed JSON response dialog, opaque `requestState` pass-through, request-key matching, and a 10-round cap. Native schema-driven form rendering and URL-mode browser handoff remain pending; the optional Tasks extension is not implemented.
 - Add OAuth/CIMD authorization for servers that do not support manually provisioned Bearer tokens.
 - Run a real HTTPS MCP server through connect, discovery, approval, tool execution, and disconnect.
 - Inspect logs and error surfaces for credential or private-data leakage.
