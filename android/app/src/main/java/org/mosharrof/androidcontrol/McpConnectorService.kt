@@ -1,0 +1,453 @@
+package org.mosharrof.androidcontrol
+
+import org.json.JSONArray
+import org.json.JSONObject
+import java.security.MessageDigest
+import java.util.UUID
+
+/**
+ * MCP connection lifecycle and explicitly approved tool execution.
+ */
+class McpConnectorService(
+    private val client: McpHttpClient,
+    private val clientName: String = "MOSHARROF Android Control",
+    private val clientVersion: String = "1.0"
+) {
+    data class ConnectionInfo(
+        val connectorId: String,
+        val protocolVersion: String,
+        val serverInfo: Map<String, Any?>,
+        val discoveredTools: Int
+    )
+
+    private data class NegotiatedConnection(
+        val version: String,
+        val serverInfo: Map<String, Any?>
+    )
+
+    private val connected = linkedSetOf<String>()
+
+    @Synchronized
+    fun connect(connectorId: String): Result<ConnectionInfo> = runCatching {
+        val connector = ConnectorRegistry.connectorSnapshot()
+            .firstOrNull { it.id == connectorId }
+            ?: error("নিবন্ধিত Connector পাওয়া যায়নি।")
+
+        require(connector.transport == ConnectorRegistry.Transport.MCP_STREAMABLE_HTTP) {
+            "এই Connector MCP Streamable HTTP নয়।"
+        }
+
+        // A reconnect must invalidate previous tools and approval grants.
+        ToolApprovalGrants.revokeConnector(connectorId)
+        connected.remove(connectorId)
+        ConnectorRegistry.unregisterToolsForConnector(connectorId)
+
+        try {
+            val negotiated = negotiateProtocol()
+            val version = negotiated.version
+
+            val listRequest = if (version == McpProtocol.MODERN_VERSION) {
+                McpProtocol.modernToolsListRequest(
+                    id = UUID.randomUUID().toString(),
+                    clientName = clientName,
+                    clientVersion = clientVersion
+                )
+            } else {
+                McpProtocol.toolsListRequest(UUID.randomUUID().toString())
+            }
+
+            val listResponse = client.post(listRequest)
+            val listResult = listResponse.optJSONObject("result")
+                ?: error(
+                    listResponse.optJSONObject("error")?.optString("message")
+                        ?: "MCP tools/list ব্যর্থ হয়েছে।"
+                )
+
+            val toolsArray = listResult.optJSONArray("tools")
+                ?: JSONArray()
+
+            var registered = 0
+
+            for (index in 0 until toolsArray.length()) {
+                val item = toolsArray.optJSONObject(index) ?: continue
+                val name = item.optString("name").trim()
+                if (name.isBlank()) continue
+
+                val description = item.optString("description", name)
+                val schemaObject = item.optJSONObject("inputSchema")
+                    ?: JSONObject("""{"type":"object"}""")
+
+                val required = schemaObject.optJSONArray("required").toStringSet()
+
+                val safePart = name
+                    .replace(Regex("[^a-zA-Z0-9._-]"), "_")
+                    .take(24)
+                    .ifBlank { "tool" }
+
+                val nameHash = sha256(name).take(12)
+                val toolId = "${connectorId.take(40)}.$safePart.$nameHash"
+
+                val tool = ConnectorRegistry.Tool(
+                    id = toolId,
+                    connectorId = connectorId,
+                    name = name,
+                    description = description,
+                    risk = ConnectorRegistry.Risk.WRITE,
+                    requiredFields = required,
+                    inputSchema = schemaObject.toMap()
+                )
+
+                // A partial registration must fail the whole connection.
+                ConnectorRegistry.registerTool(tool).getOrThrow()
+                registered++
+            }
+
+            ConnectorRegistry.updateConnectionState(
+                connectorId,
+                ConnectorRegistry.ConnectionState.CONNECTED
+            ).getOrThrow()
+
+            connected.add(connectorId)
+
+            ConnectionInfo(
+                connectorId = connectorId,
+                protocolVersion = version,
+                serverInfo = negotiated.serverInfo,
+                discoveredTools = registered
+            )
+        } catch (failure: Throwable) {
+            ToolApprovalGrants.revokeConnector(connectorId)
+            connected.remove(connectorId)
+            ConnectorRegistry.unregisterToolsForConnector(connectorId)
+            runCatching {
+                ConnectorRegistry.updateConnectionState(
+                    connectorId,
+                    ConnectorRegistry.ConnectionState.DISCONNECTED
+                )
+            }
+            throw failure
+        }
+    }
+
+    private fun negotiateProtocol(): NegotiatedConnection {
+        client.selectProtocolVersion(McpProtocol.MODERN_VERSION)
+
+        val discoveryResponse = try {
+            client.post(
+                McpProtocol.modernDiscoveryRequest(
+                    id = UUID.randomUUID().toString(),
+                    clientName = clientName,
+                    clientVersion = clientVersion
+                )
+            )
+        } catch (failure: McpHttpException) {
+            val modernErrorCodes = setOf(-32020, -32021, -32022)
+            if (
+                failure.statusCode in setOf(400, 404) &&
+                failure.rpcErrorCode !in modernErrorCodes
+            ) {
+                null
+            } else if (failure.rpcErrorCode == -32022) {
+                val supported = failure.rpcErrorData?.optJSONArray("supported")
+                    ?: error("MCP -32022 error-এ data.supported অনুপস্থিত।")
+                val serverVersions = (0 until supported.length())
+                    .map { supported.optString(it) }
+                    .toSet()
+                val legacyVersion = listOf(
+                    "2025-11-25", "2025-06-18", "2025-03-26"
+                ).firstOrNull { it in serverVersions }
+                    ?: error(
+                        "MCP server-এর supported তালিকায় পরিচিত Legacy version নেই: " +
+                            serverVersions.joinToString()
+                    )
+                return negotiateLegacyProtocol(legacyVersion)
+            } else {
+                throw failure
+            }
+        }
+
+        val discoveryError = discoveryResponse?.optJSONObject("error")
+        if (discoveryError != null) {
+            error(
+                "MCP server/discover JSON-RPC error " +
+                    "${discoveryError.optInt("code")}: " +
+                    discoveryError.optString("message")
+            )
+        }
+
+        if (discoveryResponse != null) {
+            val result = discoveryResponse.optJSONObject("result")
+                ?: error(
+                    discoveryError?.optString("message")
+                        ?: "MCP server/discover response-এ result পাওয়া যায়নি।"
+                )
+
+            require(result.optString("resultType") == "complete") {
+                "Modern MCP discovery resultType complete নয়।"
+            }
+
+            val supportedVersions = result.optJSONArray("supportedVersions")
+                ?: error("Modern MCP discovery-এ supportedVersions অনুপস্থিত।")
+            val serverVersions = (0 until supportedVersions.length())
+                .map { supportedVersions.optString(it) }
+                .toSet()
+            if (McpProtocol.MODERN_VERSION !in serverVersions) {
+                val legacyVersion = listOf(
+                    "2025-11-25", "2025-06-18", "2025-03-26"
+                ).firstOrNull { it in serverVersions }
+                    ?: error(
+                        "MCP server-এর supported তালিকায় পরিচিত protocol version নেই: " +
+                            serverVersions.joinToString()
+                    )
+                return negotiateLegacyProtocol(legacyVersion)
+            }
+
+            require(result.optJSONObject("capabilities") != null) {
+                "Modern MCP discovery-এ capabilities অনুপস্থিত।"
+            }
+            require(result.optString("cacheScope").isNotBlank()) {
+                "Modern MCP discovery-এ cacheScope অনুপস্থিত।"
+            }
+            val ttlValue = result.opt("ttlMs")
+            require(ttlValue is Number && ttlValue.toLong() >= 0) {
+                "Modern MCP discovery-এ ttlMs অবৈধ বা অনুপস্থিত।"
+            }
+
+            val serverInfo = result.optJSONObject("_meta")
+                ?.optJSONObject("io.modelcontextprotocol/serverInfo")
+                ?.toMap() ?: emptyMap()
+
+            return NegotiatedConnection(
+                version = McpProtocol.MODERN_VERSION,
+                serverInfo = serverInfo
+            )
+        }
+
+        return negotiateLegacyProtocol()
+    }
+
+    private fun negotiateLegacyProtocol(
+        requestedVersion: String = "2025-11-25"
+    ): NegotiatedConnection {
+        require(requestedVersion in setOf("2025-03-26", "2025-06-18", "2025-11-25")) {
+            "অসমর্থিত Legacy MCP protocol version."
+        }
+        client.selectProtocolVersion(requestedVersion)
+
+        val response = client.post(
+            McpProtocol.initializeRequest(
+                id = UUID.randomUUID().toString(),
+                clientName = clientName,
+                clientVersion = clientVersion,
+                protocolVersion = requestedVersion
+            )
+        )
+
+        val result = response.optJSONObject("result")
+            ?: error(
+                response.optJSONObject("error")?.optString("message")
+                    ?: "Legacy MCP initialize ব্যর্থ হয়েছে।"
+            )
+
+        val negotiatedVersion = result.optString("protocolVersion")
+        require(
+            negotiatedVersion in setOf(
+                "2025-03-26",
+                "2025-06-18",
+                "2025-11-25"
+            )
+        ) {
+            "Server অসমর্থিত Legacy MCP protocol version দিয়েছে।"
+        }
+
+        client.selectProtocolVersion(negotiatedVersion)
+        client.post(McpProtocol.initializedNotification())
+
+        return NegotiatedConnection(
+            version = negotiatedVersion,
+            serverInfo = result.optJSONObject("serverInfo")?.toMap()
+                ?: emptyMap()
+        )
+    }
+
+    /**
+     * Called only after the user confirms the approval dialog.
+     * READ_ONLY tools do not need a grant.
+     */
+    @Synchronized
+    fun issueApprovalGrant(
+        toolId: String,
+        arguments: Map<String, Any?>
+    ): Result<String?> = runCatching {
+        val tool = ConnectorRegistry.toolSnapshot()
+            .firstOrNull { it.id == toolId }
+            ?: error("নিবন্ধিত Tool পাওয়া যায়নি।")
+
+        require(tool.connectorId in connected) {
+            "Connector এই Service session-এ সংযুক্ত নয়।"
+        }
+
+        require(McpArgumentsValidator.validate(tool.inputSchema, arguments, tool.requiredFields)) {
+            "Tool input schema অনুযায়ী arguments অবৈধ অথবা required value অনুপস্থিত।"
+        }
+        val missing = tool.requiredFields.filterNot(arguments::containsKey)
+        require(missing.isEmpty()) {
+            "প্রয়োজনীয় input অনুপস্থিত: ${missing.joinToString(", ")}"
+        }
+
+        when (ConnectorRegistry.authorize(toolId)) {
+            ConnectorRegistry.Decision.ALLOW_READ_ONLY -> null
+            ConnectorRegistry.Decision.APPROVAL_REQUIRED ->
+                ToolApprovalGrants.issue(tool.connectorId, toolId, arguments)
+            ConnectorRegistry.Decision.DENY_CONNECTOR_UNAVAILABLE ->
+                error("Connector সংযুক্ত নেই।")
+            else -> error("নিরাপত্তা নীতিতে Approval Grant দেওয়া হয়নি।")
+        }
+    }
+
+    /**
+     * Non-read-only tools require a matching, unexpired, single-use grant.
+     */
+    @Synchronized
+    fun callTool(
+        toolId: String,
+        arguments: Map<String, Any?>,
+        approvalGrant: String? = null
+    ): Result<String> = runCatching {
+        val tool = ConnectorRegistry.toolSnapshot()
+            .firstOrNull { it.id == toolId }
+            ?: error("নিবন্ধিত Tool পাওয়া যায়নি।")
+
+        require(tool.connectorId in connected) {
+            "Connector এই Service session-এ সংযুক্ত নয়।"
+        }
+
+        require(McpArgumentsValidator.validate(tool.inputSchema, arguments, tool.requiredFields)) {
+            "Tool input schema অনুযায়ী arguments অবৈধ অথবা required value অনুপস্থিত।"
+        }
+        val missing = tool.requiredFields.filterNot(arguments::containsKey)
+        require(missing.isEmpty()) {
+            "প্রয়োজনীয় input অনুপস্থিত: ${missing.joinToString(", ")}"
+        }
+
+        when (ConnectorRegistry.authorize(toolId)) {
+            ConnectorRegistry.Decision.ALLOW_READ_ONLY -> Unit
+
+            ConnectorRegistry.Decision.APPROVAL_REQUIRED -> {
+                val token = approvalGrant
+                    ?: error("এই Tool চালাতে একবারের Approval Grant প্রয়োজন।")
+
+                require(
+                    ToolApprovalGrants.consume(
+                        token = token,
+                        connectorId = tool.connectorId,
+                        toolId = toolId,
+                        arguments = arguments
+                    )
+                ) {
+                    "Approval Grant অবৈধ, মেয়াদোত্তীর্ণ, ব্যবহৃত অথবা এই Input-এর জন্য নয়।"
+                }
+            }
+
+            ConnectorRegistry.Decision.DENY_CONNECTOR_UNAVAILABLE ->
+                error("Connector সংযুক্ত নেই।")
+
+            else -> error("নিরাপত্তা নীতিতে Tool call অনুমোদিত হয়নি।")
+        }
+
+        val definition = McpProtocol.ToolDefinition(
+            name = tool.name,
+            description = tool.description,
+            inputSchema = tool.inputSchema
+        )
+
+        val request = if (clientProtocolVersion() == McpProtocol.MODERN_VERSION) {
+            McpProtocol.modernToolsCallRequest(
+                id = UUID.randomUUID().toString(),
+                toolName = tool.name,
+                arguments = arguments,
+                clientName = clientName,
+                clientVersion = clientVersion
+            )
+        } else {
+            McpProtocol.toolsCallRequest(
+                id = UUID.randomUUID().toString(),
+                toolName = tool.name,
+                arguments = arguments
+            )
+        }
+
+        val response = client.post(request, definition)
+
+        if (response.has("error")) {
+            val rpcError = response.optJSONObject("error")
+            error(rpcError?.optString("message") ?: "MCP Tool call ব্যর্থ হয়েছে।")
+        }
+
+        response.optJSONObject("result")?.toString()
+            ?: error("MCP Tool response-এ result পাওয়া যায়নি।")
+    }
+
+    private fun clientProtocolVersion(): String {
+        // The selected protocol is exposed by the client implementation.
+        return client.selectedProtocolVersion()
+    }
+
+    @Synchronized
+    fun disconnect(connectorId: String): Result<Unit> = runCatching {
+        ToolApprovalGrants.revokeConnector(connectorId)
+        connected.remove(connectorId)
+        ConnectorRegistry.unregisterToolsForConnector(connectorId)
+
+        ConnectorRegistry.updateConnectionState(
+            connectorId,
+            ConnectorRegistry.ConnectionState.DISCONNECTED
+        ).getOrThrow()
+    }
+
+    private fun sha256(value: String): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(value.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+
+    private fun JSONObject.toMap(): Map<String, Any?> {
+        val result = linkedMapOf<String, Any?>()
+        val iterator = keys()
+
+        while (iterator.hasNext()) {
+            val key = iterator.next()
+            val value = opt(key)
+
+            result[key] = when (value) {
+                is JSONObject -> value.toMap()
+                is JSONArray -> value.toValueList()
+                JSONObject.NULL -> null
+                else -> value
+            }
+        }
+
+        return result
+    }
+
+    private fun JSONArray?.toStringSet(): Set<String> {
+        if (this == null) return emptySet()
+
+        return buildSet {
+            for (index in 0 until length()) {
+                optString(index)
+                    .takeIf { it.isNotBlank() }
+                    ?.let(::add)
+            }
+        }
+    }
+
+    private fun JSONArray.toValueList(): List<Any?> =
+        (0 until length()).map { index ->
+            when (val value = opt(index)) {
+                is JSONObject -> value.toMap()
+                is JSONArray -> value.toValueList()
+                JSONObject.NULL -> null
+                else -> value
+            }
+        }
+}
