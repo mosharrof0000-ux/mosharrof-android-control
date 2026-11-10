@@ -474,8 +474,20 @@ class McpConnectorService(
                         }
                     }
                 }
-                "task" ->
-                    error("MCP Tasks extension এখনো সমর্থিত নয়; Tool execution থামানো হয়েছে।")
+                "task" -> {
+                    val handle = McpTaskProtocol.parseHandle(result.toMap())
+                        ?: error("MCP Task handle-এর taskId, status, TTL অথবা poll interval অবৈধ।")
+                    taskStore.upsert(
+                        McpTaskRecord(
+                            connectorId = tool.connectorId,
+                            taskId = handle.taskId,
+                            status = handle.status.name,
+                            ttlMs = handle.ttlMs,
+                            pollIntervalMs = handle.pollIntervalMs,
+                            observedAtEpochMs = System.currentTimeMillis()
+                        )
+                    )
+                }
                 else -> error("অসমর্থিত MCP resultType: $resultType")
             }
         }
