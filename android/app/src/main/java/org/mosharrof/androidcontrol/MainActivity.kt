@@ -1,6 +1,7 @@
 package org.mosharrof.androidcontrol
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -49,21 +50,26 @@ class MainActivity : Activity() {
     private val relayHandler = Handler(Looper.getMainLooper())
     @Volatile private var relayPolling = false
     @Volatile private var activityVisible = false
-    private var lastRelayCommand = ""
+    @Volatile private var relayApprovalPending = false
+    @Volatile private var lastRelayCommand = ""
     private val relayTick: Runnable = object : Runnable {
         override fun run() {
-            if (!relayPolling || !activityVisible || isFinishing) return
+            if (!relayPolling || !activityVisible || isFinishing || relayApprovalPending) return
             worker.execute {
-                runCatching { RelayClient.poll(this@MainActivity) }.onSuccess { job ->
-                    if (job != null && job.commandId != lastRelayCommand) {
-                        lastRelayCommand = job.commandId
-                        runOnUiThread { status.text = "Relay থেকে অনুমোদিত কাজ এসেছে: ${job.operationId}" }
-                        TermuxBridge.run(this@MainActivity, job.operationId, job.commandId)
+                if (!relayApprovalPending) {
+                    runCatching { RelayClient.poll(this@MainActivity) }.onSuccess { job ->
+                        if (job != null && job.commandId != lastRelayCommand && !relayApprovalPending) {
+                            lastRelayCommand = job.commandId
+                            relayApprovalPending = true
+                            runOnUiThread { requestRelayJobApproval(job) }
+                        }
+                    }.onFailure { error ->
+                        runOnUiThread { status.text = "Relay polling সমস্যা: ${error.message}" }
                     }
-                }.onFailure { error ->
-                    runOnUiThread { status.text = "Relay polling সমস্যা: ${error.message}" }
                 }
-                if (relayPolling && activityVisible) relayHandler.postDelayed(this@MainActivity.relayTick, 3000)
+                if (relayPolling && activityVisible && !relayApprovalPending) {
+                    relayHandler.postDelayed(this@MainActivity.relayTick, 3000)
+                }
             }
         }
     }
@@ -341,6 +347,8 @@ class MainActivity : Activity() {
             }
             setupToken = EditText(this@MainActivity).apply {
                 hint = "Device setup token (গোপন)"
+                inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                    android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
                 setSingleLine(true)
             }
             addView(relayUrl)
@@ -499,6 +507,84 @@ class MainActivity : Activity() {
                     status.text = "Pairing ব্যর্থ: ${error.message}"
                 }
             }
+        }
+    }
+
+    private fun requestRelayJobApproval(job: RelayClient.Job) {
+        if (isFinishing || !activityVisible) {
+            relayApprovalPending = false
+            lastRelayCommand = ""
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Relay কাজের অনুমতি")
+            .setMessage(
+                "অপারেশন: ${job.operationId}\nকমান্ড ID: ${job.commandId.take(8)}…\n\n" +
+                    "এটি Termux-এ একটি পূর্বনির্ধারিত read-only কমান্ড চালাবে। " +
+                    "আপনি অনুমোদন না দিলে কোনো কমান্ড চলবে না।"
+            )
+            .setCancelable(false)
+            .setNegativeButton("প্রত্যাখ্যান") { _, _ ->
+                worker.execute {
+                    val result = runCatching {
+                        RelayClient.markCommandHandled(this@MainActivity, job.commandId)
+                        RelayClient.postResult(
+                            this@MainActivity,
+                            job.commandId,
+                            "Rejected by user in Android app",
+                            126
+                        )
+                    }
+                    runOnUiThread {
+                        status.text = if (result.isSuccess) {
+                            "Relay কাজ প্রত্যাখ্যান করা হয়েছে; Termux-এ কিছু চালানো হয়নি।"
+                        } else {
+                            "Relay প্রত্যাখ্যানের ফল পাঠানো যায়নি: ${result.exceptionOrNull()?.message}"
+                        }
+                        finishRelayApproval()
+                    }
+                }
+            }
+            .setPositiveButton("অনুমোদন করে চালান") { _, _ ->
+                worker.execute {
+                    val result = runCatching {
+                        RelayClient.markCommandHandled(this@MainActivity, job.commandId)
+                    }
+                    if (result.isFailure) {
+                        runOnUiThread {
+                            status.text = "স্থানীয় duplicate guard সংরক্ষণ হয়নি; কমান্ড চালানো হয়নি।"
+                            finishRelayApproval()
+                        }
+                        return@execute
+                    }
+                    val execution = TermuxBridge.run(this@MainActivity, job.operationId, job.commandId)
+                    runOnUiThread {
+                        status.text = execution.fold(
+                            { it },
+                            { "Termux অনুরোধ ব্যর্থ: ${it.message}" }
+                        )
+                        finishRelayApproval()
+                    }
+                    if (execution.isFailure) {
+                        runCatching {
+                            RelayClient.postResult(
+                                this@MainActivity,
+                                job.commandId,
+                                execution.exceptionOrNull()?.message ?: "Termux request failed",
+                                -1
+                            )
+                        }
+                    }
+                }
+            }
+            .show()
+    }
+
+    private fun finishRelayApproval() {
+        relayApprovalPending = false
+        if (relayPolling && activityVisible) {
+            relayHandler.removeCallbacks(relayTick)
+            relayHandler.postDelayed(relayTick, 3000)
         }
     }
 
