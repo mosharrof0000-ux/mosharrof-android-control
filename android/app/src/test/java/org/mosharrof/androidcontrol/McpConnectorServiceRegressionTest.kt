@@ -29,6 +29,7 @@ class McpConnectorServiceRegressionTest {
         val methods = mutableListOf<String>()
         val toolCallMetadata = mutableListOf<Boolean>()
         val toolCallHeaders = mutableListOf<Map<String, String?>>()
+        val toolCallParams = mutableListOf<JSONObject>()
         val toolListCursors = mutableListOf<String?>()
 
         fun connection(url: URL): HttpURLConnection =
@@ -64,6 +65,7 @@ class McpConnectorServiceRegressionTest {
 
                     if (method == "tools/call") {
                         val params = request.optJSONObject("params")
+                        if (params != null) toolCallParams.add(JSONObject(params.toString()))
                         val metadata = params?.optJSONObject("_meta")
                         toolCallMetadata.add(
                             metadata?.optString("io.modelcontextprotocol/protocolVersion") ==
@@ -186,6 +188,20 @@ class McpConnectorServiceRegressionTest {
                                         JSONObject().put("type", "text").put("text", "ok")
                                     )
                                 )
+                                .apply {
+                                    if (toolResultType == "input_required") {
+                                        put(
+                                            "inputRequests",
+                                            JSONObject().put(
+                                                "confirm",
+                                                JSONObject()
+                                                    .put("method", "elicitation/create")
+                                                    .put("params", JSONObject().put("mode", "form"))
+                                            )
+                                        )
+                                        put("requestState", "opaque-state-from-server")
+                                    }
+                                }
                         }
 
                         else -> JSONObject()
@@ -302,7 +318,7 @@ class McpConnectorServiceRegressionTest {
     }
 
     @Test
-    fun inputRequiredResultIsRejectedAtToolExecutionBoundary() {
+    fun inputRequiredResultIsReturnedForMrtrHandling() {
         registerConnector()
         val server = FakeServer(toolResultType = "input_required")
         val connectorService = service(server)
@@ -312,11 +328,45 @@ class McpConnectorServiceRegressionTest {
         val grant = connectorService.issueApprovalGrant(tool.id, arguments).getOrThrow()
             ?: error("Approval Grant পাওয়া যায়নি।")
 
-        val result = connectorService.callTool(tool.id, arguments, grant)
+        val result = connectorService.callTool(tool.id, arguments, grant).getOrThrow()
+        val payload = JSONObject(result)
 
-        assertTrue(result.isFailure)
-        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("input_required"))
+        assertEquals("input_required", payload.optString("resultType"))
+        assertTrue(payload.optJSONObject("inputRequests")?.has("confirm") == true)
+        assertEquals("opaque-state-from-server", payload.optString("requestState"))
         assertEquals(1, server.toolCalls.get())
+    }
+
+    @Test
+    fun mrtrRetryCarriesResponsesAndOpaqueStateWithoutChangingOriginalArguments() {
+        registerConnector()
+        val server = FakeServer(toolResultType = "input_required")
+        val connectorService = service(server)
+        connectorService.connect("test.mcp").getOrThrow()
+        val tool = ConnectorRegistry.toolsFor("test.mcp").single()
+        val arguments = mapOf<String, Any?>("text" to "hello")
+        val firstGrant = connectorService.issueApprovalGrant(tool.id, arguments).getOrThrow()
+            ?: error("Approval Grant পাওয়া যায়নি।")
+        connectorService.callTool(tool.id, arguments, firstGrant).getOrThrow()
+
+        val responses = mapOf<String, Any?>(
+            "confirm" to mapOf("action" to "accept", "content" to mapOf("ok" to true))
+        )
+        val secondGrant = connectorService.issueApprovalGrant(tool.id, arguments).getOrThrow()
+            ?: error("দ্বিতীয় Approval Grant পাওয়া যায়নি।")
+        connectorService.callTool(
+            toolId = tool.id,
+            arguments = arguments,
+            approvalGrant = secondGrant,
+            inputResponses = responses,
+            requestState = "opaque-state-from-server"
+        ).getOrThrow()
+
+        val retryParams = server.toolCallParams.last()
+        assertEquals(responses, retryParams.optJSONObject("inputResponses")?.toMap())
+        assertEquals("opaque-state-from-server", retryParams.optString("requestState"))
+        assertEquals("hello", retryParams.optJSONObject("arguments")?.optString("text"))
+        assertEquals(2, server.toolCalls.get())
     }
 
     @Test
