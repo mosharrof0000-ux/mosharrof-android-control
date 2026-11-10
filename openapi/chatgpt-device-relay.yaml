@@ -35,7 +35,7 @@ paths:
                 operation_id:
                   type: string
                   enum: [termux.python_version, termux.git_video_status, termux.storage_report, termux.system_info, device.storage_report, device.selected_folder_inventory, device.audio_metadata]
-                idempotency_key: { type: string, maxLength: 100 }
+                idempotency_key: { type: string, minLength: 8, maxLength: 100, pattern: "^[A-Za-z0-9._:-]+$" }
       responses:
         "202": { description: Command queued }
   /v1/chat/commands/{command_id}:
