@@ -32,6 +32,20 @@ class RelayClientSecurityTest {
     }
 
     @Test
+    fun retryPolicyOnlyRetriesIdempotentRequestsAndTransientStatuses() {
+        assertTrue(RelayClient.isRetryableRequest("GET", "https://relay.example/v1/device/jobs/next"))
+        assertTrue(RelayClient.isRetryableRequest("POST", "https://relay.example/v1/device/jobs/id/result"))
+        assertFalse(RelayClient.isRetryableRequest("POST", "https://relay.example/v1/device/pair/start"))
+        assertTrue(RelayClient.isRetryableStatus(503))
+        assertTrue(RelayClient.isRetryableStatus(429))
+        assertFalse(RelayClient.isRetryableStatus(401))
+        assertEquals(500L, RelayClient.retryDelayMs(0))
+        assertEquals(1000L, RelayClient.retryDelayMs(1))
+        assertEquals(2000L, RelayClient.retryDelayMs(2))
+        assertEquals(2000L, RelayClient.retryDelayMs(5))
+    }
+
+    @Test
     fun relayJobParserAcceptsOnlyFixedReadOnlyOperationsAndSafeIds() {
         val job = RelayClient.parseJob(
             JSONObject().put("command_id", "job_123-ABC")
