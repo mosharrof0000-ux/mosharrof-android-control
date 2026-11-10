@@ -28,6 +28,16 @@ sealed class AiToolCallExecution {
 object AiToolCallOrchestrator {
     const val MAX_CALLS_PER_RESPONSE = 32
 
+    fun planAll(calls: List<CanonicalToolCall>): Result<List<AiToolCallPlan>> = runCatching {
+        require(calls.isNotEmpty() && calls.size <= MAX_CALLS_PER_RESPONSE) {
+            "Provider tool-call count is outside the supported limit."
+        }
+        require(calls.map { it.providerCallId }.toSet().size == calls.size) {
+            "Provider returned duplicate tool-call IDs."
+        }
+        calls.map(::plan)
+    }
+
     fun plan(call: CanonicalToolCall): AiToolCallPlan =
         when (val decision = CanonicalToolCallGuard.inspect(call)) {
             is CanonicalToolCallDecision.ReadOnlyAllowed ->
