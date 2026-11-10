@@ -90,9 +90,46 @@ object AiEngine {
         return endpoint
     }
 
+    fun saveProviderProfile(context: Context, id: String, provider: AiProviderId, model: String, apiKey: String, endpoint: String? = null): AiProviderProfileSummary =
+        AiProviderProfileStore.save(context, id, provider, model, apiKey, endpoint)
+
+    fun providerProfiles(context: Context): List<AiProviderProfileSummary> =
+        AiProviderProfileStore.list(context)
+
+    fun setActiveProviderProfile(context: Context, id: String) =
+        AiProviderProfileStore.setActive(context, id)
+
+    fun deleteProviderProfile(context: Context, id: String) =
+        AiProviderProfileStore.delete(context, id)
+
+    /** Explicit, idempotent migration; the legacy encrypted preference is preserved. */
+    fun migrateLegacyConfigToProfile(context: Context): Boolean {
+        if (AiProviderProfileStore.active(context) != null || !isConfigured(context)) return false
+        val p = prefs(context)
+        val legacyProvider = runCatching {
+            Provider.valueOf(p.getString("provider", "") ?: "")
+        }.getOrNull() ?: return false
+        val providerId = when (legacyProvider) {
+            Provider.GEMINI -> AiProviderId.GEMINI
+            Provider.OPENAI_COMPATIBLE -> AiProviderId.CUSTOM
+        }
+        val model = p.getString("model", null) ?: return false
+        val key = decrypt(p.getString(KEY_API, null) ?: return false)
+        val endpoint = if (providerId == AiProviderId.CUSTOM) {
+            p.getString("endpoint", null)?.let(::validateEndpoint)
+        } else null
+        val id = "legacy-" + legacyProvider.name.lowercase()
+        AiProviderProfileStore.save(context, id, providerId, model, key, endpoint)
+        AiProviderProfileStore.setActive(context, id)
+        return true
+    }
+
     fun ask(context: Context, prompt: String): String {
         require(prompt.isNotBlank()) { "AI-কে করার প্রশ্ন লিখুন।" }
         require(prompt.length <= MAX_PROMPT_CHARS) { "AI prompt ৬৪ KB সীমা অতিক্রম করেছে।" }
+        AiProviderProfileStore.active(context)?.let { profile ->
+            return AiProviderRuntime.askText(profile, prompt)
+        }
         val p = prefs(context)
         val provider = runCatching {
             Provider.valueOf(p.getString("provider", "") ?: "")
