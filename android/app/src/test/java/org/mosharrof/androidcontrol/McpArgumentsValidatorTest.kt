@@ -193,4 +193,30 @@ class McpArgumentsValidatorTest {
         )
     }
 
+
+    @Test
+    fun rejectsArgumentNestingBeyondSafetyLimit() {
+        var nestedSchema: Map<String, Any?> = mapOf("type" to "string")
+        var nestedValue: Any? = "leaf"
+        repeat(40) {
+            nestedSchema = mapOf(
+                "type" to "object",
+                "properties" to mapOf("child" to nestedSchema),
+                "required" to listOf("child")
+            )
+            nestedValue = mapOf("child" to nestedValue)
+        }
+        val rootSchema = mapOf<String, Any?>(
+            "type" to "object",
+            "properties" to mapOf("root" to nestedSchema)
+        )
+        assertFalse(
+            McpArgumentsValidator.validate(
+                rootSchema,
+                mapOf("root" to nestedValue),
+                emptyList()
+            )
+        )
+    }
+
 }
