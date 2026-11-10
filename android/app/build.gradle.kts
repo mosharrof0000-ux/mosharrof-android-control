@@ -27,4 +27,6 @@ dependencies {
 
     // Local JVM unit tests for the Android Plugin System.
     testImplementation("junit:junit:4.13.2")
+    // Use a real org.json implementation in local JVM tests instead of Android's mockable stubs.
+    testImplementation("org.json:json:20240303")
 }
