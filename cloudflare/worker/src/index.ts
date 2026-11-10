@@ -71,7 +71,7 @@ export class RelayDO {
    });
    return json({job:job?{command_id:job.command_id,operation_id:job.operation_id,created_at:job.created_at,expires_at:job.expires_at,attempts:job.attempts}:null});
   }
-  const resultMatch=p.match(/^\/v1\/device\/jobs\/([a-f0-9-]+)\/result$/);
+  const resultMatch=p.match(/^\/v1\/device\/jobs\/([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\/result$/i);
   if(resultMatch&&req.method==="POST"){
    if(!await this.deviceAuth(req))return json({error:"unauthorized"},401);
    if(!await this.allowRateLimit("device:result",30,60_000))return json({error:"rate_limited"},429);
@@ -132,7 +132,7 @@ export class RelayDO {
    if(outcome.kind==="reused")return json({command_id:outcome.command_id,reused:true},200);
    return json(outcome.job,202);
   }
-  const getMatch=p.match(/^\/v1\/chat\/commands\/([a-f0-9-]+)$/);
+  const getMatch=p.match(/^\/v1\/chat\/commands\/([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/);
   if(getMatch&&req.method==="GET"){
    if(!equal(bearer(req),this.env.CHATGPT_CONNECTOR_TOKEN))return json({error:"unauthorized"},401);
    if(!await this.allowRateLimit("connector:status",60,60_000))return json({error:"rate_limited"},429);
