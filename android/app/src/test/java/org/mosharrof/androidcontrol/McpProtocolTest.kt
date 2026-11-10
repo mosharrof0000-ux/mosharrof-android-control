@@ -266,6 +266,45 @@ class McpProtocolTest {
         ))
     }
 
+    @Test fun acceptsKnownMcpMrtrRequestMethods() {
+        val requests = mapOf(
+            "confirm" to mapOf(
+                "method" to "elicitation/create",
+                "params" to mapOf("mode" to "form")
+            ),
+            "sample" to mapOf(
+                "method" to "sampling/createMessage",
+                "params" to emptyMap<String, Any?>()
+            ),
+            "roots" to mapOf(
+                "method" to "roots/list",
+                "params" to emptyMap<String, Any?>()
+            )
+        )
+        assertTrue(McpProtocol.validateInputRequests(requests))
+    }
+
+    @Test fun rejectsMalformedOrUnsupportedMcpMrtrRequests() {
+        val invalid = listOf(
+            emptyMap<String, Any?>(),
+            mapOf(" " to mapOf("method" to "roots/list", "params" to emptyMap<String, Any?>())),
+            mapOf("x" to mapOf("method" to "unknown/method", "params" to emptyMap<String, Any?>())),
+            mapOf("x" to mapOf("method" to "roots/list")),
+            mapOf("x" to "not-an-object")
+        )
+        invalid.forEach { assertFalse(McpProtocol.validateInputRequests(it)) }
+    }
+
+    @Test fun boundsMcpMrtrInputRequestCount() {
+        val tooMany = (1..17).associate { index ->
+            "request-$index" to mapOf(
+                "method" to "roots/list",
+                "params" to emptyMap<String, Any?>()
+            )
+        }
+        assertFalse(McpProtocol.validateInputRequests(tooMany))
+    }
+
     @Test fun rejectsBlankInitializeFields() {
         try {
             McpProtocol.initializeRequest("", "Mosharrof", "1.0", "test")
