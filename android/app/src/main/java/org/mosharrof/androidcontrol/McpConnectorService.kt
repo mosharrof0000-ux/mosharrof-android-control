@@ -31,6 +31,7 @@ class McpConnectorService(
         const val MAX_TOOL_LIST_PAGES = 100
         const val MAX_DISCOVERED_TOOLS = 5000
         const val MAX_JSON_CONVERSION_DEPTH = 32
+        const val MAX_MRTR_REQUEST_STATE_CHARS = 64 * 1024
     }
 
     @Synchronized
@@ -449,12 +450,15 @@ class McpConnectorService(
             when (resultType) {
                 "complete" -> Unit
                 "input_required" -> {
-                    require(result.optJSONObject("inputRequests")?.length()?.let { it > 0 } == true) {
-                        "MCP input_required response-এ inputRequests অনুপস্থিত বা খালি।"
+                    val inputRequests = result.optJSONObject("inputRequests")
+                        ?: error("MCP input_required response-এ inputRequests অনুপস্থিত।")
+                    require(McpProtocol.validateInputRequests(inputRequests.toMap())) {
+                        "MCP inputRequests-এর method, key বা params অবৈধ।"
                     }
                     if (result.has("requestState")) {
-                        require(result.opt("requestState") is String) {
-                            "MCP requestState অবশ্যই opaque string হতে হবে।"
+                        val state = result.opt("requestState")
+                        require(state is String && state.length <= MAX_MRTR_REQUEST_STATE_CHARS) {
+                            "MCP requestState string হতে হবে এবং নির্ধারিত আকারের মধ্যে থাকতে হবে।"
                         }
                     }
                 }
