@@ -1,5 +1,7 @@
 package org.mosharrof.androidcontrol
 
+import java.net.URI
+
 /**
  * MCP JSON-RPC message models and safe request builders.
  * Network transport and JSON encoding are intentionally separate.
@@ -149,6 +151,16 @@ object McpProtocol {
         if (response.jsonrpc != "2.0" || response.id != expectedId) return false
         if ((response.result == null) == (response.error == null)) return false
         return true
+    }
+
+    /** Returns an HTTPS-only external elicitation URL, rejecting credentials and unsafe URI parts. */
+    fun validateElicitationUrl(value: String?): String? {
+        if (value.isNullOrBlank() || value.length > 4_096) return null
+        val uri = runCatching { URI(value.trim()) }.getOrNull() ?: return null
+        if (!uri.scheme.equals("https", ignoreCase = true)) return null
+        if (uri.host.isNullOrBlank() || uri.userInfo != null) return null
+        if (uri.port !in -1..65_535) return null
+        return uri.toASCIIString()
     }
 
     /**
