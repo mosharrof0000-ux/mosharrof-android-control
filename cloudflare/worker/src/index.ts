@@ -123,8 +123,16 @@ export class RelayDO {
   const getMatch=p.match(/^\/v1\/chat\/commands\/([a-f0-9-]+)$/);
   if(getMatch&&req.method==="GET"){
    if(!equal(bearer(req),this.env.CHATGPT_CONNECTOR_TOKEN))return json({error:"unauthorized"},401);
-   const result=await this.state.storage.get<{expires_at:number;[key:string]:unknown}>("result:"+getMatch[1]);
-   return result && result.expires_at>Date.now()?json({status:"completed",...result}):json({status:"pending_or_expired",command_id:getMatch[1]},202);
+   if(!await this.allowRateLimit("connector:status",60,60_000))return json({error:"rate_limited"},429);
+   const commandId=getMatch[1];
+   const result=await this.state.storage.get<{expires_at:number;[key:string]:unknown}>("result:"+commandId);
+   if(result&&result.expires_at>Date.now())return json({status:"completed",...result});
+   const audit=await this.state.storage.get<any>("audit:"+commandId);
+   if(audit?.status==="completed")return json({status:"completed_result_expired",command_id:commandId,completed_at:audit.completed_at,exit_code:audit.exit_code});
+   const queue=await this.state.storage.get<Array<any>>("queue")??[];
+   const job=queue.find(item=>item.command_id===commandId&&item.expires_at>Date.now());
+   if(job)return json({status:job.lease_until>Date.now()?"leased":"queued",command_id:commandId,expires_at:job.expires_at,attempts:job.attempts},202);
+   return json({status:"expired_or_unknown",command_id:commandId},404);
   }
   if(p==="/v1/device/unpair"&&req.method==="POST"){
    if(!await this.deviceAuth(req))return json({error:"unauthorized"},401);
