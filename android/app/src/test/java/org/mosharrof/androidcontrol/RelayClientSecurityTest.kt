@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
+import org.json.JSONObject
 import java.io.ByteArrayInputStream
 import java.io.IOException
 
@@ -28,6 +29,35 @@ class RelayClientSecurityTest {
         assertFalse(RelayClient.isValidCommandId("job/result"))
         assertFalse(RelayClient.isValidCommandId("job?x=1"))
         assertFalse(RelayClient.isValidCommandId("x".repeat(129)))
+    }
+
+    @Test
+    fun relayJobParserAcceptsOnlyFixedReadOnlyOperationsAndSafeIds() {
+        val job = RelayClient.parseJob(
+            JSONObject().put("command_id", "job_123-ABC")
+                .put("operation_id", "termux.python_version")
+        )
+        assertEquals("job_123-ABC", job.commandId)
+        assertEquals("termux.python_version", job.operationId)
+    }
+
+    @Test
+    fun relayJobParserRejectsMalformedIdsAndUnknownOperations() {
+        val invalidId = runCatching {
+            RelayClient.parseJob(
+                JSONObject().put("command_id", "../other")
+                    .put("operation_id", "termux.python_version")
+            )
+        }
+        assertTrue(invalidId.isFailure)
+
+        val unknownOperation = runCatching {
+            RelayClient.parseJob(
+                JSONObject().put("command_id", "job_123")
+                    .put("operation_id", "termux.shell")
+            )
+        }
+        assertTrue(unknownOperation.isFailure)
     }
 
     @Test
