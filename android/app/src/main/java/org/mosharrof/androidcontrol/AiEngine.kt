@@ -160,7 +160,7 @@ object AiEngine {
         require(prompt.isNotBlank()) { "AI-কে করার প্রশ্ন লিখুন।" }
         require(prompt.length <= MAX_PROMPT_CHARS) { "AI prompt ৬৪ KB সীমা অতিক্রম করেছে।" }
         AiProviderProfileStore.active(context)?.let { profile ->
-            return AiProviderRuntime.askText(profile, prompt)
+            return AiProviderRuntime.askText(profile, prompt, service = null, approve = { false }, cancellation = cancellation)
         }
         val p = prefs(context)
         val provider = runCatching {
