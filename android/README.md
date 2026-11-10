@@ -25,7 +25,7 @@ Open the android/ directory in Android Studio (Ladybug or newer), sync Gradle, a
 - Hashing can take time and reads file contents; use a folder you own and have permission to inspect.
 - No arbitrary shell command or unrestricted Android control is exposed.
 - Relay deployment, ChatGPT connector configuration, server-side lease/idempotency/rate-limit behavior, and Android ↔ Worker ↔ connector round-trip still require live QA. A missing Termux callback is reported as an unknown outcome after 90 seconds; the app does not automatically re-run it.
-- Modern MCP `input_required` multi-round-trip responses and the optional Tasks extension are not implemented; only `complete` results are accepted.
+- Modern MCP `input_required` MRTR supports user-reviewed JSON `inputResponses`, opaque `requestState` round-tripping, exact request-key matching, and a 10-round cap. Native schema-driven forms and URL-mode browser handoff are not yet implemented; the optional Tasks extension remains pending.
 - OAuth/CIMD authorization is not implemented; use a server-issued Bearer token where supported.
 - Real external MCP server connection, tool execution, and disconnect still require physical-device QA.
 
