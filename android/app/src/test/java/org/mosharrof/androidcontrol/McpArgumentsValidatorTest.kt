@@ -244,6 +244,17 @@ class McpArgumentsValidatorTest {
     }
 
     @Test
+    fun rejectsNullValuesForPresentSchemaKeywords() {
+        val nullType = mapOf<String, Any?>("type" to null)
+        val nullAdditionalProperties = mapOf<String, Any?>(
+            "type" to "object",
+            "additionalProperties" to null
+        )
+        assertFalse(McpArgumentsValidator.supportsSchema(nullType))
+        assertFalse(McpArgumentsValidator.supportsSchema(nullAdditionalProperties))
+    }
+
+    @Test
     fun rejectsMalformedSupportedConstraintsAndAcceptsSupportedAnnotations() {
         val malformed = mapOf<String, Any?>(
             "type" to "object",
