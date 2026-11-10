@@ -6,12 +6,8 @@ This is the working completion ledger for PR #7 and the Android Plugin System. S
 
 | Workstream | Status | Acceptance gate |
 |---|---|---|
-| Multi-AI adapter implementation | Detailed implementation checklist added; code implementation pending | `docs/MULTI_AI_ADAPTER_IMPLEMENTATION_PLAN.md` defines canonical contract, adapter registry, safe tool loop, Gemini/OpenAI/xAI/Anthropic adapters, Microsoft product feasibility, inbound MCP server bridge, provider update workflow, UI, tests and release gates. Current AiEngine is only Gemini text + generic OpenAI-compatible text; no named provider tool-calling adapter is claimed complete. |
-
-
-| Workstream | Status | Acceptance gate |
-|---|---|---|
-| AI-provider-neutral adapter architecture | Architecture specified; implementation pending | Canonical provider-neutral plugin contract, per-provider adapters, capability profiles, official-documentation review/update process, fail-closed behavior and cross-adapter contract tests are specified in `docs/AI_PROVIDER_ADAPTER_ARCHITECTURE.md`. No Grok/Gemini/Claude/Copilot/OpenAI adapter is claimed complete until implemented and verified independently |
+| Multi-AI adapter implementation | Initial core contract, registry, Gemini function-calling translator and OpenAI Responses function-calling translator implemented in source; Android CI verification pending | Added `AiProviderAdapter.kt`, canonical plugin/call/result models, capability profiles, duplicate-safe provider registry, built-in Gemini/OpenAI adapter registration at app startup, bounded tool-call/result translation and contract/wire-format tests. These are translation adapters only: AiEngine network orchestration, credential binding, approval-bound execution loop, live API round-trips and other vendors remain pending. |
+| AI-provider-neutral adapter architecture | Architecture and implementation checklist recorded | `docs/AI_PROVIDER_ADAPTER_ARCHITECTURE.md` and `docs/MULTI_AI_ADAPTER_IMPLEMENTATION_PLAN.md` define the common contract, provider capability profiles, inbound MCP server bridge, API-change workflow and release gates. Grok/Claude/Microsoft adapters are not implemented. |
 
 | Workstream | Status | Acceptance gate |
 |---|---|---|
