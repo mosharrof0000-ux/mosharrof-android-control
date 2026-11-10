@@ -32,9 +32,15 @@ class AiProviderHttpTransportTest {
     private class FakeConnection(
         url: URL,
         private val status: Int,
-        private val responseBody: ByteArray
+        private val responseBody: ByteArray,
+        private val onWrite: (() -> Unit)? = null
     ) : HttpURLConnection(url) {
-        val written = ByteArrayOutputStream()
+        val written = object : ByteArrayOutputStream() {
+            override fun write(buffer: ByteArray, offset: Int, length: Int) {
+                super.write(buffer, offset, length)
+                onWrite?.invoke()
+            }
+        }
         val sentHeaders = linkedMapOf<String, String>()
         var disconnected = false
 
@@ -136,6 +142,51 @@ class AiProviderHttpTransportTest {
             mapOf("model" to "x")
         )
         assertThrows(IllegalArgumentException::class.java) { transport.post(invalid) }
+    }
+
+    @Test fun cancellationBeforeDispatchDoesNotOpenConnectionOrCreateUnknownOutcome() {
+        val cancellation = AiProviderCancellation()
+        cancellation.cancel()
+        var opened = false
+        val transport = AiProviderHttpTransport {
+            opened = true
+            FakeConnection(it, 200, "{}".toByteArray())
+        }
+        assertThrows(java.util.concurrent.CancellationException::class.java) {
+            transport.post(request(), cancellation)
+        }
+        assertFalse(opened)
+        assertFalse(cancellation.hasUncertainOutcome())
+    }
+
+    @Test fun cancellationAfterRequestDispatchMarksOutcomeUncertainAndClosesConnection() {
+        lateinit var cancellation: AiProviderCancellation
+        val fake = FakeConnection(
+            URL("https://api.openai.com/v1/responses"),
+            200,
+            """{"id":"resp_1"}""".toByteArray(),
+            onWrite = { cancellation.cancel() }
+        )
+        cancellation = AiProviderCancellation()
+        assertThrows(java.util.concurrent.CancellationException::class.java) {
+            AiProviderHttpTransport { fake }.post(request(), cancellation)
+        }
+        assertTrue(cancellation.hasUncertainOutcome())
+        assertTrue(fake.disconnected)
+    }
+
+    @Test fun receivedHttpResponseClearsUncertainOutcomeEvenIfLaterCancelled() {
+        val fake = FakeConnection(
+            URL("https://api.openai.com/v1/responses"),
+            200,
+            """{"id":"resp_1"}""".toByteArray()
+        )
+        val cancellation = AiProviderCancellation()
+        val response = AiProviderHttpTransport { fake }.post(request(), cancellation)
+        assertEquals(200, response.statusCode)
+        assertFalse(cancellation.hasUncertainOutcome())
+        cancellation.cancel()
+        assertFalse(cancellation.hasUncertainOutcome())
     }
 
     @Test fun responseBodyIsBoundedAndConnectionAlwaysCloses() {
