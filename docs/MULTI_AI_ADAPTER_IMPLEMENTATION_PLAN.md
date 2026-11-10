@@ -27,7 +27,7 @@ An outbound API adapter does not automatically make MOSHARROF an MCP server. The
 - [x] Add capability profiles with SUPPORTED / UNSUPPORTED / UNKNOWN per feature, model and API version; initial profiles are conservative and leave unverified capabilities UNKNOWN.
 - [x] Project ConnectorRegistry tools into a provider-neutral ToolCatalog snapshot.
 - [ ] Add schema conversion; unsupported constraints must be rejected or explicitly explained, never silently dropped.
-- [x] Add common bounded HTTPS transport: redirects disabled, 20s connect / 60s read timeouts, 512 KiB request and 256 KiB response caps, retry classification, redacted diagnostics, no automatic POST retries, and fake-connection regression tests. AiEngine integration remains pending.
+- [x] Add common bounded HTTPS transport: redirects disabled, 20s connect / 60s read timeouts, 512 KiB request and 256 KiB response caps, retry classification, redacted diagnostics, no automatic POST retries, and fake-connection regression tests. The legacy AiEngine text path now uses this transport; the four new provider adapters are not yet wired into AiEngine.
 - [x] Add provider-specific first-turn HTTP request construction for Gemini Interactions, OpenAI Responses, xAI Responses and Anthropic Messages, with fixed HTTPS origins, provider auth headers, bounded prompt/credential values and credential-redacted diagnostics. Shared network transport exists; AiEngine integration remains pending.
 - [ ] Store provider/account credentials separately using Android Keystore; never log secrets.
 - [ ] Keep ConnectorRegistry authorization and ToolApprovalGrants as the final authority for every adapter.
@@ -128,3 +128,10 @@ Do not code five unrelated clients in parallel. Stabilize the common contract fi
 - Credential storage is still one active AiEngine key plus a separate plugin-token store; per-provider encrypted AI credential profiles and management UI remain pending.
 - MCP task lifecycle APIs are bounded but in-memory; durable persistence/recovery and user-facing task input UI remain pending. Remote tools are currently registered as WRITE by default; this is conservative/fail-closed but leaves a read-only classification workflow pending.
 - These CI results verify the source at the stated PR head only. They do not verify physical Android behavior, live provider APIs, real MCP server interoperability, or full multi-AI support.
+
+
+## 2026-11-10 legacy transport integration
+
+- `AiEngine.ask` now builds its existing Gemini generateContent / generic OpenAI-compatible Chat Completions request through `AiProviderHttpRequest` and sends it with `AiProviderHttpTransport`; the duplicate direct `HttpURLConnection` path and duplicate JSON request builder were removed.
+- This is a transport consolidation only. The legacy two-provider text API is unchanged. The new Gemini Interactions, OpenAI Responses, xAI Responses and Anthropic Messages adapters and `AiProviderRequestFactory` are not yet integrated into `AiEngine`; tool execution and continuation remain pending.
+- The new source commit requires a fresh Android CI run. The previously successful CI run `42819796245` applies to the earlier head `1b668ede28ff3f7641a20343b3627be8991d4dff`, not this code change.

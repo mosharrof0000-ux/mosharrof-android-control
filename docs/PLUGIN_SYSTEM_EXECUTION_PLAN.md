@@ -79,8 +79,15 @@ This is the working completion ledger for PR #7 and the Android Plugin System. S
 - Cloudflare Worker CI run `42819796066`: SUCCESS.
 - Added shared `AiProviderHttpTransport` with HTTPS/header validation, redirects disabled, bounded request/response bodies, timeouts and retry classification. It has fake-connection tests but is not called by `AiEngine` yet.
 - Added `AiToolCallOrchestrator` with guarded bounded execution planning and explicit grant forwarding. It is not connected to `AiEngine`, `McpConnectorService.callTool` or the native approval UI.
-- `AiEngine` remains a two-path legacy text client (Gemini generateContent and generic OpenAI-compatible Chat Completions). It still bypasses the new request factory and transport. Four provider adapters are translation foundations only.
+- `AiEngine` remains a two-path legacy text client (Gemini generateContent and generic OpenAI-compatible Chat Completions). It now uses the shared bounded HTTP transport for its legacy text requests, but still bypasses the new provider request factory and four provider adapters. Four provider adapters are translation foundations only.
 - Gemini Interactions, OpenAI Responses, xAI Responses and Anthropic Messages continuation need a provider-aware conversation loop. The request factory currently creates first-turn requests only; continuation IDs/history are not retained or replayed.
 - AI credentials remain a single active encrypted AiEngine key, not independent per-provider profiles. Provider setup/test-connection UI is pending.
 - MCP Tasks are API-level/in-memory only; durable recovery and user-facing input-required flow are pending. Real MCP server, live AI-provider round-trips, physical Android QA, APK install and deployment remain external gates.
 - ToolHub/master registry is maintained on the user's Termux device and cannot be updated through this repository connection; no claim of a local ToolHub update is made.
+
+
+## 2026-11-10 legacy AiEngine transport consolidation
+
+- `AiEngine.ask` now routes its existing Gemini generateContent and OpenAI-compatible Chat Completions requests through `AiProviderHttpTransport`, removing its separate direct `HttpURLConnection` implementation and duplicate JSON request construction.
+- This does not yet enable Gemini Interactions, official OpenAI Responses, xAI Responses or Anthropic Messages in the UI. The new request factory, provider adapters, per-provider credential profiles, provider-specific conversation continuation and tool-call execution loop remain pending integration.
+- Fresh CI verification is pending for commit `d006ddd2f64a63590d944cb379990429af95af74` and subsequent documentation updates. Earlier passing CI at `1b668ede28ff3f7641a20343b3627be8991d4dff` does not verify this new source change.
