@@ -25,11 +25,12 @@
 - Termux's own com.termux.permission.RUN_COMMAND permission and allow-external-apps setting are both required and must be enabled by the user.
 - The result receiver is private to this app; returned output is truncated before local storage.
 - Relay traffic uses HTTPS and bearer authentication. The device token is encrypted with Android Keystore AES-GCM.
-- The app-side relay accepts only the four predefined read-only Termux operation IDs. Relay deployment and server-side enforcement have not yet been verified.
+- The app-side relay accepts only the four predefined read-only Termux operation IDs. Every incoming job requires an in-app approval dialog; the app never auto-executes a polled job.
+- Relay URLs reject credentials, query strings, and fragments; redirects are disabled; response bodies are bounded; command IDs are validated before use in request paths; the client stores a bounded local handled-ID set.
 
 ## Remaining threats and release gates
 - Verify relay-side job expiry, replay/idempotency protection, rate limits, and audit records in the deployed Worker.
-- Review relay command ID/path handling and bounded response parsing before production deployment.
+- Verify server-side job expiry, replay/idempotency protection, rate limits, and audit records in the deployed Worker.
 - Verify credential revocation and token invalidation behavior on a physical Android device.
 - Run a real HTTPS MCP server through connect, discovery, approval, tool execution, and disconnect.
 - Inspect logs and error surfaces for credential or private-data leakage.
