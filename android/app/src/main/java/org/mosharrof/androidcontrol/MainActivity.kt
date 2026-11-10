@@ -24,7 +24,9 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.documentfile.provider.DocumentFile
 import java.security.MessageDigest
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 class MainActivity : Activity() {
     private lateinit var report: TextView
@@ -592,7 +594,7 @@ class MainActivity : Activity() {
 
         status.text = "AI উত্তর তৈরি করছে…"
         worker.execute {
-            val result = runCatching { AiEngine.ask(this@MainActivity, prompt) }
+            val result = runCatching { AiEngine.askWithMcpApproval(this@MainActivity, prompt, PluginDashboardSession.service, ::requestAiToolApproval) }
             runOnUiThread {
                 result.onSuccess {
                     report.text = "AI উত্তর\n\n$it"
@@ -601,6 +603,55 @@ class MainActivity : Activity() {
                     status.text = "AI অনুরোধ ব্যর্থ: ${it.message}"
                 }
             }
+        }
+    }
+
+    /**
+     * Blocks only the background AI worker while the user reviews the exact
+     * provider-generated arguments. Timeout, cancellation, or activity exit
+     * always means denial; no grant is issued by this dialog.
+     */
+    private fun requestAiToolApproval(plan: AiToolCallPlan.Ready): Boolean {
+        val decision = CountDownLatch(1)
+        var approved = false
+        runOnUiThread {
+            if (isFinishing || isDestroyed) {
+                decision.countDown()
+                return@runOnUiThread
+            }
+            val tool = ConnectorRegistry.toolSnapshot().firstOrNull { it.id == plan.toolId }
+            val risk = tool?.risk?.name ?: "UNKNOWN"
+            val arguments = runCatching {
+                org.json.JSONObject(plan.call.arguments).toString(2)
+            }.getOrElse { "{অবৈধ arguments}" }
+            val dialog = AlertDialog.Builder(this)
+                .setTitle("AI Plugin অনুমোদন")
+                .setMessage(
+                    "AI এই MCP Tool চালাতে চায়।\n\n" +
+                        "Tool: ${plan.call.toolName}\nRisk: $risk\n\n" +
+                        "Arguments (যাচাই করুন):\n$arguments\n\n" +
+                        "অনুমোদন না করলে Tool চালানো হবে না।"
+                )
+                .setNegativeButton("অনুমোদন নয়") { _, _ ->
+                    approved = false
+                    decision.countDown()
+                }
+                .setPositiveButton("অনুমোদন করে চালান") { _, _ ->
+                    approved = true
+                    decision.countDown()
+                }
+                .setOnCancelListener {
+                    approved = false
+                    decision.countDown()
+                }
+                .create()
+            dialog.show()
+        }
+        return try {
+            decision.await(120, TimeUnit.SECONDS) && approved
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            false
         }
     }
 
