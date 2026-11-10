@@ -28,7 +28,7 @@ An outbound API adapter does not automatically make MOSHARROF an MCP server. The
 - [x] Project ConnectorRegistry tools into a provider-neutral ToolCatalog snapshot.
 - [ ] Add schema conversion; unsupported constraints must be rejected or explicitly explained, never silently dropped.
 - [x] Add common bounded HTTPS transport: redirects disabled, 20s connect / 60s read timeouts, 512 KiB request and 256 KiB response caps, retry classification, redacted diagnostics, no automatic POST retries, and fake-connection regression tests. The legacy AiEngine text path now uses this transport; the four new provider adapters are not yet wired into AiEngine.
-- [x] Add provider-specific first-turn HTTP request construction for Gemini Interactions, OpenAI Responses, xAI Responses and Anthropic Messages, with fixed HTTPS origins, provider auth headers, bounded prompt/credential values and credential-redacted diagnostics. Shared network transport exists; AiEngine integration remains pending.
+- [x] Add provider-specific first-turn HTTP request construction for Gemini Interactions, OpenAI Responses, xAI Responses and Anthropic Messages, with fixed HTTPS origins, provider auth headers, bounded prompt/credential values and credential-redacted diagnostics. These four provider requests are not yet wired into AiEngine; the existing legacy Gemini/OpenAI-compatible text path does use the shared transport.
 - [ ] Store provider/account credentials separately using Android Keystore; never log secrets.
 - [ ] Keep ConnectorRegistry authorization and ToolApprovalGrants as the final authority for every adapter.
 - [x] Add initial shared adapter contract and Gemini/OpenAI wire-format tests; broaden with fuzzing, malformed payload and live fixtures.
@@ -145,3 +145,12 @@ Do not code five unrelated clients in parallel. Stabilize the common contract fi
 - Consolidated the legacy AiEngine text path onto `AiProviderHttpTransport`; the new four-provider request factory and adapters remain unintegrated, and tool-call continuation remains pending.
 - Android CI run `42825622524` passed on head `73df7108318f84d5684cbed367970254b395d5ba`: unit tests, debug APK assembly and artifact upload succeeded. Cloudflare Worker CI run `42825622132` passed on the same head.
 - Debug APK artifact `mosharrof-android-control-debug` (artifact ID `13768487632`, 2,362,235 bytes) was uploaded by CI. It has not been installed on a physical device.
+
+
+## 2026-11-10 latest-head CI verification
+
+- PR #7 head `0252670029a7bddf8ae835df601915323edf7305` has Android CI run `42826033690` and Cloudflare Worker CI run `42826033812`; both completed successfully on this exact head.
+- Android job `assemble`: `Run Android unit tests`, `Assemble debug APK` and `Upload debug APK` all succeeded.
+- Worker job `typecheck`: dependency install and type-check succeeded.
+- Debug APK artifact `mosharrof-android-control-debug`, artifact ID `13768837277`, size 2,362,239 bytes; artifact not installed on a physical device.
+- This verifies CI/build for the current PR head. It does not verify live provider API round-trips, real MCP interoperability, or physical Android behavior.

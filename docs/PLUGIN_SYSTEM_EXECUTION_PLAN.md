@@ -102,3 +102,12 @@ This is the working completion ledger for PR #7 and the Android Plugin System. S
 - `AiEngine.ask` now uses the shared bounded HTTPS transport for its legacy Gemini generateContent / generic OpenAI-compatible Chat Completions requests. Direct `HttpURLConnection` usage and duplicate legacy request-body construction were removed. Custom endpoints reject URL query strings, userinfo and fragments.
 - Provider-generated tool arguments now have canonical depth/node/key/string bounds, and recursive JSON conversion is bounded. Regression tests for deep and oversized arguments passed in Android CI.
 - The four new provider adapters and request factory are still not integrated into the UI/engine. Per-provider credential profiles, provider-specific continuation/history, tool orchestration and native approval UI wiring remain pending.
+
+
+## 2026-11-10 current PR-head verification
+
+- Current PR #7 head: `0252670029a7bddf8ae835df601915323edf7305`.
+- Android CI run `42826033690`: SUCCESS on the exact current head. Unit tests, debug APK assembly and artifact upload all passed.
+- Cloudflare Worker CI run `42826033812`: SUCCESS on the exact current head. Dependency install and type-check passed.
+- Current debug APK artifact: `mosharrof-android-control-debug`, artifact ID `13768837277`, size 2,362,239 bytes. No physical installation/device QA was performed.
+- No merge, deployment, credentialed live-provider test or physical-device installation was performed.
