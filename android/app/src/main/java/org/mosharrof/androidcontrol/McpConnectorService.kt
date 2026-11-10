@@ -539,8 +539,8 @@ class McpConnectorService(
         require(maxWaitMs in 1L..300_000L) { "Task polling সময়সীমা ১–৩০০ সেকেন্ড হতে হবে।" }
         require(maxPolls in 1..100) { "Task polling সংখ্যা ১–১০০ হতে হবে।" }
         val startedAt = System.nanoTime()
-        var polls = 0
         var snapshot = getTask(connectorId, taskId).getOrThrow()
+        var polls = 1
         while (!snapshot.isTerminal &&
             snapshot.status != McpTaskProtocol.Status.INPUT_REQUIRED &&
             polls < maxPolls
