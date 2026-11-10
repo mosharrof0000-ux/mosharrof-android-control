@@ -24,6 +24,8 @@ android {
 
 dependencies {
     implementation("androidx.documentfile:documentfile:1.0.1")
+    // OAuth 2.0 Authorization Code + PKCE using the system browser / Custom Tabs.
+    implementation("net.openid:appauth:0.11.1")
 
     // Local JVM unit tests for the Android Plugin System.
     testImplementation("junit:junit:4.13.2")
