@@ -34,6 +34,20 @@ class McpProtocolTest {
         assertTrue(request.params.containsKey("_meta"))
     }
 
+    @Test fun modernToolsListCarriesOpaqueCursor() {
+        val request = McpProtocol.modernToolsListRequest(
+            "12", "Mosharrof", "1.0", cursor = "opaque-next"
+        )
+        assertEquals("tools/list", request.method)
+        assertEquals("opaque-next", request.params["cursor"])
+        assertTrue(request.params.containsKey("_meta"))
+    }
+
+    @Test fun legacyToolsListCarriesOpaqueCursor() {
+        val request = McpProtocol.toolsListRequest("13", cursor = "opaque-next")
+        assertEquals("opaque-next", request.params["cursor"])
+    }
+
     @Test fun initializedIsNotificationWithoutId() {
         val request = McpProtocol.initializedNotification()
         assertNull(request.id)
