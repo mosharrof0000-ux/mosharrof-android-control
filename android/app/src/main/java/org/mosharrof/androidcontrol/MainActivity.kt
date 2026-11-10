@@ -57,7 +57,10 @@ class MainActivity : Activity() {
             if (!relayPolling || !activityVisible || isFinishing || relayApprovalPending) return
             worker.execute {
                 if (!relayApprovalPending) {
-                    runCatching { RelayClient.poll(this@MainActivity) }.onSuccess { job ->
+                    runCatching {
+                        RelayClient.retryPendingResult(this@MainActivity)
+                        RelayClient.poll(this@MainActivity)
+                    }.onSuccess { job ->
                         if (job != null && job.commandId != lastRelayCommand && !relayApprovalPending) {
                             lastRelayCommand = job.commandId
                             relayApprovalPending = true
@@ -529,13 +532,13 @@ class MainActivity : Activity() {
             .setNegativeButton("প্রত্যাখ্যান") { _, _ ->
                 worker.execute {
                     val result = runCatching {
-                        RelayClient.postResult(
+                        RelayClient.savePendingResult(
                             this@MainActivity,
                             job.commandId,
                             "Rejected by user in Android app",
                             126
                         )
-                        RelayClient.markCommandHandled(this@MainActivity, job.commandId)
+                        RelayClient.retryPendingResult(this@MainActivity)
                     }
                     runOnUiThread {
                         if (result.isFailure) lastRelayCommand = ""
@@ -563,13 +566,13 @@ class MainActivity : Activity() {
                     }
                     if (execution.isFailure) {
                         runCatching {
-                            RelayClient.postResult(
+                            RelayClient.savePendingResult(
                                 this@MainActivity,
                                 job.commandId,
                                 execution.exceptionOrNull()?.message ?: "Termux request failed",
                                 -1
                             )
-                            RelayClient.markCommandHandled(this@MainActivity, job.commandId)
+                            RelayClient.retryPendingResult(this@MainActivity)
                         }
                     }
                 }
@@ -601,6 +604,10 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         activityVisible = true
+        val pendingCommand = RelayClient.pendingCommandId(this)
+        if (pendingCommand != null) {
+            status.text = "আগের Relay কাজের ফলাফল/timeout recovery অপেক্ষমাণ: ${pendingCommand.take(8)}…"
+        }
         if (RelayClient.configured(this) && relayPolling) relayHandler.post(relayTick)
     }
 
