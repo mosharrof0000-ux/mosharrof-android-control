@@ -4,6 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
 import java.util.UUID
+import java.util.concurrent.CancellationException
 
 /**
  * MCP connection lifecycle and explicitly approved tool execution.
@@ -567,10 +568,12 @@ class McpConnectorService(
         taskId: String,
         maxWaitMs: Long = 60_000L,
         maxPolls: Int = 20,
-        sleeper: (Long) -> Unit = { Thread.sleep(it) }
+        sleeper: (Long) -> Unit = { Thread.sleep(it) },
+        shouldCancel: () -> Boolean = { false }
     ): Result<McpTaskProtocol.Snapshot> = runCatching {
         require(maxWaitMs in 1L..300_000L) { "Task polling সময়সীমা ১–৩০০ সেকেন্ড হতে হবে।" }
         require(maxPolls in 1..100) { "Task polling সংখ্যা ১–১০০ হতে হবে।" }
+        if (shouldCancel()) throw CancellationException("MCP Task polling বাতিল করা হয়েছে।")
         val startedAt = System.nanoTime()
         var snapshot = getTask(connectorId, taskId).getOrThrow()
         var polls = 1
@@ -581,8 +584,10 @@ class McpConnectorService(
             val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000L
             val remainingMs = maxWaitMs - elapsedMs
             if (remainingMs <= 0L) break
+            if (shouldCancel()) throw CancellationException("MCP Task polling বাতিল করা হয়েছে।")
             val delayMs = minOf(snapshot.pollIntervalMs, remainingMs, 30_000L)
             sleeper(delayMs)
+            if (shouldCancel()) throw CancellationException("MCP Task polling বাতিল করা হয়েছে।")
             if ((System.nanoTime() - startedAt) / 1_000_000L >= maxWaitMs) break
             snapshot = getTask(connectorId, taskId).getOrThrow()
             polls++
