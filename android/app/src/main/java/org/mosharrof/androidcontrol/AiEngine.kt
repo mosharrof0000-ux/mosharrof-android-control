@@ -234,6 +234,7 @@ object AiEngine {
             Charsets.UTF_8
         )
     }
+}
 
 /** Reads an AI response with a strict byte cap, including HTTP error bodies. */
 internal fun readBoundedAiResponse(input: InputStream?, maxBytes: Int = 256 * 1024): String {
