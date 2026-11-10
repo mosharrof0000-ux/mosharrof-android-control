@@ -183,4 +183,69 @@ class ProviderWireAdapterTest {
         }
     }
 
+
+    private fun registerGuardTool(risk: ConnectorRegistry.Risk, connected: Boolean = true) {
+        ConnectorRegistry.registerConnector(ConnectorRegistry.Connector(
+            id = "test.connector",
+            name = "Test Connector",
+            transport = ConnectorRegistry.Transport.MCP_STREAMABLE_HTTP,
+            endpoint = "https://example.com/mcp",
+            state = if (connected) ConnectorRegistry.ConnectionState.CONNECTED
+                    else ConnectorRegistry.ConnectionState.DISCONNECTED
+        )).getOrThrow()
+        ConnectorRegistry.registerTool(ConnectorRegistry.Tool(
+            id = "test.tool",
+            connectorId = "test.connector",
+            name = "lookup",
+            description = "Test lookup",
+            risk = risk,
+            requiredFields = setOf("q"),
+            inputSchema = mapOf(
+                "type" to "object",
+                "properties" to mapOf("q" to mapOf("type" to "string")),
+                "required" to listOf("q"),
+                "additionalProperties" to false
+            )
+        )).getOrThrow()
+    }
+
+    @Test fun canonicalGuardAllowsOnlyRegisteredConnectedReadOnlyTools() {
+        registerGuardTool(ConnectorRegistry.Risk.READ_ONLY)
+        val decision = CanonicalToolCallGuard.inspect(
+            CanonicalToolCall("call-1", "lookup", mapOf("q" to "hello"))
+        )
+        assertTrue(decision is CanonicalToolCallDecision.ReadOnlyAllowed)
+    }
+
+    @Test fun canonicalGuardRequiresApprovalForWriteTools() {
+        registerGuardTool(ConnectorRegistry.Risk.WRITE)
+        val decision = CanonicalToolCallGuard.inspect(
+            CanonicalToolCall("call-2", "lookup", mapOf("q" to "hello"))
+        )
+        assertTrue(decision is CanonicalToolCallDecision.ApprovalRequired)
+    }
+
+    @Test fun canonicalGuardDeniesUnknownToolsAndInvalidArguments() {
+        registerGuardTool(ConnectorRegistry.Risk.READ_ONLY)
+        assertTrue(
+            CanonicalToolCallGuard.inspect(
+                CanonicalToolCall("call-3", "not_registered", emptyMap())
+            ) is CanonicalToolCallDecision.Denied
+        )
+        assertTrue(
+            CanonicalToolCallGuard.inspect(
+                CanonicalToolCall("call-4", "lookup", mapOf("q" to 42))
+            ) is CanonicalToolCallDecision.Denied
+        )
+    }
+
+    @Test fun canonicalGuardDeniesDisconnectedConnectors() {
+        registerGuardTool(ConnectorRegistry.Risk.READ_ONLY, connected = false)
+        assertTrue(
+            CanonicalToolCallGuard.inspect(
+                CanonicalToolCall("call-5", "lookup", mapOf("q" to "hello"))
+            ) is CanonicalToolCallDecision.Denied
+        )
+    }
+
 }
