@@ -16,6 +16,8 @@ A standalone Android companion for user-authorized device inspection, file/media
 - CI-built debug APK artifact.
 
 ## Not yet verified / not claimed
+- MCP 2026-07-28 `input_required` multi-round-trip responses and the optional Tasks extension are not yet supported; only `complete` results are consumed.
+- MCP OAuth/CIMD authorization is not implemented; the current connector accepts a manually supplied Bearer token.
 - Physical-device QA on the user's phone, including a real external MCP server connection and real tool execution.
 - Production deployment and end-to-end operation of the Cloudflare relay and its separately configured ChatGPT connector.
 - Server-side relay expiry, replay/idempotency, rate-limit, and audit enforcement; these require verification in the relay service.
