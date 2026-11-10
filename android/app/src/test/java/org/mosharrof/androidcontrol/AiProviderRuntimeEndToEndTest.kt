@@ -338,4 +338,107 @@ class AiProviderRuntimeEndToEndTest {
         assertEquals(AiProviderRuntime.MAX_CONTINUATION_ROUNDS, server.calls.get())
     }
 
+
+    private fun profile(provider: AiProviderId): ResolvedAiProviderProfile {
+        val config = AiProviderConfig(
+            provider, "test-model", credentialReference = "runtime-e2e-${provider.name.lowercase()}"
+        )
+        return ResolvedAiProviderProfile(
+            AiProviderProfileSummary(config.credentialReference, provider, "test-model", null),
+            config,
+            "fake-key"
+        )
+    }
+
+    private fun providerToolCall(provider: AiProviderId): Map<String, Any?> {
+        val callId = "provider-call-${provider.name.lowercase()}"
+        return when (provider) {
+            AiProviderId.GEMINI -> mapOf("steps" to listOf(mapOf(
+                "type" to "function_call", "id" to callId, "name" to "lookup",
+                "arguments" to mapOf("query" to "hello")
+            )))
+            AiProviderId.OPENAI, AiProviderId.XAI -> mapOf("output" to listOf(mapOf(
+                "type" to "function_call", "call_id" to callId, "name" to "lookup",
+                "arguments" to """{"query":"hello"}"""
+            )))
+            AiProviderId.ANTHROPIC -> mapOf("content" to listOf(mapOf(
+                "type" to "tool_use", "id" to callId, "name" to "lookup",
+                "input" to mapOf("query" to "hello")
+            )))
+            else -> error("No outbound tool-call test fixture for $provider")
+        }
+    }
+
+    private fun providerFinalText(provider: AiProviderId): Map<String, Any?> = when (provider) {
+        AiProviderId.GEMINI -> mapOf("steps" to listOf(mapOf(
+            "type" to "model_output",
+            "content" to listOf(mapOf("type" to "text", "text" to "final answer"))
+        )))
+        AiProviderId.OPENAI, AiProviderId.XAI -> mapOf("output" to listOf(mapOf(
+            "type" to "message",
+            "content" to listOf(mapOf("type" to "output_text", "text" to "final answer"))
+        )))
+        AiProviderId.ANTHROPIC -> mapOf("content" to listOf(mapOf(
+            "type" to "text", "text" to "final answer"
+        )))
+        else -> error("No outbound text test fixture for $provider")
+    }
+
+    @Test fun allBuiltInOutboundProvidersCompleteApprovedMcpToolRoundTrip() {
+        listOf(
+            AiProviderId.GEMINI,
+            AiProviderId.OPENAI,
+            AiProviderId.XAI,
+            AiProviderId.ANTHROPIC
+        ).forEach { provider ->
+            val server = FakeMcpServer()
+            val service = connectedService(server)
+            val requests = mutableListOf<AiProviderHttpRequest>()
+            val responses = ArrayDeque(listOf(
+                providerToolCall(provider),
+                providerFinalText(provider)
+            ))
+
+            val answer = AiProviderRuntime.runConversation(
+                profile = profile(provider),
+                prompt = "look this up",
+                service = service,
+                approve = { plan ->
+                    assertEquals(provider, plan.call.let { provider })
+                    assertEquals("lookup", plan.call.toolName)
+                    assertTrue(plan.approvalRequired)
+                    true
+                },
+                post = { request ->
+                    requests += request
+                    val toolDefinitions = request.body["tools"] as? List<*>
+                    assertTrue("$provider must advertise the MCP tool", !toolDefinitions.isNullOrEmpty())
+                    if (requests.size == 2) {
+                        when (provider) {
+                            AiProviderId.GEMINI, AiProviderId.OPENAI, AiProviderId.XAI -> {
+                                val input = requests.last().body["input"] as List<*>
+                                val expectedType = if (provider == AiProviderId.GEMINI) "function_result" else "function_call_output"
+                                assertTrue("$provider continuation must include the tool result",
+                                    input.any { (it as? Map<*, *>)?.get("type") == expectedType })
+                            }
+                            AiProviderId.ANTHROPIC -> {
+                                val messages = requests.last().body["messages"] as List<*>
+                                val resultMessage = messages.last() as Map<*, *>
+                                assertEquals("user", resultMessage["role"])
+                                val content = resultMessage["content"] as List<*>
+                                assertTrue(content.any { (it as? Map<*, *>)?.get("type") == "tool_result" })
+                            }
+                            else -> error("Unexpected provider $provider")
+                        }
+                    }
+                    responses.removeFirst()
+                }
+            )
+
+            assertEquals("$provider final response", "final answer", answer)
+            assertEquals("$provider approval count", 1, server.calls.get())
+            assertEquals("$provider HTTP request count", 2, requests.size)
+        }
+    }
+
 }
