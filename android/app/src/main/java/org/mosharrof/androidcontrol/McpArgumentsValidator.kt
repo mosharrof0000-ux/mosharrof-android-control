@@ -53,16 +53,17 @@ object McpArgumentsValidator {
         if (depth > MAX_ARGUMENT_DEPTH || ++budget.visited > MAX_ARGUMENT_NODES) return false
         if (schema.keys.any { it !is String || it !in supportedSchemaKeys }) return false
 
-        when (val type = schema["type"]) {
-            null -> Unit
-            is String -> if (type !in setOf("object", "array", "string", "boolean", "integer", "number", "null")) return false
-            is List<*> -> {
-                if (type.isEmpty() || type.size > 7 ||
-                    type.any { it !is String || it !in setOf("object", "array", "string", "boolean", "integer", "number", "null") } ||
-                    type.distinct().size != type.size
-                ) return false
+        if (schema.containsKey("type")) {
+            when (val type = schema["type"]) {
+                is String -> if (type !in setOf("object", "array", "string", "boolean", "integer", "number", "null")) return false
+                is List<*> -> {
+                    if (type.isEmpty() || type.size > 7 ||
+                        type.any { it !is String || it !in setOf("object", "array", "string", "boolean", "integer", "number", "null") } ||
+                        type.distinct().size != type.size
+                    ) return false
+                }
+                else -> return false
             }
-            else -> return false
         }
 
         if (schema.containsKey("enum")) {
@@ -85,10 +86,12 @@ object McpArgumentsValidator {
             }
         }
 
-        when (val additional = schema["additionalProperties"]) {
-            null, is Boolean -> Unit
-            is Map<*, *> -> if (!validateSchemaNode(additional, depth + 1, budget)) return false
-            else -> return false
+        if (schema.containsKey("additionalProperties")) {
+            when (val additional = schema["additionalProperties"]) {
+                is Boolean -> Unit
+                is Map<*, *> -> if (!validateSchemaNode(additional, depth + 1, budget)) return false
+                else -> return false
+            }
         }
 
         if (schema.containsKey("items")) {
