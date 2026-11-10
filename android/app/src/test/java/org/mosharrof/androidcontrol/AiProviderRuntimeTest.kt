@@ -82,6 +82,30 @@ class AiProviderRuntimeTest {
         assertTrue(!approvalPrompted)
     }
 
+    @Test fun cancellationBeforeFirstProviderRequestPreventsNetworkWork() {
+        val config = AiProviderConfig(AiProviderId.GEMINI, "test-model", credentialReference = "test-profile")
+        val profile = ResolvedAiProviderProfile(
+            AiProviderProfileSummary("test-profile", AiProviderId.GEMINI, "test-model", null),
+            config,
+            "fake-key"
+        )
+        val cancellation = AiProviderCancellation()
+        cancellation.cancel()
+        var requests = 0
+        val failure = runCatching {
+            AiProviderRuntime.runConversation(
+                profile = profile,
+                prompt = "hello",
+                service = null,
+                approve = { false },
+                cancellation = cancellation,
+                post = { requests++; emptyMap() }
+            )
+        }.exceptionOrNull()
+        assertTrue(failure is java.util.concurrent.CancellationException)
+        assertEquals(0, requests)
+    }
+
     @Test fun boundedConversationReturnsProviderTextWithoutToolExecution() {
         val config = AiProviderConfig(
             AiProviderId.GEMINI, "test-model", credentialReference = "test-profile"
