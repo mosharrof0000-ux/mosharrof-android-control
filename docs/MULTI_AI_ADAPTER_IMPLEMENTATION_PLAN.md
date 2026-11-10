@@ -112,3 +112,6 @@ Do not code five unrelated clients in parallel. Stabilize the common contract fi
 - Added xAI Responses function-call parsing and `function_call_output` continuation translation tests. Actual `previous_response_id` network continuation remains pending until the HTTP orchestration layer is implemented.
 - Updated Anthropic Messages adapter capability-profile validation to the currently documented API version `2026-10-21`; live request/response compatibility remains unverified.
 - These are protocol translation updates only; provider credentials, HTTP transport, conversation state and live endpoint verification remain pending.
+
+
+- Gemini's Interactions API is now the registered default adapter because Google documents it as the recommended interface for new agentic/tool workflows; the generateContent translator remains available for legacy compatibility. The Interactions adapter accepts `v1beta` and `v1` profile versions and translates function_call/function_result steps. Server-side interaction ID continuation is not yet connected to the HTTP orchestration loop.
