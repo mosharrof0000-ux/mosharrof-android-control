@@ -148,4 +148,24 @@ class AiToolCallOrchestratorTest {
         } as AiToolCallExecution.Completed
         assertEquals(64 * 1024, result.result.content.length)
     }
+
+    @Test fun batchPlanningRejectsEmptyOversizedAndDuplicateCallIds() {
+        assertTrue(AiToolCallOrchestrator.planAll(emptyList()).isFailure)
+        val tooMany = (1..33).map { call().copy(providerCallId = "call-$it") }
+        assertTrue(AiToolCallOrchestrator.planAll(tooMany).isFailure)
+        val duplicate = listOf(call(), call().copy(toolName = "lookup"))
+        assertTrue(AiToolCallOrchestrator.planAll(duplicate).isFailure)
+    }
+
+    @Test fun batchPlanningPreservesCallOrder() {
+        registerTool(ConnectorRegistry.Risk.READ_ONLY)
+        val calls = listOf(
+            call().copy(providerCallId = "first"),
+            call().copy(providerCallId = "second")
+        )
+        val planned = AiToolCallOrchestrator.planAll(calls).getOrThrow()
+        assertEquals(listOf("first", "second"), planned.map {
+            (it as AiToolCallPlan.Ready).call.providerCallId
+        })
+    }
 }
