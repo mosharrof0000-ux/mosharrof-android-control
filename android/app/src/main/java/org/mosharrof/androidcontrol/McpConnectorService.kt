@@ -27,6 +27,10 @@ class McpConnectorService(
 
     private val connected = linkedSetOf<String>()
 
+    /** Connector IDs whose MCP sessions are owned by this service instance. */
+    @Synchronized
+    fun connectedConnectorIds(): Set<String> = connected.toSet()
+
     private companion object {
         const val MAX_TOOL_LIST_PAGES = 100
         const val MAX_DISCOVERED_TOOLS = 5000
