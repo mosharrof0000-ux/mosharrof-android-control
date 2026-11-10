@@ -12,7 +12,7 @@
 ## MCP connector boundary
 - MCP endpoints must be HTTPS; the connector rejects endpoint user-info and fragments.
 - Connector bearer tokens are encrypted with Android Keystore AES-GCM and authenticated additional data bound to the connector ID.
-- Tool definitions and input schemas are validated before registration/call.
+- Tool definitions and input schemas are validated before registration/call. Only the explicitly supported JSON Schema subset is accepted; unknown assertions, malformed constraints, and schema trees deeper than 32 levels or 2,048 nodes are rejected instead of silently ignored.
 - Tool calls display the tool risk and exact input JSON. Each call requires a deliberate user action.
 - Write-capable tool calls require a short-lived, single-use approval grant bound to the connector, tool ID, and exact arguments.
 - Disconnect unregisters connector tools and revokes outstanding approval grants.
