@@ -41,6 +41,18 @@ class AiProviderAdapterContractTest {
         }
     }
 
+
+    @Test fun builtInAdaptersRegisterOnceAndExposeDistinctProviders() {
+        AiProviderRegistry.registerBuiltIns()
+        AiProviderRegistry.registerBuiltIns()
+        assertNotNull(AiProviderRegistry.get(AiProviderId.GEMINI))
+        assertNotNull(AiProviderRegistry.get(AiProviderId.OPENAI))
+        assertEquals(
+            setOf(AiProviderId.GEMINI, AiProviderId.OPENAI),
+            AiProviderRegistry.providers()
+        )
+    }
+
     @Test fun capabilityUnknownIsNotTreatedAsSupported() {
         val profile = AiCapabilityProfile(
             AiProviderId.CUSTOM, "model-x", "v1", "1",
