@@ -72,8 +72,11 @@ object RelayClient {
         require(isValidCommandId(commandId)) { "Relay command ID-এর বিন্যাস অবৈধ।" }
         val endpoint = endpoint(context) ?: error("Relay endpoint configured নয়; ফলাফল পাঠানো যায়নি।")
         val token = token(context) ?: error("Relay device token পাওয়া যায়নি; ফলাফল পাঠানো যায়নি।")
-        request("$endpoint/v1/device/jobs/$commandId/result", "POST", token,
+        val response = request("$endpoint/v1/device/jobs/$commandId/result", "POST", token,
             JSONObject().put("output", output.take(10000)).put("exit_code", exitCode).toString())
+        check(response.optBoolean("accepted")) {
+            "Relay server ফলাফল গ্রহণের নিশ্চয়তা দেয়নি।"
+        }
     }
 
     fun hasHandledCommand(context: Context, commandId: String): Boolean {
