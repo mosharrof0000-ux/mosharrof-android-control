@@ -138,6 +138,11 @@ object AiProviderRegistry {
     }
 
     @Synchronized
+    fun registerBuiltIns() {
+        if (AiProviderId.GEMINI !in adapters) register(GeminiFunctionCallingAdapter())
+        if (AiProviderId.OPENAI !in adapters) register(OpenAiResponsesFunctionCallingAdapter())
+    }
+
     fun get(provider: AiProviderId): AiProviderAdapter? = adapters[provider]
 
     @Synchronized
@@ -213,14 +218,14 @@ class GeminiFunctionCallingAdapter : AiProviderAdapter {
         val parts = content?.get("parts") as? List<*> ?: emptyList<Any?>()
         val calls = parts.mapIndexedNotNull { index, raw ->
             val functionCall = (raw as? Map<*, *>)?.get("functionCall") as? Map<*, *>
-                ?: return@mapNotNull null
+                ?: return@mapIndexedNotNull null
             val name = functionCall["name"] as? String
                 ?: throw IllegalArgumentException("Gemini functionCall name is missing.")
             val args = functionCall["args"] as? Map<*, *>
                 ?: throw IllegalArgumentException("Gemini functionCall args must be an object.")
             require(args.keys.all { it is String })
             CanonicalToolCall(
-                providerCallId = (functionCall["id"] as? String)?.takeIf { it.isNotBlank() } ?: "gemini-$name-$index",
+                providerCallId = (functionCall["id"] as? String)?.takeIf { it.isNotBlank() } ?: "local_gemini_$name-$index",
                 toolName = name,
                 arguments = args.entries.associate { it.key as String to it.value }
             )
@@ -243,7 +248,7 @@ class GeminiFunctionCallingAdapter : AiProviderAdapter {
                 mapOf(
                     "functionResponse" to mapOf(
                         "name" to result.toolName,
-                        "id" to result.providerCallId,
+                        "id" to result.providerCallId.takeUnless { it.startsWith("local_gemini_") },
                         "response" to mapOf(
                             "result" to result.content,
                             "isError" to result.isError
