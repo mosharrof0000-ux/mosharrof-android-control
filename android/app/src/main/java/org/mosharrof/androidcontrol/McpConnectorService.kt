@@ -141,7 +141,8 @@ class McpConnectorService(
                 )
             )
         } catch (failure: McpHttpException) {
-            val modernErrorCodes = setOf(-32020, -32021, -32022)
+            // -32601 is a modern JSON-RPC Method Not Found response, not a legacy signal.
+            val modernErrorCodes = setOf(-32601, -32020, -32021, -32022)
             if (
                 failure.statusCode in setOf(400, 404) &&
                 failure.rpcErrorCode !in modernErrorCodes
