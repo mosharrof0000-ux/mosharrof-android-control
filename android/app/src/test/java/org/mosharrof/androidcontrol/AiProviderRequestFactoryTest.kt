@@ -113,7 +113,7 @@ class AiProviderRequestFactoryTest {
         val call = adapter.decodeResponse(mapOf("choices" to listOf(mapOf("message" to mapOf(
             "tool_calls" to listOf(mapOf(
                 "id" to "call-1",
-                "function" to mapOf("name" to "lookup", "arguments" to "{\\"query\\":\\"x\\"}")
+                "function" to mapOf("name" to "lookup", "arguments" to "{\"query\":\"x\"}")
             ))
         )))))
         assertTrue(call is CanonicalAiResult.ToolCalls)

@@ -37,7 +37,7 @@ class AiProviderRuntimeTest {
 
     @Test fun builtInAdaptersKeepUnverifiedCapabilitiesUnknown() {
         AiProviderRegistry.registerBuiltIns()
-        assertEquals(setOf(AiProviderId.GEMINI, AiProviderId.OPENAI, AiProviderId.XAI, AiProviderId.ANTHROPIC),
+        assertEquals(setOf(AiProviderId.GEMINI, AiProviderId.OPENAI, AiProviderId.XAI, AiProviderId.ANTHROPIC, AiProviderId.CUSTOM),
             AiProviderRegistry.providers())
         assertTrue(AiProviderRegistry.get(AiProviderId.GEMINI)!!
             .capabilityProfile("model-test", "v1beta").capabilities[AiCapability.TOOL_CALLING] == CapabilitySupport.UNKNOWN)
