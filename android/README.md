@@ -25,6 +25,8 @@ Open the android/ directory in Android Studio (Ladybug or newer), sync Gradle, a
 - Hashing can take time and reads file contents; use a folder you own and have permission to inspect.
 - No arbitrary shell command or unrestricted Android control is exposed.
 - The relay client code is present, but relay deployment, ChatGPT connector configuration, server-side replay/expiry controls, and end-to-end operation have not been verified.
+- Modern MCP `input_required` multi-round-trip responses and the optional Tasks extension are not implemented; only `complete` results are accepted.
+- OAuth/CIMD authorization is not implemented; use a server-issued Bearer token where supported.
 - Real external MCP server connection, tool execution, and disconnect still require physical-device QA.
 
 ## CI
