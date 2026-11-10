@@ -26,7 +26,7 @@ This is the working completion ledger for PR #7 and the Android Plugin System. S
 | OpenAPI/Worker/Android contract consistency | Audit pending | Contract tests and generated/import validation |
 | Credential/log leakage review | Partial static audit and regression tests pass | HTTP error bodies are no longer copied into exception messages; only the supported-version hint is retained for -32022; encrypted secret envelopes are capped at 48,000 characters before Base64 decoding. A focused regex scan of 10 security-sensitive source/config files found no common API-key/token/PEM/Bearer patterns (not a whole-repository/history audit). Android Keystore instrumentation and full tracked-source/history log audit remain pending |
 | MCP argument traversal bounds | Implemented and CI verified | Validation and approval fingerprinting cap depth at 32 and nodes at 2,048; Android CI run 42804238420 passed |
-| AI request/response resource bounds | Implemented and current-head CI verified | API key ≤8,192 chars, model ≤128 chars, prompt ≤64 KiB, response ≤256 KiB; bounded stream reader regression tests; Android CI run 42812769827 passed at head 44c0bfcea09029dae4a2081f3c12f54a179a42f6 |
+| AI request/response resource bounds | Implemented and current-head CI verified | API key ≤8,192 chars, model ≤128 chars, prompt ≤64 KiB, response ≤256 KiB; bounded stream reader regression tests; Android CI run 42819796245 passed at head 1b668ede28ff3f7641a20343b3627be8991d4dff |
 | Documentation accuracy | Updated with current evidence-backed Tasks, OAuth, AI-bounds, Worker and credential-audit status | Android CI run 42819796245 passed (unit tests, debug APK assemble, APK upload) and Worker CI run 42819796066 passed for head 1b668ede28ff3f7641a20343b3627be8991d4dff; external and release gates remain explicitly pending |
 
 ## External verification gates
@@ -58,7 +58,7 @@ This is the working completion ledger for PR #7 and the Android Plugin System. S
 - Read-only calls reject unexpected grants. Execution is one call at a time to avoid unsafe partial execution of a mixed parallel batch.
 - Tool output and failure text are bounded to 64 KiB; failures are returned as error tool results for provider continuation.
 - Added `AiToolCallOrchestratorTest.kt` covering read-only execution, approval gating, grant forwarding, disconnected/schema-invalid denial, permission recheck, unexpected grants, bounded output, safe errors, batch bounds, duplicate IDs and ordering.
-- **Status: source and tests added; CI verification pending.** This is an orchestration foundation, not yet wired into `AiEngine` or the Android approval UI. The caller must connect its executor to `McpConnectorService.callTool` and obtain grants only after user confirmation.
+- **Status: source and tests added; Android CI passed at PR head 1b668ede28ff3f7641a20343b3627be8991d4dff (run 42819796245).** This is an orchestration foundation, not yet wired into `AiEngine` or the Android approval UI. The caller must connect its executor to `McpConnectorService.callTool` and obtain grants only after user confirmation.
 
 
 ## 2026-11-10 implementation log — provider request construction
@@ -69,7 +69,7 @@ This is the working completion ledger for PR #7 and the Android Plugin System. S
 - Requests provider-side storage off where the API supports it (`store=false`); Anthropic Messages remains stateless.
 - Anthropic API version is pinned to the currently documented `2026-10-21`.
 - Added request-factory tests for endpoints, headers, continuation/tool options, prompt/key bounds, unsupported providers and credential redaction in diagnostic string output.
-- **Status: source and tests added; current-head Android CI verification pending.** This is request construction only: actual HTTP transport, stored credential lookup, AiEngine integration and provider conversation continuation are still pending.
+- **Status: source and tests added; Android CI passed at PR head 1b668ede28ff3f7641a20343b3627be8991d4dff (run 42819796245).** This is request construction only: actual HTTP transport, stored credential lookup, AiEngine integration and provider conversation continuation are still pending.
 
 
 ## 2026-11-10 current-head verification and integration gaps
