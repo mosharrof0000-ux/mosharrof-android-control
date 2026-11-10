@@ -558,3 +558,39 @@ class AnthropicMessagesToolUseAdapter : AiProviderAdapter {
         )
     }
 }
+
+
+sealed class CanonicalToolCallDecision {
+    data class ReadOnlyAllowed(val toolId: String, val call: CanonicalToolCall) : CanonicalToolCallDecision()
+    data class ApprovalRequired(val toolId: String, val call: CanonicalToolCall) : CanonicalToolCallDecision()
+    data class Denied(val reason: String) : CanonicalToolCallDecision()
+}
+
+/**
+ * Resolves untrusted provider tool calls against registered MOSHARROF tools.
+ * This is a policy/validation gate only; it never issues grants or executes tools.
+ */
+object CanonicalToolCallGuard {
+    fun inspect(call: CanonicalToolCall): CanonicalToolCallDecision {
+        val matches = ConnectorRegistry.toolSnapshot().filter { it.name == call.toolName }
+        if (matches.size != 1) {
+            return CanonicalToolCallDecision.Denied(
+                if (matches.isEmpty()) "Tool is not registered." else "Tool name is ambiguous across connectors."
+            )
+        }
+        val tool = matches.single()
+        val required = (tool.inputSchema["required"] as? List<*>)
+            ?.mapNotNull { it as? String }
+            ?: emptyList()
+        if (!McpArgumentsValidator.validate(tool.inputSchema, call.arguments, required)) {
+            return CanonicalToolCallDecision.Denied("Tool arguments do not match the registered schema.")
+        }
+        return when (ConnectorRegistry.authorize(tool.id)) {
+            ConnectorRegistry.Decision.ALLOW_READ_ONLY ->
+                CanonicalToolCallDecision.ReadOnlyAllowed(tool.id, call)
+            ConnectorRegistry.Decision.APPROVAL_REQUIRED ->
+                CanonicalToolCallDecision.ApprovalRequired(tool.id, call)
+            else -> CanonicalToolCallDecision.Denied("Connector or tool is unavailable under current policy.")
+        }
+    }
+}
