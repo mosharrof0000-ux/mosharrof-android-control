@@ -8,9 +8,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
-import java.net.HttpURLConnection
 import java.net.URI
-import java.net.URL
 import java.net.URLEncoder
 import java.security.KeyStore
 import javax.crypto.Cipher
@@ -32,7 +30,6 @@ object AiEngine {
     private const val MAX_API_KEY_CHARS = 8_192
     private const val MAX_MODEL_CHARS = 128
     private const val MAX_PROMPT_CHARS = 64 * 1024
-    private const val MAX_RESPONSE_BYTES = 256 * 1024
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -134,53 +131,53 @@ object AiEngine {
                 ))
         }
 
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = 20000
-            readTimeout = 60000
-            doOutput = true
-            useCaches = false
-            instanceFollowRedirects = false
-            setRequestProperty("Content-Type", "application/json; charset=utf-8")
-            if (provider == Provider.GEMINI) {
-                setRequestProperty("x-goog-api-key", apiKey)
-            } else {
-                setRequestProperty("Authorization", "Bearer $apiKey")
-            }
+        val headers = linkedMapOf(
+            "Content-Type" to "application/json; charset=utf-8"
+        )
+        if (provider == Provider.GEMINI) {
+            headers["x-goog-api-key"] = apiKey
+        } else {
+            headers["Authorization"] = "Bearer $apiKey"
         }
-
-        try {
-            connection.outputStream.use {
-                it.write(body.toString().toByteArray(Charsets.UTF_8))
-            }
-            val code = connection.responseCode
-            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-            val raw = readBoundedAiResponse(stream, MAX_RESPONSE_BYTES)
-            if (code !in 200..299) {
-                throw IllegalStateException(
-                    "AI সার্ভার HTTP $code দিয়েছে। API key, model, quota ও endpoint পরীক্ষা করুন।"
+        val request = AiProviderHttpRequest(
+            url = url,
+            headers = headers,
+            body = when (provider) {
+                Provider.GEMINI -> mapOf(
+                    "contents" to listOf(
+                        mapOf("parts" to listOf(mapOf("text" to prompt)))
+                    )
+                )
+                Provider.OPENAI_COMPATIBLE -> mapOf(
+                    "model" to model,
+                    "messages" to listOf(mapOf("role" to "user", "content" to prompt))
                 )
             }
+        )
 
-            val json = JSONObject(raw)
-            return when (provider) {
-                Provider.GEMINI -> {
-                    val candidates = json.optJSONArray("candidates")
-                    val parts = candidates?.optJSONObject(0)
-                        ?.optJSONObject("content")?.optJSONArray("parts")
-                    parts?.optJSONObject(0)?.optString("text")
-                        ?.takeIf { it.isNotBlank() }
-                        ?: "AI উত্তর দেয়নি। Safety block বা response format পরীক্ষা করুন।"
-                }
-                Provider.OPENAI_COMPATIBLE -> {
-                    json.optJSONArray("choices")?.optJSONObject(0)
-                        ?.optJSONObject("message")?.optString("content")
-                        ?.takeIf { it.isNotBlank() }
-                        ?: "AI উত্তর পাওয়া যায়নি। Provider response format পরীক্ষা করুন।"
-                }
+        val json = try {
+            AiProviderHttpTransport().post(request).payload
+        } catch (error: AiProviderHttpException) {
+            throw IllegalStateException(
+                "AI সার্ভার HTTP ${error.statusCode} দিয়েছে। API key, model, quota ও endpoint পরীক্ষা করুন。",
+                error
+            )
+        }
+        return when (provider) {
+            Provider.GEMINI -> {
+                val candidates = json.optJSONArray("candidates")
+                val parts = candidates?.optJSONObject(0)
+                    ?.optJSONObject("content")?.optJSONArray("parts")
+                parts?.optJSONObject(0)?.optString("text")
+                    ?.takeIf { it.isNotBlank() }
+                    ?: "AI উত্তর দেয়নি। Safety block বা response format পরীক্ষা করুন।"
             }
-        } finally {
-            connection.disconnect()
+            Provider.OPENAI_COMPATIBLE -> {
+                json.optJSONArray("choices")?.optJSONObject(0)
+                    ?.optJSONObject("message")?.optString("content")
+                    ?.takeIf { it.isNotBlank() }
+                    ?: "AI উত্তর পাওয়া যায়নি। Provider response format পরীক্ষা করুন।"
+            }
         }
     }
 
