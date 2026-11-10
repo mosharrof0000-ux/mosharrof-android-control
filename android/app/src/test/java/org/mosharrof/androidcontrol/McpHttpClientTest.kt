@@ -132,6 +132,12 @@ class McpHttpClientTest {
     }
 
 
+    @Test fun onlyCompleteModernResultTypeIsSupported() {
+        assertTrue(McpHttpClient.isSupportedModernResultType("complete"))
+        assertFalse(McpHttpClient.isSupportedModernResultType("partial"))
+        assertFalse(McpHttpClient.isSupportedModernResultType("unknown"))
+    }
+
     @Test fun acceptsCompleteModernMetadata() {
         val params = mapOf(
             "_meta" to mapOf(
