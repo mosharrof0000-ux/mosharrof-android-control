@@ -17,8 +17,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data
-                    android:scheme="org.mosharrof.androidcontrol"
-                    android:path="/oauth2redirect" />
+                    android:scheme="org.mosharrof.androidcontrol" />
             </intent-filter>
         </activity>
         <activity
