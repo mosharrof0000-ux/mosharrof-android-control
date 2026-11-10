@@ -4,6 +4,10 @@ import java.math.BigDecimal
 
 object McpArgumentsValidator {
 
+    private const val MAX_ARGUMENT_DEPTH = 32
+    private const val MAX_ARGUMENT_NODES = 2_048
+    private class ValidationBudget(var visited: Int = 0)
+
     fun validate(
         schema: Map<String, Any?>,
         arguments: Map<String, Any?>,
@@ -15,7 +19,7 @@ object McpArgumentsValidator {
             !arguments.containsKey(it) || arguments[it] == null
         }) return false
 
-        return validateValue(schema, arguments)
+        return validateValue(schema, arguments, 0, ValidationBudget())
     }
 
     private fun decimal(value: Any?): BigDecimal? {
@@ -39,7 +43,13 @@ object McpArgumentsValidator {
         return decimal(schema[key])
     }
 
-    private fun validateValue(schema: Map<*, *>, value: Any?): Boolean {
+    private fun validateValue(
+        schema: Map<*, *>,
+        value: Any?,
+        depth: Int,
+        budget: ValidationBudget
+    ): Boolean {
+        if (depth > MAX_ARGUMENT_DEPTH || ++budget.visited > MAX_ARGUMENT_NODES) return false
         if (schema.containsKey("const") && schema["const"] != value) return false
 
         if (schema.containsKey("enum")) {
@@ -130,11 +140,11 @@ object McpArgumentsValidator {
                 for ((key, childValue) in value) {
                     if (propertyMap.containsKey(key)) {
                         val child = propertyMap[key] as? Map<*, *> ?: return false
-                        if (!validateValue(child, childValue)) return false
+                        if (!validateValue(child, childValue, depth + 1, budget)) return false
                     } else {
                         when (val additional = schema["additionalProperties"]) {
                             false -> return false
-                            is Map<*, *> -> if (!validateValue(additional, childValue)) return false
+                            is Map<*, *> -> if (!validateValue(additional, childValue, depth + 1, budget)) return false
                         }
                     }
                 }
@@ -149,7 +159,7 @@ object McpArgumentsValidator {
 
                 if (schema.containsKey("items")) {
                     val itemSchema = schema["items"] as? Map<*, *> ?: return false
-                    if (value.any { !validateValue(itemSchema, it) }) return false
+                    if (value.any { !validateValue(itemSchema, it, depth + 1, budget) }) return false
                 }
             }
         }
