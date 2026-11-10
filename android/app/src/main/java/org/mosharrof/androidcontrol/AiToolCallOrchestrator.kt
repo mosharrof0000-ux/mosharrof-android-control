@@ -101,6 +101,15 @@ object AiToolCallOrchestrator {
         )
     }
 
+    /** Routes an approved canonical call through the existing MCP authorization/runtime path. */
+    fun executeWithMcpService(
+        plan: AiToolCallPlan.Ready,
+        service: McpConnectorService,
+        approvalGrant: String? = null
+    ): AiToolCallExecution = execute(plan, approvalGrant) { toolId, arguments, grant ->
+        service.callTool(toolId, arguments, grant)
+    }
+
     private fun safeFailureMessage(failure: Throwable): String =
         (failure.message ?: "Plugin execution failed.")
             .replace(Regex("[\\r\\n\\t]+"), " ")
