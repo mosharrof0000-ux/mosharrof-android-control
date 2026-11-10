@@ -24,4 +24,7 @@ android {
 
 dependencies {
     implementation("androidx.documentfile:documentfile:1.0.1")
+
+    // Local JVM unit tests for the Android Plugin System.
+    testImplementation("junit:junit:4.13.2")
 }
