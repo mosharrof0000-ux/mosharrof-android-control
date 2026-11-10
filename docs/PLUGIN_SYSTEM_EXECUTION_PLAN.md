@@ -46,3 +46,16 @@ This is the working completion ledger for PR #7 and the Android Plugin System. S
 - Never claim full MCP conformance while Tasks, OAuth/CIMD, schema-driven forms, or URL-mode handoff remain incomplete.
 - Never claim multi-provider support based only on a generic architecture document; verify each provider/model/API version and its capability profile separately.
 - Follow `docs/MULTI_AI_ADAPTER_IMPLEMENTATION_PLAN.md`; implement the canonical contract before provider-specific adapters, and track outbound AI API adapters separately from the inbound MCP server/bridge.
+
+
+## 2026-11-10 implementation log — AI tool-call orchestration foundation
+
+- Added `AiToolCallOrchestrator.kt` as a policy-aware boundary between provider-generated canonical calls and the existing connector runtime.
+- Added bounded batch planning (1–32 calls), duplicate provider-call-ID rejection, and call-order preservation.
+- Each call is resolved through `CanonicalToolCallGuard`; unknown, ambiguous, schema-invalid, disconnected, or unauthorized tools are denied.
+- Execution rechecks tool identity, connector availability, schema and risk immediately before dispatch.
+- Approval-required calls remain pending until the caller supplies a grant from an explicit user-approval flow. The orchestrator never issues grants.
+- Read-only calls reject unexpected grants. Execution is one call at a time to avoid unsafe partial execution of a mixed parallel batch.
+- Tool output and failure text are bounded to 64 KiB; failures are returned as error tool results for provider continuation.
+- Added `AiToolCallOrchestratorTest.kt` covering read-only execution, approval gating, grant forwarding, disconnected/schema-invalid denial, permission recheck, unexpected grants, bounded output, safe errors, batch bounds, duplicate IDs and ordering.
+- **Status: source and tests added; CI verification pending.** This is an orchestration foundation, not yet wired into `AiEngine` or the Android approval UI. The caller must connect its executor to `McpConnectorService.callTool` and obtain grants only after user confirmation.
