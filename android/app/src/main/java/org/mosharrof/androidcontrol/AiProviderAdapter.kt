@@ -142,6 +142,8 @@ object AiProviderRegistry {
     fun registerBuiltIns() {
         if (AiProviderId.GEMINI !in adapters) register(GeminiFunctionCallingAdapter())
         if (AiProviderId.OPENAI !in adapters) register(OpenAiResponsesFunctionCallingAdapter())
+        if (AiProviderId.XAI !in adapters) register(XaiChatCompletionsFunctionCallingAdapter())
+        if (AiProviderId.ANTHROPIC !in adapters) register(AnthropicMessagesToolUseAdapter())
     }
 
     fun get(provider: AiProviderId): AiProviderAdapter? = adapters[provider]
@@ -378,3 +380,170 @@ private fun org.json.JSONArray.toAnyList(): List<Any?> =
     }
 
 // JSON conversion helpers above intentionally preserve nested maps and arrays.
+
+
+/** xAI Grok Chat Completions-compatible custom function-calling adapter. */
+class XaiChatCompletionsFunctionCallingAdapter : AiProviderAdapter {
+    override val provider = AiProviderId.XAI
+    override val adapterVersion = "1"
+
+    override fun validateConfiguration(config: AiProviderConfig) {
+        require(config.provider == provider)
+        require(config.endpoint == null) { "xAI official endpoint is fixed in this adapter version." }
+    }
+
+    override fun capabilityProfile(model: String, apiVersion: String) =
+        AiCapabilityProfile(
+            provider, model, apiVersion, adapterVersion,
+            mapOf(
+                AiCapability.TOOL_CALLING to CapabilitySupport.SUPPORTED,
+                AiCapability.PARALLEL_TOOL_CALLS to CapabilitySupport.SUPPORTED,
+                AiCapability.STREAMING to CapabilitySupport.UNKNOWN,
+                AiCapability.CANCELLATION to CapabilitySupport.UNKNOWN,
+                AiCapability.JSON_SCHEMA to CapabilitySupport.UNKNOWN,
+                AiCapability.STRUCTURED_OUTPUTS to CapabilitySupport.UNKNOWN,
+                AiCapability.MODEL_DISCOVERY to CapabilitySupport.UNSUPPORTED
+            )
+        )
+
+    override fun encodeToolDefinitions(
+        config: AiProviderConfig,
+        tools: List<CanonicalPluginDefinition>
+    ): Map<String, Any?> {
+        validateConfiguration(config)
+        require(tools.size <= 256)
+        return mapOf(
+            "tools" to tools.map { tool ->
+                mapOf(
+                    "type" to "function",
+                    "function" to mapOf(
+                        "name" to tool.name,
+                        "description" to tool.description,
+                        "parameters" to tool.inputSchema
+                    )
+                )
+            },
+            "parallel_tool_calls" to true
+        )
+    }
+
+    override fun decodeResponse(payload: Map<String, Any?>): CanonicalAiResult {
+        val choices = payload["choices"] as? List<*> ?: emptyList<Any?>()
+        val message = (choices.firstOrNull() as? Map<*, *>)?.get("message") as? Map<*, *>
+            ?: return CanonicalAiResult.Failure("EMPTY_RESPONSE", "Grok returned no message.")
+        val toolCalls = message["tool_calls"] as? List<*> ?: emptyList<Any?>()
+        val calls = toolCalls.map { raw ->
+            val item = raw as? Map<*, *> ?: error("Grok tool call must be an object.")
+            val id = item["id"] as? String ?: error("Grok tool call ID is missing.")
+            val function = item["function"] as? Map<*, *>
+                ?: error("Grok tool function is missing.")
+            val name = function["name"] as? String ?: error("Grok tool name is missing.")
+            val arguments = function["arguments"] as? String
+                ?: error("Grok tool arguments are missing.")
+            CanonicalToolCall(id, name, org.json.JSONObject(arguments).toStringMap())
+        }
+        if (calls.isNotEmpty()) return CanonicalAiResult.ToolCalls(calls)
+        val text = message["content"] as? String
+        return if (!text.isNullOrBlank()) CanonicalAiResult.Text(text)
+        else CanonicalAiResult.Failure("EMPTY_RESPONSE", "Grok returned no text or function call.")
+    }
+
+    override fun encodeToolResults(
+        config: AiProviderConfig,
+        results: List<CanonicalToolResult>
+    ): Map<String, Any?> {
+        validateConfiguration(config)
+        require(results.size in 1..32)
+        return mapOf(
+            "messages" to results.map { result ->
+                mapOf(
+                    "role" to "tool",
+                    "tool_call_id" to result.providerCallId,
+                    "content" to if (result.isError) "ERROR: ${result.content}" else result.content
+                )
+            }
+        )
+    }
+}
+
+/** Anthropic Messages API user-defined client tool-use adapter. */
+class AnthropicMessagesToolUseAdapter : AiProviderAdapter {
+    override val provider = AiProviderId.ANTHROPIC
+    override val adapterVersion = "1"
+
+    override fun validateConfiguration(config: AiProviderConfig) {
+        require(config.provider == provider)
+        require(config.endpoint == null) { "Anthropic official endpoint is fixed in this adapter version." }
+    }
+
+    override fun capabilityProfile(model: String, apiVersion: String) =
+        AiCapabilityProfile(
+            provider, model, apiVersion, adapterVersion,
+            mapOf(
+                AiCapability.TOOL_CALLING to CapabilitySupport.SUPPORTED,
+                AiCapability.PARALLEL_TOOL_CALLS to CapabilitySupport.SUPPORTED,
+                AiCapability.STREAMING to CapabilitySupport.UNKNOWN,
+                AiCapability.CANCELLATION to CapabilitySupport.UNKNOWN,
+                AiCapability.JSON_SCHEMA to CapabilitySupport.UNKNOWN,
+                AiCapability.STRUCTURED_OUTPUTS to CapabilitySupport.UNKNOWN,
+                AiCapability.MODEL_DISCOVERY to CapabilitySupport.UNSUPPORTED
+            )
+        )
+
+    override fun encodeToolDefinitions(
+        config: AiProviderConfig,
+        tools: List<CanonicalPluginDefinition>
+    ): Map<String, Any?> {
+        validateConfiguration(config)
+        require(tools.size <= 256)
+        return mapOf(
+            "tools" to tools.map { tool ->
+                mapOf(
+                    "name" to tool.name,
+                    "description" to tool.description,
+                    "input_schema" to tool.inputSchema
+                )
+            }
+        )
+    }
+
+    override fun decodeResponse(payload: Map<String, Any?>): CanonicalAiResult {
+        val content = payload["content"] as? List<*> ?: emptyList<Any?>()
+        val calls = content.mapNotNull { raw ->
+            val block = raw as? Map<*, *> ?: return@mapNotNull null
+            if (block["type"] != "tool_use") return@mapNotNull null
+            val id = block["id"] as? String ?: error("Claude tool_use ID is missing.")
+            val name = block["name"] as? String ?: error("Claude tool_use name is missing.")
+            val input = block["input"] as? Map<*, *>
+                ?: error("Claude tool_use input must be an object.")
+            require(input.keys.all { it is String })
+            CanonicalToolCall(id, name, input.entries.associate { it.key as String to it.value })
+        }
+        if (calls.isNotEmpty()) return CanonicalAiResult.ToolCalls(calls)
+        val text = content.mapNotNull { raw ->
+            val block = raw as? Map<*, *> ?: return@mapNotNull null
+            if (block["type"] == "text") block["text"] as? String else null
+        }.joinToString("")
+        return if (text.isNotBlank()) CanonicalAiResult.Text(text)
+        else CanonicalAiResult.Failure("EMPTY_RESPONSE", "Claude returned no text or tool use.")
+    }
+
+    override fun encodeToolResults(
+        config: AiProviderConfig,
+        results: List<CanonicalToolResult>
+    ): Map<String, Any?> {
+        validateConfiguration(config)
+        require(results.size in 1..32)
+        return mapOf(
+            "role" to "user",
+            "content" to results.map { result ->
+                buildMap<String, Any?> {
+                    put("type", "tool_result")
+                    put("tool_use_id", result.providerCallId)
+                    put("content", result.content)
+                    if (result.isError) put("is_error", true)
+                }
+            }
+        )
+    }
+}
