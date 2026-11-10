@@ -1,27 +1,145 @@
 package org.mosharrof.androidcontrol
+
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** First-turn profile runtime; plugin tools remain disabled until approval continuation is integrated. */
+/**
+ * Bounded provider conversation runner. Tool execution is possible only when a
+ * connected MCP service is supplied; every non-read-only call must pass the
+ * caller's explicit approval callback before a one-time grant is issued.
+ */
 object AiProviderRuntime {
     private const val MAX_JSON_DEPTH = 32
     private const val MAX_JSON_NODES = 2_048
+    const val MAX_CONTINUATION_ROUNDS = 8
+    const val MAX_TOTAL_TOOL_CALLS = 32
 
-    fun askText(profile: ResolvedAiProviderProfile, prompt: String): String {
+    fun askText(profile: ResolvedAiProviderProfile, prompt: String): String =
+        askText(profile, prompt, service = null, approve = { false })
+
+    fun askText(
+        profile: ResolvedAiProviderProfile,
+        prompt: String,
+        service: McpConnectorService?,
+        approve: (AiToolCallPlan.Ready) -> Boolean
+    ): String = runConversation(
+        profile = profile,
+        prompt = prompt,
+        service = service,
+        approve = approve,
+        post = { request -> AiProviderHttpTransport().post(request).payload.toBoundedMap() }
+    )
+
+    internal fun runConversation(
+        profile: ResolvedAiProviderProfile,
+        prompt: String,
+        service: McpConnectorService?,
+        approve: (AiToolCallPlan.Ready) -> Boolean,
+        post: (AiProviderHttpRequest) -> Map<String, Any?>
+    ): String {
         require(prompt.isNotBlank() && prompt.length <= AiProviderRequestFactory.MAX_PROMPT_CHARS) {
             "AI prompt is empty or exceeds the configured limit."
         }
         AiProviderRegistry.registerBuiltIns()
+
+        val connectedIds = ConnectorRegistry.connectorSnapshot()
+            .filter { it.state == ConnectorRegistry.ConnectionState.CONNECTED }
+            .map { it.id }
+            .toSet()
+        val tools = if (service == null) emptyList() else {
+            CanonicalPluginCatalog.snapshot().filter { definition ->
+                ConnectorRegistry.toolSnapshot().any { tool ->
+                    tool.name == definition.name &&
+                        tool.id == definition.id &&
+                        tool.connectorId in connectedIds
+                }
+            }
+        }
         val request = AiProviderRequestFactory.createInitialRequest(
-            config = profile.config, apiKey = profile.apiKey, prompt = prompt, tools = emptyList()
+            config = profile.config,
+            apiKey = profile.apiKey,
+            prompt = prompt,
+            tools = tools
         )
-        val response = AiProviderHttpTransport().post(request)
-        return when (val result = decodePayload(profile.config.provider, response.payload.toBoundedMap())) {
-            is CanonicalAiResult.Text -> result.value
-            is CanonicalAiResult.ToolCalls -> throw IllegalStateException(
-                "AI returned plugin actions, but approval-driven continuation is not enabled yet. No plugin was executed."
-            )
-            is CanonicalAiResult.Failure -> throw IllegalStateException(result.safeMessage)
+        var payload = post(request)
+        var totalCalls = 0
+        var continuationRounds = 0
+
+        while (true) {
+            when (val result = decodePayload(profile.config.provider, payload)) {
+                is CanonicalAiResult.Text -> return result.value
+                is CanonicalAiResult.Failure -> throw IllegalStateException(result.safeMessage)
+                is CanonicalAiResult.ToolCalls -> {
+                    require(service != null && tools.isNotEmpty()) {
+                        "AI returned plugin actions, but no connected MCP tool session is available. No plugin was executed."
+                    }
+                    totalCalls += result.calls.size
+                    require(totalCalls <= MAX_TOTAL_TOOL_CALLS) {
+                        "AI tool-call limit reached; remaining calls were not executed."
+                    }
+                    require(continuationRounds < MAX_CONTINUATION_ROUNDS) {
+                        "AI continuation limit reached; no further plugin calls were executed."
+                    }
+
+                    val plans = AiToolCallOrchestrator.planAll(result.calls).getOrThrow()
+                    val toolResults = plans.map { plan ->
+                        when (plan) {
+                            is AiToolCallPlan.Denied -> CanonicalToolResult(
+                                providerCallId = plan.call.providerCallId,
+                                toolName = plan.call.toolName,
+                                content = plan.reason.take(64 * 1024),
+                                isError = true
+                            )
+                            is AiToolCallPlan.Ready -> {
+                                if (plan.approvalRequired && !runCatching { approve(plan) }.getOrDefault(false)) {
+                                    CanonicalToolResult(
+                                        providerCallId = plan.call.providerCallId,
+                                        toolName = plan.call.toolName,
+                                        content = "User declined this tool call. It was not executed.",
+                                        isError = true
+                                    )
+                                } else {
+                                    val grant = if (plan.approvalRequired) {
+                                        service.issueApprovalGrant(plan.toolId, plan.call.arguments)
+                                            .getOrThrow()
+                                            ?: error("Approval grant was not issued for an approval-required tool.")
+                                    } else null
+                                    when (val execution = AiToolCallOrchestrator.executeWithMcpService(
+                                        plan = plan,
+                                        service = service,
+                                        approvalGrant = grant
+                                    )) {
+                                        is AiToolCallExecution.Completed -> execution.result
+                                        is AiToolCallExecution.ApprovalPending -> CanonicalToolResult(
+                                            plan.call.providerCallId,
+                                            plan.call.toolName,
+                                            "Approval was not provided. The tool was not executed.",
+                                            isError = true
+                                        )
+                                        is AiToolCallExecution.Denied -> CanonicalToolResult(
+                                            plan.call.providerCallId,
+                                            plan.call.toolName,
+                                            execution.reason.take(64 * 1024),
+                                            isError = true
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    val continuation = AiProviderContinuationRequestFactory.create(
+                        config = profile.config,
+                        apiKey = profile.apiKey,
+                        prompt = prompt,
+                        previousResponse = payload,
+                        results = toolResults,
+                        tools = tools
+                    )
+                    payload = post(continuation)
+                    continuationRounds++
+                }
+            }
         }
     }
 
