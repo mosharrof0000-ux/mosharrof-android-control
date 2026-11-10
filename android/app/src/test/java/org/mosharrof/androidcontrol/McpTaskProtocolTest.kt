@@ -93,4 +93,70 @@ class McpTaskProtocolTest {
         )
         assertTrue(cancelled?.isTerminal ?: false)
     }
+ 
+    @Test
+    fun rejectsMalformedTaskSnapshotsAndInvalidStatePayloads() {
+        val base = mapOf<String, Any?>(
+            "taskId" to "task-1",
+            "status" to "working",
+            "pollIntervalMs" to 1_000
+        )
+        assertNotNull(McpTaskProtocol.parseSnapshot(base))
+        assertNull(McpTaskProtocol.parseSnapshot(base + ("taskId" to "task id")))
+        assertNull(McpTaskProtocol.parseSnapshot(base + ("taskId" to "x".repeat(257))))
+        assertNull(McpTaskProtocol.parseSnapshot(base + ("status" to "unknown")))
+        assertNull(McpTaskProtocol.parseSnapshot(base + ("pollIntervalMs" to 0)))
+        assertNull(McpTaskProtocol.parseSnapshot(base + ("pollIntervalMs" to 1.5)))
+        assertNull(McpTaskProtocol.parseSnapshot(base + ("ttlMs" to -1)))
+        assertNull(McpTaskProtocol.parseSnapshot(base + ("ttlMs" to "60000")))
+        assertNull(
+            McpTaskProtocol.parseSnapshot(
+                base + ("inputRequests" to mapOf("bad" to mapOf("method" to "tools/call", "params" to emptyMap<String, Any?>())))
+            )
+        )
+        assertNull(
+            McpTaskProtocol.parseSnapshot(
+                base + ("result" to mapOf("content" to emptyList<Any>()))
+            )
+        )
+        assertNull(
+            McpTaskProtocol.parseSnapshot(
+                base + ("error" to mapOf("message" to "unexpected"))
+            )
+        )
+    }
+
+    @Test
+    fun taskRequestBuildersBindTaskIdsAndValidateUpdateAnswers() {
+        val get = McpProtocol.modernTasksGetRequest(
+            "rpc-1", "task-1", "MOSHARROF", "1"
+        )
+        assertEquals("tasks/get", get.method)
+        assertEquals("task-1", get.params["taskId"])
+        assertEquals("task-1", McpHttpClient.standardNameHeader("tasks/get", get.params))
+
+        val update = McpProtocol.modernTasksUpdateRequest(
+            "rpc-2", "task-1", mapOf("confirm" to mapOf("action" to "accept")),
+            "MOSHARROF", "1"
+        )
+        assertEquals("tasks/update", update.method)
+        assertEquals("task-1", McpHttpClient.standardNameHeader("tasks/update", update.params))
+
+        val cancel = McpProtocol.modernTasksCancelRequest(
+            "rpc-3", "task-1", "MOSHARROF", "1"
+        )
+        assertEquals("tasks/cancel", cancel.method)
+        assertEquals("task-1", McpHttpClient.standardNameHeader("tasks/cancel", cancel.params))
+
+        assertThrows(IllegalArgumentException::class.java) {
+            McpProtocol.modernTasksUpdateRequest(
+                "rpc-4", "task-1", emptyMap(), "MOSHARROF", "1"
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            McpProtocol.modernTasksGetRequest(
+                "rpc-5", "x".repeat(257), "MOSHARROF", "1"
+            )
+        }
+    }
 }
