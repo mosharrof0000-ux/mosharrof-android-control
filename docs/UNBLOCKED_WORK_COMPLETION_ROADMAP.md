@@ -3,7 +3,7 @@
 **Scope:** Complete implementation and automated verification that can be performed without live provider credentials, a physical Android device, production deployment, or PR merge.
 
 **Working branch:** `fix/mcp-pagination-20261110`  
-**Baseline commit:** `f0852eec634539a98810daffc47be95aa05b3b26`
+**Baseline commit:** `642ca45db7f76fa66286aa956231c51cd63c8457`
 
 ## Rules
 
@@ -40,18 +40,20 @@ Independent work may proceed concurrently, but shared contracts and UI integrati
 - [x] Initial capability profile and canonical tool models.
 - [x] Bounded shared HTTPS transport.
 - [x] First-turn request builders for Gemini Interactions, OpenAI Responses, xAI Responses, and Anthropic Messages.
-- [ ] Integrate all four adapters into AiEngine.
-- [ ] Add provider-specific response parsing and normalized transport errors to the runtime.
+- [x] Route active provider profiles through the shared first-turn runtime and all four registered adapters for normalized text responses.
+- [x] Add bounded JSON response conversion and adapter response decoding tests for Gemini, OpenAI, xAI and Anthropic.
+- [ ] Integrate provider tool calls into the approved continuation loop; first-turn runtime intentionally sends no tool declarations yet.
 - [ ] Verify schema conversion rejects unsupported constraints.
 - **Gate:** all adapters pass common mock contract and malformed-response tests.
 
 ### Phase 2 — Encrypted provider profiles
-- [ ] Add multi-profile encrypted credential repository.
-- [ ] Add profile CRUD and active-profile selection.
-- [ ] Add profile migration from the legacy single-provider configuration.
-- [ ] Integrate profile selection into AiEngine.
+- [x] Add multi-profile encrypted credential repository.
+- [x] Add profile CRUD and active-profile selection APIs.
+- [x] Add explicit legacy Gemini configuration migration; legacy OpenAI-compatible configuration remains on its existing path until a compatible adapter is available.
+- [x] Integrate active profile selection into AiEngine's first-turn text runtime.
 - [ ] Add provider management UI.
-- [ ] Verify secret redaction and Android Keystore failure behavior.
+- [x] Verify metadata separation and resolved-profile secret redaction with repository tests.
+- [ ] Verify Android Keystore failure behavior on supported Android runtimes.
 - **Gate:** profile CRUD, encryption boundaries, migration, and no-secret-leak tests pass.
 
 ### Phase 3 — Conversation continuation
@@ -109,10 +111,10 @@ Independent work may proceed concurrently, but shared contracts and UI integrati
 
 | Evidence | Result | Scope |
 |---|---|---|
-| Android CI run 42826745595 | PASS | Commit `f0852eec634539a98810daffc47be95aa05b3b26`: unit tests, debug APK assembly, artifact upload |
-| Worker CI run 42826745677 | PASS | Same commit: typecheck |
+| Android CI run 42829753454 | IN PROGRESS at commit `1994168e2c559fc609003dbc8a66c1c1662cc290` | Unit tests and debug APK build; does not include later runtime/test commit `642ca45db7f76fa66286aa956231c51cd63c8457` |
+| Worker CI run 42829753492 | PASS | Commit `1994168e2c559fc609003dbc8a66c1c1662cc290`; docs/runtime commits do not change Worker source |
 | Physical device QA | NOT RUN | Requires user approval |
 | Live provider round-trips | NOT RUN | Requires credentials and authorization |
 | Production deployment | NOT RUN | Requires user approval |
 
-Update this ledger only with run IDs and commit SHAs verified from CI.
+| Latest source commit `642ca45db7f76fa66286aa956231c51cd63c8457` | PENDING CI | Profile-backed first-turn runtime and provider response contract tests added; latest-head CI evidence not yet returned |\n\nUpdate this ledger only with run IDs and commit SHAs verified from CI.
