@@ -71,6 +71,12 @@ object TermuxBridge {
         "Android Termux service-এ অনুরোধ পাঠিয়েছে; এটি এখনো execution-এর প্রমাণ নয়। ‘Termux ফলাফল’ চাপুন।"
     }
 
+    internal fun effectiveExitCode(shellExitCode: Int, termuxError: Int): Int =
+        if (termuxError != -1) termuxError else shellExitCode
+
+    internal fun supportsOperation(operationId: String): Boolean =
+        operations.containsKey(operationId)
+
     fun lastResult(context: Context): String =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getString(LAST_RESULT, "এখনো কোনো Termux ফলাফল আসেনি।") ?: "ফলাফল নেই"
@@ -93,7 +99,7 @@ class TermuxResultReceiver : BroadcastReceiver() {
             val stderr = bundle.getString("stderr").orEmpty()
             val shellExitCode = bundle.getInt("exitCode", -1)
             val termuxError = bundle.getInt("err", -1)
-            val exitCode = if (termuxError != -1) termuxError else shellExitCode
+            val exitCode = TermuxBridge.effectiveExitCode(shellExitCode, termuxError)
             val errorMessage = bundle.getString("errmsg").orEmpty()
             buildString {
                 append("Exit code: ").append(exitCode)
