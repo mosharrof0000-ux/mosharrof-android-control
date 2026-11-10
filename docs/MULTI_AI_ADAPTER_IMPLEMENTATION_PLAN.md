@@ -104,3 +104,11 @@ An outbound API adapter does not automatically make MOSHARROF an MCP server. The
 9. Provider catalog, update workflow, UI and full QA.
 
 Do not code five unrelated clients in parallel. Stabilize the common contract first, then implement adapters sequentially against the same tests.
+
+
+## 2026-11-10 adapter compatibility update
+
+- The registered xAI adapter now targets the vendor's current Responses API at `/v1/responses`; the earlier Chat Completions translator remains available only as a compatibility class and is not registered as the default xAI adapter.
+- Added xAI Responses function-call parsing and `function_call_output` continuation translation tests. Actual `previous_response_id` network continuation remains pending until the HTTP orchestration layer is implemented.
+- Updated Anthropic Messages adapter capability-profile validation to the currently documented API version `2026-10-21`; live request/response compatibility remains unverified.
+- These are protocol translation updates only; provider credentials, HTTP transport, conversation state and live endpoint verification remain pending.
