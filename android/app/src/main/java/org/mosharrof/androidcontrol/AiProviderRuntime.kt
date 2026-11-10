@@ -69,7 +69,7 @@ object AiProviderRuntime {
             prompt = prompt,
             tools = tools
         )
-        var payload = post(request)
+        cancellation.throwIfCancelled()\n        var payload = post(request)\n        cancellation.throwIfCancelled()
         var totalCalls = 0
         var continuationRounds = 0
 
