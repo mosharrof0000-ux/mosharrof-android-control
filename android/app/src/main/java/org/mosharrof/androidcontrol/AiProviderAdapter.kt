@@ -183,8 +183,7 @@ class GeminiFunctionCallingAdapter : AiProviderAdapter {
 
     override fun capabilityProfile(model: String, apiVersion: String): AiCapabilityProfile {
         require(apiVersion == "v1beta") { "Unsupported Gemini API version." }
-        return
-        AiCapabilityProfile(
+        return AiCapabilityProfile(
             provider, model, apiVersion, adapterVersion,
             mapOf(
                 AiCapability.TOOL_CALLING to CapabilitySupport.UNKNOWN,
@@ -279,8 +278,7 @@ class OpenAiResponsesFunctionCallingAdapter : AiProviderAdapter {
 
     override fun capabilityProfile(model: String, apiVersion: String): AiCapabilityProfile {
         require(apiVersion == "v1") { "Unsupported OpenAI Responses API version." }
-        return
-        AiCapabilityProfile(
+        return AiCapabilityProfile(
             provider, model, apiVersion, adapterVersion,
             mapOf(
                 AiCapability.TOOL_CALLING to CapabilitySupport.UNKNOWN,
@@ -402,8 +400,7 @@ class XaiChatCompletionsFunctionCallingAdapter : AiProviderAdapter {
 
     override fun capabilityProfile(model: String, apiVersion: String): AiCapabilityProfile {
         require(apiVersion == "v1") { "Unsupported xAI API version." }
-        return
-        AiCapabilityProfile(
+        return AiCapabilityProfile(
             provider, model, apiVersion, adapterVersion,
             mapOf(
                 AiCapability.TOOL_CALLING to CapabilitySupport.UNKNOWN,
@@ -490,8 +487,7 @@ class AnthropicMessagesToolUseAdapter : AiProviderAdapter {
 
     override fun capabilityProfile(model: String, apiVersion: String): AiCapabilityProfile {
         require(apiVersion == "2023-06-01") { "Unsupported Anthropic Messages API version." }
-        return
-        AiCapabilityProfile(
+        return AiCapabilityProfile(
             provider, model, apiVersion, adapterVersion,
             mapOf(
                 AiCapability.TOOL_CALLING to CapabilitySupport.UNKNOWN,
