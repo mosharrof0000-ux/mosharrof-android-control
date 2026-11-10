@@ -108,22 +108,24 @@ Independent work may proceed concurrently, but shared contracts and UI integrati
 - [ ] Update architecture and ToolHub handoff materials.
 - **Gate:** no unresolved critical/high findings; all automated checks pass.
 
-### MCP Tasks recovery metadata implementation (pending CI)
+### MCP Tasks recovery metadata implementation
 - Added `McpTaskStore`: bounded in-memory test implementation and Android SharedPreferences durable implementation.
 - Store schema deliberately excludes task result/error/inputRequests/requestState and credentials; only identifiers, status and bounded timing metadata are persisted.
 - Pending records restored after process recreation are candidates only. Callers must query `tasks/get` against the connected server before relying on their state.
 - Explicit connector disconnect clears persisted records. Connector reconnect keeps candidates available for server revalidation.
 - Unit coverage added for connector isolation, pending-state filtering, TTL expiry, 100-record cap, explicit cleanup, and persistence across store recreation using a fake SharedPreferences implementation.
-- Service integration records snapshots returned by tasks/get/update/cancel and exposes pending candidates; Android UI task-start/approval integration remains pending.
-- Commits: `a8172fa` (store), `92198dc` / `cf00f16` (service integration), `743b763` (Android wiring), `c469594` / `6db8d5d` (tests), `9efee46` (synchronous persistence).
-- CI: PENDING for latest source head.
+- Service integration records snapshots returned by `tasks/get/update/cancel`, exposes pending candidates, and provides `refreshPendingTasks` to revalidate each restored candidate against the server before use.
+- Bounded polling supports caller cancellation before the first request and after each delay; cancellation prevents the next remote request.
+- Android UI task-start/approval/result integration remains pending; `resultType=task` continues to fail closed.
+- Commits: `a8172fa` (store), `92198dc` / `cf00f16` (service integration), `743b763` (Android wiring), `c469594` / `6db8d5d` (store tests), `e44e10c` (initial service persistence), `d7ba354` (deterministic test clock fix), `dec0006` (service recovery tests), `ad29dd3` (remote refresh helper), `735bfd6` (refresh regression), `ca7c247` (poll cancellation), `dd61f3c` (cancellation regression test).
+- Android CI #42870349189 and Worker CI #42870348894 PASS on `735bfd6514a8d3a1b768fc72d7fbef18a1f80696`; latest cancellation test CI is tracked separately below.
 
 ### MCP Task service recovery CI evidence
 - Android CI run #42870349189 completed SUCCESS on source commit `735bfd6514a8d3a1b768fc72d7fbef18a1f80696`; includes Android unit tests, Debug APK assembly and artifact upload.
 - Worker typecheck run #42870348894 completed SUCCESS on the same commit.
 - Debug APK artifact `mosharrof-android-control-debug`, artifact ID `13788863906`, SHA-256 `bd1efc5cfa6208d306f24edda681e2e6f5a26085a730f1947add4dfed615e93c`. This is a CI artifact only; it has not been installed or device-tested.
 - Recovery tests verify store persistence across service recreation, remote revalidation via `refreshPendingTasks`, terminal-state removal, and explicit-disconnect cleanup.
-- Follow-up added cancellable polling (`shouldCancel` checked before network work and after each delay) plus a regression test proving cancellation prevents the next request. CI for that follow-up is pending at commit `dd61f3cd68239c25821f87332d89de8c8102d43b`.
+- Follow-up added cancellable polling (`shouldCancel` checked before network work and after each delay) plus a regression test proving cancellation prevents the next request. Android CI #42870719715 is pending for commit `dd61f3cd68239c25821f87332d89de8c8102d43b`; Worker CI #42870719771 PASS.
 - Task execution remains fail-closed for `resultType=task`; task start/result handling is not yet wired into the approved Android UI.
 
 ## External gates excluded from this roadmap
@@ -148,3 +150,5 @@ Independent work may proceed concurrently, but shared contracts and UI integrati
 
 
 | Latest MCP task recovery source commit `6db8d5dc93fe7a51c0dc74c45ed4cab81c2fda59` | PENDING CI | Durable metadata store and process-recreation regression tests added; final service integration commits are recorded above |
+
+| MCP cancellation test commit `dd61f3cd68239c25821f87332d89de8c8102d43b` | Android CI PENDING; Worker CI PASS | Added regression test proving cancellation prevents the next MCP task poll request |
