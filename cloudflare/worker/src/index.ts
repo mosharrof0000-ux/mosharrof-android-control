@@ -65,22 +65,32 @@ export class RelayDO {
    if(!await this.allowRateLimit("device:result",30,60_000))return json({error:"rate_limited"},429);
    const body=await req.json().catch(()=>null) as any;
    if(!body||typeof body.output!=="string"||body.output.length>12000||!Number.isInteger(body.exit_code))return json({error:"invalid_result"},400);
+   const fingerprintBytes=await crypto.subtle.digest(
+    "SHA-256",new TextEncoder().encode(String(body.exit_code)+"\\0"+body.output)
+   );
+   const fingerprint=Array.from(new Uint8Array(fingerprintBytes),b=>b.toString(16).padStart(2,"0")).join("");
    const outcome=await this.state.storage.transaction(async tx=>{
-    const key="result:"+resultMatch[1];
+    const commandId=resultMatch[1],key="result:"+commandId,auditKey="audit:"+commandId;
     const prior=await tx.get<any>(key);
     if(prior){
      return prior.output===body.output&&prior.exit_code===body.exit_code
       ?{kind:"reused" as const}:{kind:"conflict" as const};
     }
+    const audit=await tx.get<any>(auditKey);
+    if(!audit||audit.expires_at<=Date.now())return {kind:"unknown" as const};
+    if(audit.status==="completed"){
+     return audit.result_fingerprint===fingerprint
+      ?{kind:"reused" as const}:{kind:"conflict" as const};
+    }
     const completedAt=new Date().toISOString();
-    await tx.put(key,{command_id:resultMatch[1],output:body.output,exit_code:body.exit_code,completed_at:completedAt,expires_at:Date.now()+86400_000});
+    await tx.put(key,{command_id:commandId,output:body.output,exit_code:body.exit_code,completed_at:completedAt,expires_at:Date.now()+86400_000});
     const queue=await tx.get<Array<any>>("queue")??[];
-    await tx.put("queue",queue.filter(j=>j.command_id!==resultMatch[1]));
-    const audit=await tx.get<any>("audit:"+resultMatch[1]);
-    if(audit)await tx.put("audit:"+resultMatch[1],{...audit,status:"completed",exit_code:body.exit_code,completed_at:completedAt});
+    await tx.put("queue",queue.filter(j=>j.command_id!==commandId));
+    await tx.put(auditKey,{...audit,status:"completed",exit_code:body.exit_code,result_fingerprint:fingerprint,completed_at:completedAt});
     return {kind:"accepted" as const};
    });
    if(outcome.kind==="conflict")return json({error:"result_conflict"},409);
+   if(outcome.kind==="unknown")return json({error:"unknown_or_expired_command"},404);
    return json({accepted:true,reused:outcome.kind==="reused"});
   }
   if(p==="/v1/chat/commands"&&req.method==="POST"){
