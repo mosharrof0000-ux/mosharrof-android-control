@@ -4,6 +4,33 @@ import java.net.URI
 
 /** Fail-closed validators for OAuth 2.1 public-client and CIMD metadata. */
 internal object McpOAuthMetadata {
+    /** RFC 9728 metadata URL; resource path is preserved after the well-known segment. */
+    fun protectedResourceMetadataUrl(resourceUrl: String): String? =
+        wellKnownUrl(resourceUrl, "oauth-protected-resource")
+
+    /** RFC 8414 authorization-server metadata URL. */
+    fun authorizationServerMetadataUrl(issuer: String): String? =
+        wellKnownUrl(issuer, "oauth-authorization-server")
+
+    fun validateProtectedResourceMetadata(
+        expectedResource: String,
+        metadata: Map<String, Any?>
+    ): Boolean {
+        if (!isHttpsUrl(expectedResource)) return false
+        if (metadata["resource"] != expectedResource) return false
+        val servers = metadata["authorization_servers"] as? List<*> ?: return false
+        return servers.isNotEmpty() && servers.size <= 16 &&
+            servers.all { isHttpsUrl(it as? String) }
+    }
+
+    private fun wellKnownUrl(value: String, metadataName: String): String? = runCatching {
+        if (!isHttpsUrl(value)) return null
+        val uri = URI(value)
+        val path = uri.rawPath.orEmpty().trimEnd('/')
+        val base = "${uri.scheme}://${uri.rawAuthority}/.well-known/$metadataName"
+        (base + path).takeIf { it.length <= 4_096 }
+    }.getOrNull()
+
     fun validateClientMetadata(
         metadataUrl: String,
         expectedRedirectUri: String,
