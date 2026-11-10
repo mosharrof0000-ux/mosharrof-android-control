@@ -63,7 +63,19 @@ object RelayClient {
         if (!response.has("job") || response.isNull("job")) return null
         val job = response.optJSONObject("job")
             ?: error("Relay job-এর গঠন অবৈধ; কোনো কমান্ড চালানো হয়নি।")
-        val parsed = parseJob(job)
+        val commandId = job.optString("command_id")
+        require(isValidCommandId(commandId)) {
+            "Relay job-এর command_id অবৈধ; কোনো কমান্ড চালানো হয়নি।"
+        }
+        val operationId = job.optString("operation_id")
+        if (operationId !in allowed) {
+            // Poison/unknown jobs are never dispatched. A valid server-issued ID
+            // lets the client report a safe rejection and release the queue lease.
+            postResult(context, commandId, "Rejected: operation_id is not in the Android read-only allowlist.", 126)
+            markCommandHandled(context, commandId)
+            error("অনুমোদিত তালিকার বাইরের Relay operation প্রত্যাখ্যান করে সার্ভারে জানানো হয়েছে।")
+        }
+        val parsed = Job(commandId, operationId)
         if (hasHandledCommand(context, parsed.commandId)) return null
         return parsed
     }
