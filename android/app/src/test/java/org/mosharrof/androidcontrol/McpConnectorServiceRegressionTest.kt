@@ -304,12 +304,15 @@ class McpConnectorServiceRegressionTest {
         ).getOrThrow()
     }
 
-    private fun service(server: FakeServer): McpConnectorService {
+    private fun service(
+        server: FakeServer,
+        taskStore: McpTaskStore = InMemoryMcpTaskStore()
+    ): McpConnectorService {
         val client = McpHttpClient(
             endpoint = "https://example.com/mcp",
             connectionFactory = server::connection
         )
-        return McpConnectorService(client)
+        return McpConnectorService(client, taskStore = taskStore)
     }
 
     @After
@@ -466,6 +469,48 @@ class McpConnectorServiceRegressionTest {
         val cancelled = connectorService.cancelTask("test.mcp", "task-1").getOrThrow()
         assertEquals(McpTaskProtocol.Status.CANCELLED, cancelled.status)
         assertTrue(server.methods.containsAll(listOf("tasks/get", "tasks/update", "tasks/cancel")))
+    }
+
+    @Test
+    fun pendingTaskCandidatesSurviveServiceRecreationAndAreRefreshedFromServer() {
+        registerConnector()
+        val taskStore = InMemoryMcpTaskStore()
+        val firstServer = FakeServer(taskGetStatuses = listOf("working"))
+        val firstService = service(firstServer, taskStore)
+        firstService.connect("test.mcp").getOrThrow()
+        firstService.getTask("test.mcp", "task-1").getOrThrow()
+        assertEquals(
+            listOf("task-1"),
+            firstService.pendingTasks("test.mcp").getOrThrow().map { it.taskId }
+        )
+
+        // Simulate a process/session recreation without a graceful disconnect.
+        val recoveredServer = FakeServer(taskGetStatuses = listOf("completed"))
+        val recoveredService = service(recoveredServer, taskStore)
+        recoveredService.connect("test.mcp").getOrThrow()
+        val candidates = recoveredService.pendingTasks("test.mcp").getOrThrow()
+        assertEquals(listOf("task-1"), candidates.map { it.taskId })
+
+        // A restored ID is only a candidate; tasks/get must revalidate it remotely.
+        val refreshed = recoveredService.getTask("test.mcp", candidates.single().taskId).getOrThrow()
+        assertEquals(McpTaskProtocol.Status.COMPLETED, refreshed.status)
+        assertTrue(recoveredService.pendingTasks("test.mcp").getOrThrow().isEmpty())
+        assertEquals(1, recoveredServer.taskGetCalls.get())
+    }
+
+    @Test
+    fun explicitDisconnectClearsPersistedTaskRecoveryCandidates() {
+        registerConnector()
+        val taskStore = InMemoryMcpTaskStore()
+        val server = FakeServer()
+        val connectorService = service(server, taskStore)
+        connectorService.connect("test.mcp").getOrThrow()
+        connectorService.getTask("test.mcp", "task-1").getOrThrow()
+        assertEquals(1, connectorService.pendingTasks("test.mcp").getOrThrow().size)
+
+        connectorService.disconnect("test.mcp").getOrThrow()
+
+        assertTrue(taskStore.list("test.mcp").isEmpty())
     }
 
     @Test
