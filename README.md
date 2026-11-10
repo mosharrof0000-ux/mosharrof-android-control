@@ -2,6 +2,10 @@
 
 A standalone Android companion for user-authorized device inspection, file/media inventory, and explicitly approved MCP tool calls. It is independent of the Mosharrof AI app.
 
+## AI-provider-neutral direction
+
+The plugin runtime is designed to be independent of any AI vendor. Future integrations use provider-specific adapters (for example Grok, Gemini, Claude, Copilot or OpenAI) that translate native tool/function/MCP interfaces into one common plugin contract. Each provider must be documented and tested independently; this branch does not yet claim those adapters are implemented. See [AI Provider Adapter Architecture](docs/AI_PROVIDER_ADAPTER_ARCHITECTURE.md).
+
 ## Implemented in the current branch
 - Android-reported internal data-partition storage and RAM diagnostics.
 - User-selected folder access through Android Storage Access Framework (SAF).
