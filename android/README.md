@@ -14,7 +14,7 @@ Open the android/ directory in Android Studio (Ladybug or newer), sync Gradle, a
 3. Bounded recursive file listing and SHA-256 duplicate reporting.
 4. Audio metadata inspection.
 5. MCP Plugin Connector page available from Home and the bottom navigation.
-6. HTTPS MCP discovery, tools/list, fail-closed supported-subset JSON Schema validation, and tools/call.
+6. HTTPS MCP discovery, cursor-based tools/list pagination (100-page/5,000-tool cap), modern cache-hint validation, fail-closed supported-subset JSON Schema validation, and tools/call.
 7. Explicit approval dialog for each tool invocation; WRITE tools require a short-lived, single-use approval grant.
 8. Android Keystore AES-GCM storage for MCP bearer tokens.
 9. Optional HTTPS device relay client with encrypted device-token storage, bounded responses, validated job IDs, and a fixed allowlist of read-only Termux diagnostics; every incoming job requires an in-app approval before execution.
