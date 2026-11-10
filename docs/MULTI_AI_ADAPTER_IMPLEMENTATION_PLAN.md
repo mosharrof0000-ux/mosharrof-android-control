@@ -49,8 +49,8 @@ An outbound API adapter does not automatically make MOSHARROF an MCP server. The
 ## Phase 3 — Provider adapters, one at a time
 - [x] Initial Google Gemini generateContent function declaration, functionCall parsing and functionResponse encoding adapter added. Safety/finish reasons, model-specific capability verification, streaming and live API round-trip remain pending.
 - [x] Initial official OpenAI Responses API function-tool definition, function_call parsing and function_call_output continuation adapter added. Network orchestration, streaming, strict-schema normalization and live API round-trip remain pending.
-- [ ] xAI Grok: official API auth, tool declarations/calls, result continuation, streaming and model-specific capabilities.
-- [ ] Anthropic Claude: Messages API tool-use/tool-result blocks, stop reasons, streaming and schema limitations.
+- [x] Initial xAI Grok Chat Completions-compatible function tool declarations, tool_calls parsing and tool-role result continuation adapter added. Authentication/network orchestration, streaming and live API round-trip remain pending.
+- [x] Initial Anthropic Messages API tool-use/tool_result translation adapter added, including error results. Authentication/network orchestration, stop-reason handling, streaming and live API round-trip remain pending.
 - [ ] Microsoft: first identify exact product (Copilot Studio, Microsoft 365 Copilot extensibility, or another official API). Implement only against documented permitted interfaces. Do not assume consumer Copilot has a general public tool-calling API.
 - [ ] Add provider setup/test-connection UI and secret-safe diagnostics.
 - [ ] Add sanitized provider response fixtures.
