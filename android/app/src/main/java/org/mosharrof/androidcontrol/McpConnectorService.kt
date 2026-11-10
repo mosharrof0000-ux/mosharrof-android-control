@@ -485,7 +485,7 @@ class McpConnectorService(
                 clientVersion = clientVersion
             )
         )
-        parseTaskResponse(response)
+        parseTaskResponse(response, taskId)
     }
 
     /** Submit user-mediated MRTR answers for a task awaiting input. */
@@ -564,7 +564,7 @@ class McpConnectorService(
         }
     }
 
-    private fun parseTaskResponse(response: JSONObject): McpTaskProtocol.Snapshot {
+    private fun parseTaskResponse(response: JSONObject, expectedTaskId: String): McpTaskProtocol.Snapshot {
         if (response.has("error")) {
             val rpcError = response.optJSONObject("error")
             error(rpcError?.optString("message") ?: "MCP Task operation ব্যর্থ হয়েছে।")
@@ -572,8 +572,12 @@ class McpConnectorService(
         val result = response.optJSONObject("result")
             ?: error("MCP Task response-এ result অনুপস্থিত।")
         val task = result.optJSONObject("task") ?: result
-        return McpTaskProtocol.parseSnapshot(task.toMap())
+        val snapshot = McpTaskProtocol.parseSnapshot(task.toMap())
             ?: error("MCP Task snapshot-এর status, TTL, poll interval অথবা payload অবৈধ।")
+        require(snapshot.taskId == expectedTaskId) {
+            "MCP Task response-এর taskId অনুরোধের সঙ্গে মেলেনি।"
+        }
+        return snapshot
     }
 
     private fun clientProtocolVersion(): String {
