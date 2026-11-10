@@ -151,6 +151,25 @@ object McpProtocol {
         return true
     }
 
+    /**
+     * Validates the bounded server-to-client requests carried by a modern MRTR result.
+     * Their params remain opaque data for the matching handler/UI.
+     */
+    fun validateInputRequests(inputRequests: Map<String, Any?>): Boolean {
+        if (inputRequests.isEmpty() || inputRequests.size > 16) return false
+        val supportedMethods = setOf(
+            "elicitation/create",
+            "sampling/createMessage",
+            "roots/list"
+        )
+        return inputRequests.all { (key, rawRequest) ->
+            if (key.isBlank() || key.length > 128) return@all false
+            val request = rawRequest as? Map<*, *> ?: return@all false
+            val method = request["method"] as? String ?: return@all false
+            method in supportedMethods && request["params"] is Map<*, *>
+        }
+    }
+
     fun validateInputSchema(schema: Map<String, Any?>): Boolean {
         if (schema["type"] != "object") return false
 
