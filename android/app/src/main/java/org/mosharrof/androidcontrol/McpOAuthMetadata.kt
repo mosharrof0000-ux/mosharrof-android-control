@@ -26,6 +26,7 @@ internal object McpOAuthMetadata {
     private fun wellKnownUrl(value: String, metadataName: String): String? = runCatching {
         if (!isHttpsUrl(value)) return null
         val uri = URI(value)
+        require(uri.rawQuery == null && uri.rawFragment == null && uri.userInfo == null)
         val path = uri.rawPath.orEmpty().trimEnd('/')
         val base = "${uri.scheme}://${uri.rawAuthority}/.well-known/$metadataName"
         (base + path).takeIf { it.length <= 4_096 }
