@@ -52,14 +52,19 @@ export class RelayDO {
      const audit=await tx.get<any>("audit:"+item.command_id);
      if(audit&&audit.status!=="completed")await tx.put("audit:"+item.command_id,{...audit,status:"expired",expired_at:new Date(now).toISOString()});
     }
-    const index=live.findIndex(j=>!j.lease_until||j.lease_until<=now);
-    let next=null;
-    if(index>=0){
-     const current=live[index],attempts=(current.attempts??0)+1;
-     next={...current,attempts,lease_until:now+Math.min(30_000,15_000*attempts)};
-     live[index]=next;
-     const audit=await tx.get<any>("audit:"+current.command_id);
-     if(audit)await tx.put("audit:"+current.command_id,{...audit,status:"leased",attempts,lease_until:next.lease_until});
+    // This Worker is intentionally single-device: return the current live lease
+    // again so a lost HTTP response can be retried without leasing a second job.
+    const currentLease=live.find(j=>j.lease_until>now);
+    let next=currentLease??null;
+    if(!next){
+     const index=live.findIndex(j=>!j.lease_until||j.lease_until<=now);
+     if(index>=0){
+      const current=live[index],attempts=(current.attempts??0)+1;
+      next={...current,attempts,lease_until:now+Math.min(30_000,15_000*attempts)};
+      live[index]=next;
+      const audit=await tx.get<any>("audit:"+current.command_id);
+      if(audit)await tx.put("audit:"+current.command_id,{...audit,status:"leased",attempts,lease_until:next.lease_until});
+     }
     }
     await tx.put("queue",live);
     return next;
