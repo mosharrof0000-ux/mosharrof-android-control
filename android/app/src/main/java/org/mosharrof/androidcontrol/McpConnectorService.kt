@@ -52,7 +52,8 @@ class McpConnectorService(
         // A reconnect must invalidate previous tools and approval grants.
         ToolApprovalGrants.revokeConnector(connectorId)
         connected.remove(connectorId)
-        taskStore.removeConnector(connectorId)
+        // Retain task IDs as untrusted recovery candidates. Call tasks/get after
+        // reconnect before presenting or acting on any recovered task.
         ConnectorRegistry.unregisterToolsForConnector(connectorId)
 
         try {
