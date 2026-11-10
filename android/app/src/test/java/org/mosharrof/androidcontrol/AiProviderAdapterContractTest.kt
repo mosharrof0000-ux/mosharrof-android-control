@@ -47,8 +47,10 @@ class AiProviderAdapterContractTest {
         AiProviderRegistry.registerBuiltIns()
         assertNotNull(AiProviderRegistry.get(AiProviderId.GEMINI))
         assertNotNull(AiProviderRegistry.get(AiProviderId.OPENAI))
+        assertNotNull(AiProviderRegistry.get(AiProviderId.XAI))
+        assertNotNull(AiProviderRegistry.get(AiProviderId.ANTHROPIC))
         assertEquals(
-            setOf(AiProviderId.GEMINI, AiProviderId.OPENAI),
+            setOf(AiProviderId.GEMINI, AiProviderId.OPENAI, AiProviderId.XAI, AiProviderId.ANTHROPIC),
             AiProviderRegistry.providers()
         )
     }
