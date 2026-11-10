@@ -13,6 +13,8 @@ android {
         targetSdk = 35
         versionCode = 2
         versionName = "0.2.0"
+        // AppAuth library manifest requires this placeholder for its redirect receiver.
+        manifestPlaceholders["appAuthRedirectScheme"] = "org.mosharrof.androidcontrol"
     }
 
     compileOptions {
