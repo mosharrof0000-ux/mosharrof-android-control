@@ -7,6 +7,34 @@ import java.net.URL
 
 enum class AiProviderRetryClass { NEVER, TRANSIENT, RATE_LIMITED }
 
+/** Cancellation is cooperative between stages and disconnects an in-flight HTTP connection. */
+class AiProviderCancellation {
+    private val cancelled = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val activeConnection = java.util.concurrent.atomic.AtomicReference<HttpURLConnection?>(null)
+
+    fun cancel() {
+        cancelled.set(true)
+        activeConnection.get()?.disconnect()
+    }
+
+    internal fun attach(connection: HttpURLConnection) {
+        activeConnection.set(connection)
+        throwIfCancelled()
+    }
+
+    internal fun detach(connection: HttpURLConnection) {
+        activeConnection.compareAndSet(connection, null)
+    }
+
+    fun throwIfCancelled() {
+        if (cancelled.get() || Thread.currentThread().isInterrupted) {
+            throw java.util.concurrent.CancellationException("AI request was cancelled.")
+        }
+    }
+
+    fun isCancelled(): Boolean = cancelled.get()
+}
+
 class AiProviderHttpException(
     val statusCode: Int,
     val retryClass: AiProviderRetryClass
@@ -42,8 +70,8 @@ class AiProviderHttpTransport(
         )
     }
 
-    fun post(request: AiProviderHttpRequest): AiProviderHttpResponse {
-        val uri = runCatching { URI(request.url) }.getOrElse {
+    fun post(\n        request: AiProviderHttpRequest,\n        cancellation: AiProviderCancellation = AiProviderCancellation()\n    ): AiProviderHttpResponse {
+        cancellation.throwIfCancelled()\n        val uri = runCatching { URI(request.url) }.getOrElse {
             throw IllegalArgumentException("AI provider URL is invalid.")
         }
         require(
