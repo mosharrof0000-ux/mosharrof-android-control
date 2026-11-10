@@ -109,17 +109,14 @@ object AiEngine {
         val legacyProvider = runCatching {
             Provider.valueOf(p.getString("provider", "") ?: "")
         }.getOrNull() ?: return false
-        val providerId = when (legacyProvider) {
-            Provider.GEMINI -> AiProviderId.GEMINI
-            Provider.OPENAI_COMPATIBLE -> AiProviderId.CUSTOM
-        }
+        // The legacy OpenAI-compatible endpoint uses Chat Completions and has no
+        // equivalent CUSTOM adapter yet; leave it on the proven legacy path.
+        if (legacyProvider == Provider.OPENAI_COMPATIBLE) return false
+        val providerId = AiProviderId.GEMINI
         val model = p.getString("model", null) ?: return false
         val key = decrypt(p.getString(KEY_API, null) ?: return false)
-        val endpoint = if (providerId == AiProviderId.CUSTOM) {
-            p.getString("endpoint", null)?.let(::validateEndpoint)
-        } else null
-        val id = "legacy-" + legacyProvider.name.lowercase()
-        AiProviderProfileStore.save(context, id, providerId, model, key, endpoint)
+        val id = "legacy-gemini"
+        AiProviderProfileStore.save(context, id, providerId, model, key)
         AiProviderProfileStore.setActive(context, id)
         return true
     }
