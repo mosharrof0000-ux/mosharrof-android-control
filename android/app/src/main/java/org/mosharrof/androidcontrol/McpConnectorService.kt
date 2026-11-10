@@ -362,7 +362,9 @@ class McpConnectorService(
     fun callTool(
         toolId: String,
         arguments: Map<String, Any?>,
-        approvalGrant: String? = null
+        approvalGrant: String? = null,
+        inputResponses: Map<String, Any?>? = null,
+        requestState: String? = null
     ): Result<String> = runCatching {
         val tool = ConnectorRegistry.toolSnapshot()
             .firstOrNull { it.id == toolId }
@@ -411,13 +413,19 @@ class McpConnectorService(
             inputSchema = tool.inputSchema
         )
 
-        val request = if (clientProtocolVersion() == McpProtocol.MODERN_VERSION) {
+        val modernProtocol = clientProtocolVersion() == McpProtocol.MODERN_VERSION
+        require(modernProtocol || (inputResponses == null && requestState == null)) {
+            "MCP MRTR fields শুধু আধুনিক protocol-এ ব্যবহার করা যাবে।"
+        }
+        val request = if (modernProtocol) {
             McpProtocol.modernToolsCallRequest(
                 id = UUID.randomUUID().toString(),
                 toolName = tool.name,
                 arguments = arguments,
                 clientName = clientName,
-                clientVersion = clientVersion
+                clientVersion = clientVersion,
+                inputResponses = inputResponses,
+                requestState = requestState
             )
         } else {
             McpProtocol.toolsCallRequest(
@@ -436,16 +444,23 @@ class McpConnectorService(
 
         val result = response.optJSONObject("result")
             ?: error("MCP Tool response-এ result পাওয়া যায়নি।")
-        if (clientProtocolVersion() == McpProtocol.MODERN_VERSION) {
+        if (modernProtocol) {
             val resultType = result.optString("resultType")
-            require(resultType == "complete") {
-                when (resultType) {
-                    "input_required" ->
-                        "MCP input_required multi-round-trip এখনো সমর্থিত নয়; Tool execution থামানো হয়েছে।"
-                    "task" ->
-                        "MCP Tasks extension এখনো সমর্থিত নয়; Tool execution থামানো হয়েছে।"
-                    else -> "অসমর্থিত MCP resultType: $resultType"
+            when (resultType) {
+                "complete" -> Unit
+                "input_required" -> {
+                    require(result.optJSONObject("inputRequests")?.length()?.let { it > 0 } == true) {
+                        "MCP input_required response-এ inputRequests অনুপস্থিত বা খালি।"
+                    }
+                    if (result.has("requestState")) {
+                        require(result.opt("requestState") is String) {
+                            "MCP requestState অবশ্যই opaque string হতে হবে।"
+                        }
+                    }
                 }
+                "task" ->
+                    error("MCP Tasks extension এখনো সমর্থিত নয়; Tool execution থামানো হয়েছে।")
+                else -> error("অসমর্থিত MCP resultType: $resultType")
             }
         }
         result.toString()
