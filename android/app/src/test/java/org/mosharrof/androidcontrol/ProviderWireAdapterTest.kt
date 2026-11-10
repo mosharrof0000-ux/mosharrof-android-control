@@ -292,4 +292,48 @@ class ProviderWireAdapterTest {
         assertEquals("2026-10-21", profile.apiVersion)
         assertEquals(CapabilitySupport.UNKNOWN, profile.capabilities[AiCapability.TOOL_CALLING])
     }
+
+    @Test fun geminiInteractionsAdapterBuildsCallsAndFunctionResults() {
+        val adapter = GeminiInteractionsAdapter()
+        val config = config(AiProviderId.GEMINI)
+        val definitions = adapter.encodeToolDefinitions(
+            config,
+            listOf(CanonicalPluginDefinition(
+                "plugin.lookup", "lookup", "Lookup data",
+                mapOf("type" to "object", "properties" to mapOf("q" to mapOf("type" to "string"))),
+                ConnectorRegistry.Risk.READ_ONLY
+            ))
+        )["tools"] as List<*>
+        assertEquals("function", (definitions.single() as Map<*, *>)["type"])
+
+        val parsed = adapter.decodeResponse(mapOf(
+            "id" to "interaction-1",
+            "steps" to listOf(mapOf(
+                "type" to "function_call",
+                "id" to "gemini-call-1",
+                "name" to "lookup",
+                "arguments" to mapOf("q" to "hello")
+            ))
+        )) as CanonicalAiResult.ToolCalls
+        assertEquals("gemini-call-1", parsed.calls.single().providerCallId)
+        assertEquals("hello", parsed.calls.single().arguments["q"])
+
+        val resultInput = adapter.encodeToolResults(
+            config,
+            listOf(CanonicalToolResult("gemini-call-1", "lookup", "found"))
+        )["input"] as List<*>
+        val functionResult = resultInput.single() as Map<*, *>
+        assertEquals("function_result", functionResult["type"])
+        assertEquals("gemini-call-1", functionResult["call_id"])
+    }
+
+    @Test fun geminiInteractionsAdapterParsesModelOutputText() {
+        val result = GeminiInteractionsAdapter().decodeResponse(mapOf(
+            "steps" to listOf(mapOf(
+                "type" to "model_output",
+                "content" to listOf(mapOf("type" to "text", "text" to "Hello"))
+            ))
+        ))
+        assertEquals(CanonicalAiResult.Text("Hello"), result)
+    }
 }
