@@ -451,6 +451,27 @@ class McpConnectorServiceRegressionTest {
     }
 
     @Test
+    fun taskPollingCountsInitialSnapshotAgainstPollLimit() {
+        registerConnector()
+        val server = FakeServer(taskGetStatuses = listOf("working", "completed"))
+        val connectorService = service(server)
+        connectorService.connect("test.mcp").getOrThrow()
+        val delays = mutableListOf<Long>()
+
+        val snapshot = connectorService.pollTask(
+            connectorId = "test.mcp",
+            taskId = "task-1",
+            maxWaitMs = 1_000,
+            maxPolls = 1,
+            sleeper = { delays.add(it) }
+        ).getOrThrow()
+
+        assertEquals(McpTaskProtocol.Status.WORKING, snapshot.status)
+        assertTrue(delays.isEmpty())
+        assertEquals(1, server.taskGetCalls.get())
+    }
+
+    @Test
     fun taskPollingRejectsUnboundedArgumentsBeforeNetworkCalls() {
         registerConnector()
         val server = FakeServer()
