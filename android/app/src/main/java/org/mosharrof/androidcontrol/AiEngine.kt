@@ -152,7 +152,11 @@ object AiEngine {
         return true
     }
 
-    fun ask(context: Context, prompt: String): String {
+    fun ask(
+        context: Context,
+        prompt: String,
+        cancellation: AiProviderCancellation = AiProviderCancellation()
+    ): String {
         require(prompt.isNotBlank()) { "AI-কে করার প্রশ্ন লিখুন।" }
         require(prompt.length <= MAX_PROMPT_CHARS) { "AI prompt ৬৪ KB সীমা অতিক্রম করেছে।" }
         AiProviderProfileStore.active(context)?.let { profile ->
@@ -208,7 +212,7 @@ object AiEngine {
         )
 
         val json = try {
-            AiProviderHttpTransport().post(request).payload
+            AiProviderHttpTransport().post(request, cancellation).payload
         } catch (error: AiProviderHttpException) {
             throw IllegalStateException(
                 "AI সার্ভার HTTP ${error.statusCode} দিয়েছে। API key, model, quota ও endpoint পরীক্ষা করুন。",
@@ -237,14 +241,15 @@ object AiEngine {
         context: Context,
         prompt: String,
         service: McpConnectorService?,
-        approve: (AiToolCallPlan.Ready) -> Boolean
+        approve: (AiToolCallPlan.Ready) -> Boolean,
+        cancellation: AiProviderCancellation = AiProviderCancellation()
     ): String {
         val profile = AiProviderProfileStore.active(context)
         return if (profile != null) {
-            AiProviderRuntime.askText(profile, prompt, service, approve)
+            AiProviderRuntime.askText(profile, prompt, service, approve, cancellation)
         } else {
             // Legacy profiles do not yet have provider-neutral tool-call support.
-            ask(context, prompt)
+            ask(context, prompt, cancellation)
         }
     }
 
