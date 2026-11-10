@@ -203,4 +203,32 @@ class AiProviderRuntimeEndToEndTest {
         assertEquals(0, server.calls.get())
         assertEquals(2, requests.size)
     }
+
+    @Test fun approvalCallbackExceptionFailsClosedAndDoesNotExecuteTool() {
+        val server = FakeMcpServer()
+        val service = connectedService(server)
+        val requests = mutableListOf<AiProviderHttpRequest>()
+        val responses = ArrayDeque(listOf(functionCall(), finalText()))
+
+        val answer = AiProviderRuntime.runConversation(
+            profile = profile(),
+            prompt = "look this up",
+            service = service,
+            approve = { throw IllegalStateException("simulated approval UI failure") },
+            post = { request ->
+                requests += request
+                if (requests.size == 2) {
+                    val input = request.body["input"] as List<*>
+                    val result = input.filterIsInstance<Map<*, *>>()
+                        .first { it["type"] == "function_result" }
+                    assertTrue(result.toString().contains("declined"))
+                }
+                responses.removeFirst()
+            }
+        )
+
+        assertEquals("final answer", answer)
+        assertEquals(0, server.calls.get())
+        assertEquals(2, requests.size)
+    }
 }
