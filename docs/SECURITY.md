@@ -31,6 +31,8 @@
 ## Remaining threats and release gates
 - Verify server-side job expiry, replay/idempotency protection, rate limits, and audit records in the deployed Worker.
 - Verify credential revocation and token invalidation behavior on a physical Android device.
+- Implement and test MCP 2026-07-28 `input_required` multi-round-trip handling before claiming full modern protocol support; optional Tasks extension support is also pending.
+- Add OAuth/CIMD authorization for servers that do not support manually provisioned Bearer tokens.
 - Run a real HTTPS MCP server through connect, discovery, approval, tool execution, and disconnect.
 - Inspect logs and error surfaces for credential or private-data leakage.
 Until these gates pass, describe remote relay and physical-device behavior as implemented in code but not end-to-end verified.
