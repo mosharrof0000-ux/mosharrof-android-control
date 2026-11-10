@@ -180,10 +180,10 @@ class ProviderWireAdapterTest {
             OpenAiResponsesFunctionCallingAdapter().capabilityProfile("model", "v2")
         }
         assertThrows(IllegalArgumentException::class.java) {
-            XaiChatCompletionsFunctionCallingAdapter().capabilityProfile("model", "v2")
+            XaiResponsesFunctionCallingAdapter().capabilityProfile("model", "v2")
         }
         assertThrows(IllegalArgumentException::class.java) {
-            AnthropicMessagesToolUseAdapter().capabilityProfile("model", "v1")
+            AnthropicMessagesToolUseAdapter().capabilityProfile("model", "2023-06-01")
         }
     }
 
@@ -252,4 +252,44 @@ class ProviderWireAdapterTest {
         )
     }
 
+
+    @Test fun grokResponsesAdapterBuildsAndParsesFunctionCalls() {
+        val adapter = XaiResponsesFunctionCallingAdapter()
+        val config = config(AiProviderId.XAI)
+        val tools = adapter.encodeToolDefinitions(
+            config,
+            listOf(CanonicalPluginDefinition(
+                "plugin.lookup", "lookup", "Lookup data",
+                mapOf("type" to "object", "properties" to mapOf("q" to mapOf("type" to "string"))),
+                ConnectorRegistry.Risk.READ_ONLY
+            ))
+        )["tools"] as List<*>
+        val definition = tools.single() as Map<*, *>
+        assertEquals("function", definition["type"])
+        assertEquals("lookup", definition["name"])
+
+        val parsed = adapter.decodeResponse(mapOf(
+            "output" to listOf(mapOf(
+                "type" to "function_call",
+                "call_id" to "xai-call-1",
+                "name" to "lookup",
+                "arguments" to "{\"q\":\"hello\"}"
+            ))
+        )) as CanonicalAiResult.ToolCalls
+        assertEquals("xai-call-1", parsed.calls.single().providerCallId)
+        assertEquals("hello", parsed.calls.single().arguments["q"])
+
+        val continuation = adapter.encodeToolResults(
+            config,
+            listOf(CanonicalToolResult("xai-call-1", "lookup", "found"))
+        )["input"] as List<*>
+        assertEquals("function_call_output", (continuation.single() as Map<*, *>)["type"])
+    }
+
+    @Test fun anthropicProfileUsesCurrentDocumentedApiVersion() {
+        val profile = AnthropicMessagesToolUseAdapter()
+            .capabilityProfile("claude-model", "2026-10-21")
+        assertEquals("2026-10-21", profile.apiVersion)
+        assertEquals(CapabilitySupport.UNKNOWN, profile.capabilities[AiCapability.TOOL_CALLING])
+    }
 }
