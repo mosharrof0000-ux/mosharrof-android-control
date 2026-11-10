@@ -6,6 +6,11 @@ This is the working completion ledger for PR #7 and the Android Plugin System. S
 
 | Workstream | Status | Acceptance gate |
 |---|---|---|
+| Multi-AI adapter implementation | Detailed implementation checklist added; code implementation pending | `docs/MULTI_AI_ADAPTER_IMPLEMENTATION_PLAN.md` defines canonical contract, adapter registry, safe tool loop, Gemini/OpenAI/xAI/Anthropic adapters, Microsoft product feasibility, inbound MCP server bridge, provider update workflow, UI, tests and release gates. Current AiEngine is only Gemini text + generic OpenAI-compatible text; no named provider tool-calling adapter is claimed complete. |
+
+
+| Workstream | Status | Acceptance gate |
+|---|---|---|
 | AI-provider-neutral adapter architecture | Architecture specified; implementation pending | Canonical provider-neutral plugin contract, per-provider adapters, capability profiles, official-documentation review/update process, fail-closed behavior and cross-adapter contract tests are specified in `docs/AI_PROVIDER_ADAPTER_ARCHITECTURE.md`. No Grok/Gemini/Claude/Copilot/OpenAI adapter is claimed complete until implemented and verified independently |
 
 | Workstream | Status | Acceptance gate |
@@ -44,3 +49,4 @@ This is the working completion ledger for PR #7 and the Android Plugin System. S
 - Keep protocol versions distinct: modern 2026-07-28 behavior must not be conflated with legacy 2025 protocol behavior.
 - Never claim full MCP conformance while Tasks, OAuth/CIMD, schema-driven forms, or URL-mode handoff remain incomplete.
 - Never claim multi-provider support based only on a generic architecture document; verify each provider/model/API version and its capability profile separately.
+- Follow `docs/MULTI_AI_ADAPTER_IMPLEMENTATION_PLAN.md`; implement the canonical contract before provider-specific adapters, and track outbound AI API adapters separately from the inbound MCP server/bridge.
