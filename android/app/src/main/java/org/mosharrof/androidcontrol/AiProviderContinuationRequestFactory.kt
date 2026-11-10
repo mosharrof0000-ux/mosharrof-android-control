@@ -119,17 +119,20 @@ object AiProviderContinuationRequestFactory {
                     "https://api.x.ai/$apiVersion/responses"
                 }
                 headers["Authorization"] = "Bearer $apiKey"
-                body = mapOf(
-                    "model" to config.model,
-                    "input" to buildList<Any?> {
+                body = buildMap<String, Any?> {
+                    put("model", config.model)
+                    put("input", buildList<Any?> {
                         add(mapOf("role" to "user", "content" to prompt))
                         addAll(previousOutput)
                         addAll(resultItems)
-                    },
-                    "tools" to toolDefinitions,
-                    "parallel_tool_calls" to false,
-                    "store" to false
-                )
+                    })
+                    put("tools", toolDefinitions)
+                    put("parallel_tool_calls", false)
+                    put("store", false)
+                    if (config.provider == AiProviderId.XAI) {
+                        put("include", listOf("reasoning.encrypted_content"))
+                    }
+                }
             }
             AiProviderId.ANTHROPIC -> {
                 val previousContent = previousResponse["content"] as? List<*>

@@ -89,7 +89,8 @@ object AiProviderRequestFactory {
                     "input" to prompt,
                     "tools" to toolDefinitions,
                     "parallel_tool_calls" to false,
-                    "store" to false
+                    "store" to false,
+                    "include" to listOf("reasoning.encrypted_content")
                 )
             }
             AiProviderId.ANTHROPIC -> {

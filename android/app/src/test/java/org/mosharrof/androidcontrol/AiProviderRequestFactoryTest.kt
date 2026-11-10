@@ -63,6 +63,7 @@ class AiProviderRequestFactoryTest {
         assertEquals("https://api.x.ai/v1/responses", request.url)
         assertEquals("Bearer fake-xai-key", request.headers["Authorization"])
         assertFalse(request.url.contains("chat/completions"))
+        assertEquals(listOf("reasoning.encrypted_content"), request.body["include"])
     }
 
     @Test fun anthropicUsesMessagesHeadersAndSingleToolTurn() {
