@@ -233,6 +233,21 @@ object AiEngine {
         }
     }
 
+    fun askWithMcpApproval(
+        context: Context,
+        prompt: String,
+        service: McpConnectorService?,
+        approve: (AiToolCallPlan.Ready) -> Boolean
+    ): String {
+        val profile = AiProviderProfileStore.active(context)
+        return if (profile != null) {
+            AiProviderRuntime.askText(profile, prompt, service, approve)
+        } else {
+            // Legacy profiles do not yet have provider-neutral tool-call support.
+            ask(context, prompt)
+        }
+    }
+
     internal fun cryptoSelfTest(): Boolean {
         val sample = "android-control-keystore-test"
         return decrypt(encrypt(sample)) == sample
