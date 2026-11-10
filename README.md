@@ -30,4 +30,4 @@ The user must select folders and grant access. Android restricts protected folde
 ## Security
 Read-only inspection is the default. Remote MCP tools are treated as untrusted capabilities: schemas and arguments are validated, write-capable calls require explicit approval, and grants are short-lived, single-use, and bound to the exact arguments. Connector credentials use Android Keystore AES-GCM. The relay currently accepts only predefined read-only Termux operation IDs; it is not a generic shell.
 
-See [architecture](docs/ARCHITECTURE.md), [security model](docs/SECURITY.md), and [Android build notes](android/README.md).
+See [architecture](docs/ARCHITECTURE.md), [security model](docs/SECURITY.md), [Plugin System execution plan](docs/PLUGIN_SYSTEM_EXECUTION_PLAN.md), and [Android build notes](android/README.md).
