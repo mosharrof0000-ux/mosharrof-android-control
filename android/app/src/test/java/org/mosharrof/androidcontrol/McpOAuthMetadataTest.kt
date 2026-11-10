@@ -29,6 +29,36 @@ class McpOAuthMetadataTest {
     )
 
     @Test
+    fun derivesOAuthWellKnownUrlsAndValidatesResourceBinding() {
+        assertEquals(
+            "https://mcp.example.com/.well-known/oauth-protected-resource/api",
+            McpOAuthMetadata.protectedResourceMetadataUrl("https://mcp.example.com/api")
+        )
+        assertEquals(
+            "https://auth.example.com/.well-known/oauth-authorization-server/tenant",
+            McpOAuthMetadata.authorizationServerMetadataUrl("https://auth.example.com/tenant")
+        )
+        val resource = "https://mcp.example.com/api"
+        val metadata = mapOf<String, Any?>(
+            "resource" to resource,
+            "authorization_servers" to listOf(issuer)
+        )
+        assertTrue(McpOAuthMetadata.validateProtectedResourceMetadata(resource, metadata))
+        assertFalse(
+            McpOAuthMetadata.validateProtectedResourceMetadata(
+                resource,
+                metadata + ("resource" to "https://evil.example/api")
+            )
+        )
+        assertFalse(
+            McpOAuthMetadata.validateProtectedResourceMetadata(
+                resource,
+                metadata + ("authorization_servers" to listOf("http://auth.example.com"))
+            )
+        )
+    }
+
+    @Test
     fun acceptsPublicNativeCimdClientMetadata() {
         assertTrue(
             McpOAuthMetadata.validateClientMetadata(
