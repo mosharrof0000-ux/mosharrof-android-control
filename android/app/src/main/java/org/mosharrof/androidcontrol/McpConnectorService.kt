@@ -494,10 +494,7 @@ class McpConnectorService(
         result.toString()
     }
 
-    /**
-     * Fetch one MCP Tasks snapshot. This is intentionally explicit and is not
-     * advertised as a client capability until UI approval and durable recovery exist.
-     */
+    /** Fetch one MCP Tasks snapshot after a modern session has been negotiated. */
     @Synchronized
     fun getTask(connectorId: String, taskId: String): Result<McpTaskProtocol.Snapshot> = runCatching {
         requireModernTaskConnection(connectorId)
