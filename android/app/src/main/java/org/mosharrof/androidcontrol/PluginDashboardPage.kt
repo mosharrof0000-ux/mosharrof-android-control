@@ -2,6 +2,8 @@ package org.mosharrof.androidcontrol
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.Intent
+import android.net.Uri
 import android.graphics.Color
 import android.text.InputType
 import android.view.ViewGroup
@@ -319,18 +321,43 @@ class PluginDashboardPage(
                 }
         } else null
 
+        val externalUrl = buildList {
+            val iterator = requests.keys()
+            while (iterator.hasNext()) {
+                val request = requests.optJSONObject(iterator.next()) ?: continue
+                if (request.optString("method") != "elicitation/create") continue
+                val params = request.optJSONObject("params") ?: continue
+                if (params.optString("mode") != "url") continue
+                McpProtocol.validateElicitationUrl(params.optString("url"))?.let(::add)
+            }
+        }.firstOrNull()
+        val hasUnsafeUrlMode = run {
+            val iterator = requests.keys()
+            var unsafe = false
+            while (iterator.hasNext()) {
+                val request = requests.optJSONObject(iterator.next()) ?: continue
+                val params = request.optJSONObject("params") ?: continue
+                if (request.optString("method") == "elicitation/create" &&
+                    params.optString("mode") == "url" &&
+                    McpProtocol.validateElicitationUrl(params.optString("url")) == null
+                ) unsafe = true
+            }
+            unsafe
+        }
         val responseInput = EditText(activity).apply {
             hint = """{"request-key":{"action":"accept","content":{}}}"""
             setText("{}")
             minLines = 4
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
         }
-        AlertDialog.Builder(activity)
+        val dialogBuilder = AlertDialog.Builder(activity)
             .setTitle("MCP অতিরিক্ত তথ্য চায় (${round + 1}/$MAX_MRTR_ROUNDS)")
             .setMessage(
-                "সার্ভারের অনুরোধ (বিশ্বাসহীন ডেটা—পড়ে যাচাই করুন):\n" +
+                "সার্ভারের অনুরোধ (বিশ্বাসহীন ডেটা—পড়ে যাচাই করুন):\\n" +
                     requests.toString(2).take(MAX_MRTR_DISPLAY_CHARS) +
-                    "\n\nনিচে inputResponses JSON লিখুন। সংবেদনশীল তথ্য দেবেন না।"
+                    (if (externalUrl != null) "\\n\\nURL mode: লিংকটি বাইরের ব্রাউজারে খুলতে পারবেন।" else "") +
+                    (if (hasUnsafeUrlMode) "\\nঅবৈধ বা অনিরাপদ URL mode লিংক ব্লক করা হয়েছে।" else "") +
+                    "\\n\\nনিচে inputResponses JSON লিখুন। সংবেদনশীল তথ্য দেবেন না।"
             )
             .setView(responseInput)
             .setNegativeButton("বাতিল", null)
@@ -385,7 +412,24 @@ class PluginDashboardPage(
                     }
                 }
             }
-            .show()
+        if (externalUrl != null) {
+            dialogBuilder.setNeutralButton("ব্রাউজারে খুলুন", null)
+        }
+        val dialog = dialogBuilder.create()
+        if (externalUrl != null) {
+            dialog.setOnShowListener {
+                dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                    runCatching {
+                        activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(externalUrl)))
+                    }.onSuccess {
+                        onStatus("URL mode লিংক বাইরের ব্রাউজারে খোলা হয়েছে; ফিরে এসে উত্তর যাচাই করুন।")
+                    }.onFailure {
+                        onStatus("ব্রাউজার খোলা যায়নি: ${it.message}")
+                    }
+                }
+            }
+        }
+        dialog.show()
     }
 
     private fun connectorIdFor(endpoint: String): String? {
