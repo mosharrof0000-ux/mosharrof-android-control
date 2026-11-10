@@ -148,67 +148,150 @@ object McpProtocol {
         if (schema["type"] != "object") return false
 
         val usedHeaders = mutableSetOf<String>()
+        var visitedSchemas = 0
+        val maxSchemaDepth = 32
+        val maxSchemaNodes = 2048
+        val supportedKeywords = setOf(
+            "\$schema", "\$id", "title", "description", "default", "examples",
+            "deprecated", "readOnly", "writeOnly", "format",
+            "type", "const", "enum", "properties", "required", "additionalProperties",
+            "minProperties", "maxProperties", "minLength", "maxLength", "pattern",
+            "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
+            "minItems", "maxItems", "items", "x-mcp-header"
+        )
+        val supportedTypes = setOf(
+            "object", "array", "string", "boolean", "integer", "number", "null"
+        )
 
-        fun containsHeaderAnnotation(value: Any?): Boolean = when (value) {
-            is Map<*, *> ->
-                value.containsKey("x-mcp-header") ||
-                    value.values.any(::containsHeaderAnnotation)
-            is Iterable<*> -> value.any(::containsHeaderAnnotation)
-            is Array<*> -> value.any(::containsHeaderAnnotation)
-            else -> false
+        fun schemaNumber(value: Any?): java.math.BigDecimal? {
+            if (value !is Number) return null
+            return runCatching { java.math.BigDecimal(value.toString()) }.getOrNull()
         }
 
-        fun visitObject(current: Map<*, *>): Boolean {
-            for ((key, value) in current) {
-                if (key != "properties" && containsHeaderAnnotation(value)) {
-                    return false
+        fun validNonNegativeInteger(value: Any?): Boolean {
+            val number = schemaNumber(value) ?: return false
+            return number.stripTrailingZeros().scale() <= 0 &&
+                number >= java.math.BigDecimal.ZERO &&
+                number <= java.math.BigDecimal.valueOf(Int.MAX_VALUE.toLong())
+        }
+
+        fun visitSchema(
+            current: Map<*, *>,
+            depth: Int,
+            allowHeaderHere: Boolean,
+            allowHeadersInProperties: Boolean
+        ): Boolean {
+            if (depth > maxSchemaDepth || ++visitedSchemas > maxSchemaNodes) return false
+            if (current.keys.any { it !is String || it !in supportedKeywords }) return false
+
+            for (key in listOf("\$schema", "\$id", "title", "description", "format")) {
+                if (current.containsKey(key) && current[key] !is String) return false
+            }
+            for (key in listOf("deprecated", "readOnly", "writeOnly")) {
+                if (current.containsKey(key) && current[key] !is Boolean) return false
+            }
+            if (current.containsKey("examples") && current["examples"] !is List<*>) return false
+
+            val types = when (val declared = current["type"]) {
+                null -> emptyList()
+                is String -> listOf(declared)
+                is List<*> -> {
+                    if (declared.isEmpty() || declared.any { it !is String }) return false
+                    val names = declared.filterIsInstance<String>()
+                    if (names.size != names.toSet().size) return false
+                    names
+                }
+                else -> return false
+            }
+            if (types.any { it !in supportedTypes }) return false
+
+            if (current.containsKey("enum")) {
+                val values = current["enum"] as? List<*> ?: return false
+                if (values.isEmpty()) return false
+            }
+
+            val properties = if (current.containsKey("properties")) {
+                current["properties"] as? Map<*, *> ?: return false
+            } else null
+            if (properties?.keys?.any { it !is String } == true) return false
+            if (properties != null && current["type"] != "object") return false
+
+            if (current.containsKey("required")) {
+                val required = current["required"] as? List<*> ?: return false
+                if (required.any { it !is String || it.isBlank() }) return false
+                if (required.size != required.toSet().size) return false
+                if (properties != null && required.any { it !in properties.keys }) return false
+            }
+
+            for (key in listOf(
+                "minProperties", "maxProperties", "minLength", "maxLength", "minItems", "maxItems"
+            )) {
+                if (current.containsKey(key) && !validNonNegativeInteger(current[key])) return false
+            }
+            val minMaxPairs = listOf(
+                "minProperties" to "maxProperties",
+                "minLength" to "maxLength",
+                "minItems" to "maxItems"
+            )
+            for ((minKey, maxKey) in minMaxPairs) {
+                if (current.containsKey(minKey) && current.containsKey(maxKey)) {
+                    val min = schemaNumber(current[minKey]) ?: return false
+                    val max = schemaNumber(current[maxKey]) ?: return false
+                    if (min > max) return false
                 }
             }
 
-            val rawProperties = current["properties"]
-            if (rawProperties == null) return true
-            val properties = rawProperties as? Map<*, *> ?: return false
-
-            for ((_, rawProperty) in properties) {
-                val property = rawProperty as? Map<*, *> ?: return false
-
-                for ((key, value) in property) {
-                    if (key != "properties" &&
-                        key != "x-mcp-header" &&
-                        containsHeaderAnnotation(value)
-                    ) return false
-                }
-
-                if (property.containsKey("x-mcp-header")) {
-                    val header = property["x-mcp-header"] as? String
-                        ?: return false
-                    if (!Regex("[!#$%&'*+.^_`|~0-9A-Za-z-]+").matches(header)) {
-                        return false
-                    }
-
-                    val type = property["type"] as? String ?: return false
-                    if (type !in setOf("string", "integer", "boolean")) {
-                        return false
-                    }
-                    if (!usedHeaders.add(header.lowercase(java.util.Locale.ROOT))) {
-                        return false
-                    }
-                }
-
-                if (property.containsKey("properties") &&
-                    property["type"] != "object"
-                ) return false
-
-                if (property["type"] == "object" &&
-                    !visitObject(property)
-                ) return false
+            for (key in listOf("minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum")) {
+                if (current.containsKey(key) && schemaNumber(current[key]) == null) return false
             }
+            if (current.containsKey("multipleOf")) {
+                val divisor = schemaNumber(current["multipleOf"]) ?: return false
+                if (divisor <= java.math.BigDecimal.ZERO) return false
+            }
+            if (current.containsKey("pattern")) {
+                val pattern = current["pattern"] as? String ?: return false
+                if (runCatching { Regex(pattern) }.isFailure) return false
+            }
+
+            if (current.containsKey("x-mcp-header")) {
+                if (!allowHeaderHere) return false
+                val header = current["x-mcp-header"] as? String ?: return false
+                if (!Regex("[!#$%&'*+.^_\\x60|~0-9A-Za-z-]+").matches(header)) return false
+                val type = current["type"] as? String ?: return false
+                if (type !in setOf("string", "integer", "boolean")) return false
+                if (!usedHeaders.add(header.lowercase(java.util.Locale.ROOT))) return false
+            }
+
+            if (properties != null) {
+                for ((_, rawChild) in properties) {
+                    val child = rawChild as? Map<*, *> ?: return false
+                    if (!visitSchema(
+                        child,
+                        depth + 1,
+                        allowHeadersInProperties,
+                        allowHeadersInProperties
+                    )) return false
+                }
+            }
+
+            if (current.containsKey("items")) {
+                val items = current["items"] as? Map<*, *> ?: return false
+                if (!visitSchema(items, depth + 1, false, false)) return false
+            }
+
+            if (current.containsKey("additionalProperties")) {
+                when (val additional = current["additionalProperties"]) {
+                    is Boolean -> Unit
+                    is Map<*, *> -> if (!visitSchema(additional, depth + 1, false, false)) return false
+                    else -> return false
+                }
+            }
+
             return true
         }
 
-        return !schema.containsKey("x-mcp-header") && visitObject(schema)
+        return visitSchema(schema, 0, false, true)
     }
-
     fun validateTool(tool: ToolDefinition): Boolean {
         if (!isSafeName(tool.name)) return false
         return validateInputSchema(tool.inputSchema)
