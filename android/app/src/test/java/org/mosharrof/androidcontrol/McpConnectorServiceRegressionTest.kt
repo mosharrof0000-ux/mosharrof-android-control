@@ -24,7 +24,8 @@ class McpConnectorServiceRegressionTest {
         private val paginatedTools: Boolean = false,
         private val repeatCursor: Boolean = false,
         private val toolResultType: String = "complete",
-        private val taskGetStatuses: List<String> = listOf("working", "completed")
+        private val taskGetStatuses: List<String> = listOf("working", "completed"),
+        private val unsupportedSchema: Boolean = false
     ) {
         val toolCalls = AtomicInteger(0)
         val taskGetCalls = AtomicInteger(0)
@@ -265,6 +266,9 @@ class McpConnectorServiceRegressionTest {
                             .put("required", JSONArray().put("text"))
                     }
 
+                    if (unsupportedSchema && name == "echo") {
+                        schema.put("patternProperties", JSONObject().put(".*", JSONObject().put("type", "string")))
+                    }
                     return JSONObject()
                         .put("name", name)
                         .put("description", "Test tool")
@@ -330,6 +334,22 @@ class McpConnectorServiceRegressionTest {
         firstService.disconnect("test.mcp").getOrThrow()
         assertTrue(firstService.connectedConnectorIds().isEmpty())
         assertEquals(setOf("test.mcp.two"), secondService.connectedConnectorIds())
+    }
+
+
+    @Test
+    fun unsupportedSchemaKeywordFailsConnectionAndRollsBackTools() {
+        registerConnector()
+        val server = FakeServer(unsupportedSchema = true)
+
+        val failure = service(server).connect("test.mcp")
+
+        assertTrue("Unsupported JSON Schema assertions must fail closed", failure.isFailure)
+        assertTrue(ConnectorRegistry.toolsFor("test.mcp").isEmpty())
+        assertTrue(
+            ConnectorRegistry.connectorSnapshot().single().state ==
+                ConnectorRegistry.ConnectionState.DISCONNECTED
+        )
     }
 
     @Test
