@@ -1,15 +1,15 @@
 name: Android Companion Build
 
 on:
-  pull_request:
-    paths:
-      - "android/**"
-      - ".github/workflows/android-companion-build.yml"
+  # Retained only for the older relay feature branch. Pull requests and main
+  # are handled by the canonical Android build workflow to avoid duplicate APK builds.
   push:
-    branches: [main, feat/cloudflare-chatgpt-relay-20261102]
+    branches: [feat/cloudflare-chatgpt-relay-20261102]
     paths:
       - "android/**"
       - ".github/workflows/android-companion-build.yml"
+
+  workflow_dispatch:
 
 permissions:
   contents: read
