@@ -20,12 +20,16 @@ class McpConnectorServiceRegressionTest {
         private val invalidSecondTool: Boolean = false,
         private val discoveryVersions: List<String> = listOf(McpProtocol.MODERN_VERSION),
         private val versionErrorSupported: List<String>? = null,
-        private val discoveryErrorCode: Int? = null
+        private val discoveryErrorCode: Int? = null,
+        private val paginatedTools: Boolean = false,
+        private val repeatCursor: Boolean = false,
+        private val toolResultType: String = "complete"
     ) {
         val toolCalls = AtomicInteger(0)
         val methods = mutableListOf<String>()
         val toolCallMetadata = mutableListOf<Boolean>()
         val toolCallHeaders = mutableListOf<Map<String, String?>>()
+        val toolListCursors = mutableListOf<String?>()
 
         fun connection(url: URL): HttpURLConnection =
             object : HttpURLConnection(url) {
@@ -48,6 +52,14 @@ class McpConnectorServiceRegressionTest {
                     )
                     val method = request.optString("method")
                     methods.add(method)
+                    if (method == "tools/list") {
+                        val params = request.optJSONObject("params")
+                        val cursor = if (params != null && params.has("cursor") && !params.isNull("cursor")) {
+                            params.opt("cursor") as? String
+                                ?: error("Fake server received non-string cursor")
+                        } else null
+                        toolListCursors.add(cursor)
+                    }
             if (method == "tools/call") {
                 val params = request.optJSONObject("params")
                 val metadata = params?.optJSONObject("_meta")
@@ -132,18 +144,34 @@ class McpConnectorServiceRegressionTest {
                             )
 
                         "tools/list" -> {
+                            val params = request.optJSONObject("params")
+                            val cursor = if (params != null && params.has("cursor") && !params.isNull("cursor")) {
+                                params.optString("cursor")
+                            } else null
                             val tools = JSONArray()
-                            tools.put(tool("echo", false))
-                            if (invalidSecondTool) tools.put(tool("invalid", true))
-                            JSONObject()
-                                .put("resultType", "complete")
-                                .put("tools", tools)
+                            if (paginatedTools) {
+                                if (cursor == null) tools.put(tool("echo", false))
+                                else tools.put(tool("second", false))
+                            } else {
+                                tools.put(tool("echo", false))
+                                if (invalidSecondTool) tools.put(tool("invalid", true))
+                            }
+                            val page = JSONObject().put("tools", tools)
+                            if (getRequestProperty("MCP-Protocol-Version") == McpProtocol.MODERN_VERSION) {
+                                page.put("resultType", "complete")
+                                    .put("ttlMs", 0)
+                                    .put("cacheScope", "private")
+                            }
+                            if ((paginatedTools && cursor == null) || repeatCursor) {
+                                page.put("nextCursor", "next")
+                            }
+                            page
                         }
 
                         "tools/call" -> {
                             toolCalls.incrementAndGet()
                             JSONObject()
-                                .put("resultType", "complete")
+                                .put("resultType", toolResultType)
                                 .put(
                                     "content",
                                     JSONArray().put(
@@ -237,6 +265,51 @@ class McpConnectorServiceRegressionTest {
         assertEquals(1, result.discoveredTools)
         assertTrue(server.methods.contains("server/discover"))
         assertTrue(server.methods.contains("tools/list"))
+    }
+
+    @Test
+    fun toolListPaginationFetchesEveryPageAndPreservesOpaqueCursor() {
+        registerConnector()
+        val server = FakeServer(paginatedTools = true)
+
+        val result = service(server).connect("test.mcp").getOrThrow()
+
+        assertEquals(2, result.discoveredTools)
+        assertEquals(listOf(null, "next"), server.toolListCursors)
+        assertEquals(
+            setOf("echo", "second"),
+            ConnectorRegistry.toolsFor("test.mcp").map { it.name }.toSet()
+        )
+    }
+
+    @Test
+    fun repeatedToolListCursorFailsAndRollsBackAllTools() {
+        registerConnector()
+        val server = FakeServer(paginatedTools = true, repeatCursor = true)
+
+        val result = service(server).connect("test.mcp")
+
+        assertTrue(result.isFailure)
+        assertEquals(listOf(null, "next"), server.toolListCursors)
+        assertTrue(ConnectorRegistry.toolsFor("test.mcp").isEmpty())
+    }
+
+    @Test
+    fun inputRequiredResultIsRejectedAtToolExecutionBoundary() {
+        registerConnector()
+        val server = FakeServer(toolResultType = "input_required")
+        val connectorService = service(server)
+        connectorService.connect("test.mcp").getOrThrow()
+        val tool = ConnectorRegistry.toolsFor("test.mcp").single()
+        val arguments = mapOf<String, Any?>("text" to "hello")
+        val grant = connectorService.issueApprovalGrant(tool.id, arguments).getOrThrow()
+            ?: error("Approval Grant পাওয়া যায়নি।")
+
+        val result = connectorService.callTool(tool.id, arguments, grant)
+
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("input_required"))
+        assertEquals(1, server.toolCalls.get())
     }
 
     @Test
