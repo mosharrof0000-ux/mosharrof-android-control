@@ -4,7 +4,7 @@ A standalone Android companion for user-authorized device inspection, file/media
 
 ## AI-provider-neutral direction
 
-The plugin runtime is designed to be independent of any AI vendor. Future integrations use provider-specific adapters (for example Grok, Gemini, Claude, Copilot or OpenAI) that translate native tool/function/MCP interfaces into one common plugin contract. Each provider must be documented and tested independently; this branch does not yet claim those adapters are implemented. See [AI Provider Adapter Architecture](docs/AI_PROVIDER_ADAPTER_ARCHITECTURE.md).
+The plugin runtime is designed to be independent of any AI vendor. Initial translation adapters now exist for Gemini function calling, OpenAI Responses function calling, xAI Grok Chat Completions function calling, and Anthropic Claude Messages tool use. A shared adapter registry and fail-closed tool-call guard are registered at app startup. These are wire-format translators, not complete live integrations: AiEngine network orchestration, provider credential binding, approval-driven tool execution/continuation, model-specific capability verification, and real endpoint round-trips remain pending. Microsoft 365 Copilot is being approached through its documented inbound MCP/declarative-agent plugin route, which depends on the MOSHARROF MCP server bridge. See [AI Provider Adapter Architecture](docs/AI_PROVIDER_ADAPTER_ARCHITECTURE.md) and [Multi-AI Implementation Plan](docs/MULTI_AI_ADAPTER_IMPLEMENTATION_PLAN.md).
 
 ## Implemented in the current branch
 - Android-reported internal data-partition storage and RAM diagnostics.
@@ -15,14 +15,15 @@ The plugin runtime is designed to be independent of any AI vendor. Future integr
 - HTTPS MCP connector UI reachable from the Android app home screen and navigation.
 - MCP server discovery, cursor-based tools/list pagination (100-page/5,000-tool safety caps), supported-subset JSON Schema/argument validation (unsupported constraints are rejected), and Streamable HTTP tool calls.
 - Explicit per-call approval for write-capable tools, with short-lived single-use grants bound to the exact tool and arguments; disconnect revokes connector grants.
+- Provider-neutral canonical plugin/call/result models, capability profiles, built-in Gemini/OpenAI/xAI/Anthropic wire adapters, and a fail-closed provider tool-call guard that rejects unknown, ambiguous, malformed, or disconnected tools and never executes them itself.
 - Connector bearer tokens encrypted with Android Keystore AES-GCM; plaintext tokens are not written to SharedPreferences.
 - Optional device-initiated HTTPS relay client with encrypted device-token storage, bounded responses, strict job validation, in-app approval, persisted active-job/result recovery, and bounded network retries for idempotent operations. Termux commands remain limited to four fixed read-only diagnostics.
 - Cloudflare Worker source uses expiring job leases, mandatory idempotency keys, idempotent result acknowledgements, queue completion, route-specific rate limits, and audit-state updates; deployed end-to-end behavior remains unverified.
 - CI-built debug APK artifact.
 
 ## Not yet verified / not claimed
-- MCP 2026-07-28 `input_required` MRTR is implemented with an explicit user-mediated JSON response dialog, opaque `requestState` pass-through, exact request-key matching, and a 10-round cap. Schema-driven native forms and URL-mode browser handoff are not yet implemented; the optional Tasks extension is pending.
-- MCP OAuth/CIMD authorization is not implemented; the current connector accepts a manually supplied Bearer token.
+- MCP 2026-07-28 `input_required` MRTR is implemented with an explicit user-mediated response dialog, opaque `requestState` pass-through, exact request-key matching, and a 10-round cap. Native schema-driven elicitation/tool argument forms and HTTPS URL-mode browser handoff are implemented; optional Tasks support remains partial (client lifecycle foundation only, not advertised or enabled).
+- MCP OAuth/CIMD currently has bounded metadata validation and discovery URL helpers, but the live AppAuth PKCE flow, issuer/resource-bound token exchange and encrypted refresh/revocation lifecycle remain pending; the connector currently accepts a manually supplied Bearer token.
 - Physical-device QA on the user's phone, including a real external MCP server connection and real tool execution.
 - Production deployment and end-to-end operation of the Cloudflare relay and its separately configured ChatGPT connector.
 - Production deployment and end-to-end verification of Worker lease recovery, rate limits, idempotency, and audit records.
