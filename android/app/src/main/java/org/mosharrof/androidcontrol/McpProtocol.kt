@@ -124,6 +124,63 @@ object McpProtocol {
         return Request(id = id, method = "tools/call", params = params)
     }
 
+    /** Task extension request builders. These are not advertised until lifecycle support is complete. */
+    fun modernTasksGetRequest(
+        id: String,
+        taskId: String,
+        clientName: String,
+        clientVersion: String
+    ): Request {
+        require(id.isNotBlank() && taskId.isNotBlank() && taskId.length <= 256)
+        return Request(
+            id = id,
+            method = "tasks/get",
+            params = mapOf(
+                "taskId" to taskId,
+                "_meta" to modernMetadata(clientName, clientVersion)
+            )
+        )
+    }
+
+    fun modernTasksUpdateRequest(
+        id: String,
+        taskId: String,
+        inputResponses: Map<String, Any?>,
+        clientName: String,
+        clientVersion: String
+    ): Request {
+        require(id.isNotBlank() && taskId.isNotBlank() && taskId.length <= 256)
+        require(inputResponses.isNotEmpty() && inputResponses.keys.all { it.isNotBlank() }) {
+            "Task inputResponses-এর key খালি হতে পারবে না।"
+        }
+        return Request(
+            id = id,
+            method = "tasks/update",
+            params = mapOf(
+                "taskId" to taskId,
+                "inputResponses" to inputResponses,
+                "_meta" to modernMetadata(clientName, clientVersion)
+            )
+        )
+    }
+
+    fun modernTasksCancelRequest(
+        id: String,
+        taskId: String,
+        clientName: String,
+        clientVersion: String
+    ): Request {
+        require(id.isNotBlank() && taskId.isNotBlank() && taskId.length <= 256)
+        return Request(
+            id = id,
+            method = "tasks/cancel",
+            params = mapOf(
+                "taskId" to taskId,
+                "_meta" to modernMetadata(clientName, clientVersion)
+            )
+        )
+    }
+
     fun initializedNotification(): Request =
         Request(id = null, method = "notifications/initialized")
 
