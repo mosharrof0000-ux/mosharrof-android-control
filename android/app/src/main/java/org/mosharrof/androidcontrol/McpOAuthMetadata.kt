@@ -39,19 +39,21 @@ internal object McpOAuthMetadata {
     ): Boolean {
         if (!isHttpsUrl(metadataUrl)) return false
         if (metadata["client_id"] != metadataUrl) return false
-        if ((metadata["client_name"] as? String).isNullOrBlank()) return false
+        val clientName = metadata["client_name"] as? String ?: return false
+        if (clientName.isBlank() || clientName.length > 128) return false
         if (metadata["token_endpoint_auth_method"] != "none") return false
         if (metadata["application_type"] != "native") return false
         if (metadata.containsKey("client_secret")) return false
 
         val redirects = metadata["redirect_uris"] as? List<*> ?: return false
+        if (redirects.isEmpty() || redirects.size > 16) return false
         if (redirects.none { it == expectedRedirectUri }) return false
         if (redirects.any { !isValidRedirectUri(it as? String) }) return false
 
         val grants = metadata["grant_types"] as? List<*> ?: return false
-        if (grants.none { it == "authorization_code" }) return false
+        if (grants.isEmpty() || grants.size > 16 || grants.none { it == "authorization_code" }) return false
         val responses = metadata["response_types"] as? List<*> ?: return false
-        if (responses.none { it == "code" }) return false
+        if (responses.isEmpty() || responses.size > 16 || responses.none { it == "code" }) return false
         return true
     }
 
@@ -65,13 +67,13 @@ internal object McpOAuthMetadata {
         if (!isHttpsUrl(metadata["token_endpoint"] as? String)) return false
 
         val responses = metadata["response_types_supported"] as? List<*> ?: return false
-        if (responses.none { it == "code" }) return false
+        if (responses.isEmpty() || responses.size > 32 || responses.none { it == "code" }) return false
         val grants = metadata["grant_types_supported"] as? List<*> ?: return false
-        if (grants.none { it == "authorization_code" }) return false
+        if (grants.isEmpty() || grants.size > 32 || grants.none { it == "authorization_code" }) return false
         val authMethods = metadata["token_endpoint_auth_methods_supported"] as? List<*> ?: return false
-        if (authMethods.none { it == "none" }) return false
+        if (authMethods.isEmpty() || authMethods.size > 32 || authMethods.none { it == "none" }) return false
         val pkce = metadata["code_challenge_methods_supported"] as? List<*> ?: return false
-        if (pkce.none { it == "S256" }) return false
+        if (pkce.isEmpty() || pkce.size > 32 || pkce.none { it == "S256" }) return false
         return true
     }
 
