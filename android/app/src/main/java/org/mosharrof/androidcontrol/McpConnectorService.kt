@@ -470,6 +470,112 @@ class McpConnectorService(
         result.toString()
     }
 
+    /**
+     * Fetch one MCP Tasks snapshot. This is intentionally explicit and is not
+     * advertised as a client capability until UI approval and durable recovery exist.
+     */
+    @Synchronized
+    fun getTask(connectorId: String, taskId: String): Result<McpTaskProtocol.Snapshot> = runCatching {
+        requireModernTaskConnection(connectorId)
+        val response = client.post(
+            McpProtocol.modernTasksGetRequest(
+                id = UUID.randomUUID().toString(),
+                taskId = taskId,
+                clientName = clientName,
+                clientVersion = clientVersion
+            )
+        )
+        parseTaskResponse(response)
+    }
+
+    /** Submit user-mediated MRTR answers for a task awaiting input. */
+    @Synchronized
+    fun updateTask(
+        connectorId: String,
+        taskId: String,
+        inputResponses: Map<String, Any?>
+    ): Result<McpTaskProtocol.Snapshot> = runCatching {
+        requireModernTaskConnection(connectorId)
+        require(inputResponses.isNotEmpty() && inputResponses.size <= 16) {
+            "Task inputResponses খালি অথবা অতিরিক্ত বড়।"
+        }
+        val response = client.post(
+            McpProtocol.modernTasksUpdateRequest(
+                id = UUID.randomUUID().toString(),
+                taskId = taskId,
+                inputResponses = inputResponses,
+                clientName = clientName,
+                clientVersion = clientVersion
+            )
+        )
+        parseTaskResponse(response)
+    }
+
+    @Synchronized
+    fun cancelTask(connectorId: String, taskId: String): Result<McpTaskProtocol.Snapshot> = runCatching {
+        requireModernTaskConnection(connectorId)
+        val response = client.post(
+            McpProtocol.modernTasksCancelRequest(
+                id = UUID.randomUUID().toString(),
+                taskId = taskId,
+                clientName = clientName,
+                clientVersion = clientVersion
+            )
+        )
+        parseTaskResponse(response)
+    }
+
+    /**
+     * Bounded synchronous polling for callers already running off the UI thread.
+     * It stops at terminal status, input_required, poll limit, or elapsed-time limit.
+     */
+    fun pollTask(
+        connectorId: String,
+        taskId: String,
+        maxWaitMs: Long = 60_000L,
+        maxPolls: Int = 20,
+        sleeper: (Long) -> Unit = { Thread.sleep(it) }
+    ): Result<McpTaskProtocol.Snapshot> = runCatching {
+        require(maxWaitMs in 1L..300_000L) { "Task polling সময়সীমা ১–৩০০ সেকেন্ড হতে হবে।" }
+        require(maxPolls in 1..100) { "Task polling সংখ্যা ১–১০০ হতে হবে।" }
+        val startedAt = System.nanoTime()
+        var polls = 0
+        var snapshot = getTask(connectorId, taskId).getOrThrow()
+        while (!snapshot.isTerminal &&
+            snapshot.status != McpTaskProtocol.Status.INPUT_REQUIRED &&
+            polls < maxPolls
+        ) {
+            val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000L
+            val remainingMs = maxWaitMs - elapsedMs
+            if (remainingMs <= 0L) break
+            val delayMs = minOf(snapshot.pollIntervalMs, remainingMs, 30_000L)
+            sleeper(delayMs)
+            if ((System.nanoTime() - startedAt) / 1_000_000L >= maxWaitMs) break
+            snapshot = getTask(connectorId, taskId).getOrThrow()
+            polls++
+        }
+        snapshot
+    }
+
+    private fun requireModernTaskConnection(connectorId: String) {
+        require(connectorId in connected) { "Connector এই Service session-এ সংযুক্ত নয়।" }
+        require(clientProtocolVersion() == McpProtocol.MODERN_VERSION) {
+            "MCP Tasks শুধু আধুনিক protocol connection-এ ব্যবহার করা যাবে।"
+        }
+    }
+
+    private fun parseTaskResponse(response: JSONObject): McpTaskProtocol.Snapshot {
+        if (response.has("error")) {
+            val rpcError = response.optJSONObject("error")
+            error(rpcError?.optString("message") ?: "MCP Task operation ব্যর্থ হয়েছে।")
+        }
+        val result = response.optJSONObject("result")
+            ?: error("MCP Task response-এ result অনুপস্থিত।")
+        val task = result.optJSONObject("task") ?: result
+        return McpTaskProtocol.parseSnapshot(task.toMap())
+            ?: error("MCP Task snapshot-এর status, TTL, poll interval অথবা payload অবৈধ।")
+    }
+
     private fun clientProtocolVersion(): String {
         // The selected protocol is exposed by the client implementation.
         return client.selectedProtocolVersion()
