@@ -52,6 +52,7 @@ class McpConnectorServiceRegressionTest {
                     )
                     val method = request.optString("method")
                     methods.add(method)
+
                     if (method == "tools/list") {
                         val params = request.optJSONObject("params")
                         val cursor = if (params != null && params.has("cursor") && !params.isNull("cursor")) {
@@ -60,52 +61,59 @@ class McpConnectorServiceRegressionTest {
                         } else null
                         toolListCursors.add(cursor)
                     }
-            if (method == "tools/call") {
-                val params = request.optJSONObject("params")
-                val metadata = params?.optJSONObject("_meta")
-                toolCallMetadata.add(
-                    metadata?.optString("io.modelcontextprotocol/protocolVersion") ==
-                        McpProtocol.MODERN_VERSION
-                )
-                toolCallHeaders.add(
-                    mapOf(
-                        "protocol" to getRequestProperty("MCP-Protocol-Version"),
-                        "method" to getRequestProperty("Mcp-Method"),
-                        "name" to getRequestProperty("Mcp-Name")
-                    )
-                )
-            }
-            val id = request.opt("id")
 
-            if (method == "server/discover" && discoveryErrorCode != null) {
-                status = 404
-                responseBody = JSONObject()
-                    .put("jsonrpc", "2.0")
-                    .put("id", id)
-                    .put("error", JSONObject().put("code", discoveryErrorCode).put("message", "Method not found"))
-                    .toString()
-                return
-            }
+                    if (method == "tools/call") {
+                        val params = request.optJSONObject("params")
+                        val metadata = params?.optJSONObject("_meta")
+                        toolCallMetadata.add(
+                            metadata?.optString("io.modelcontextprotocol/protocolVersion") ==
+                                McpProtocol.MODERN_VERSION
+                        )
+                        toolCallHeaders.add(
+                            mapOf(
+                                "protocol" to getRequestProperty("MCP-Protocol-Version"),
+                                "method" to getRequestProperty("Mcp-Method"),
+                                "name" to getRequestProperty("Mcp-Name")
+                            )
+                        )
+                    }
 
-            if (method == "server/discover" && versionErrorSupported != null) {
-                val supported = JSONArray()
-                versionErrorSupported.forEach { supported.put(it) }
-                status = 400
-                responseBody = JSONObject()
-                    .put("jsonrpc", "2.0")
-                    .put("id", id)
-                    .put(
-                        "error",
-                        JSONObject()
-                            .put("code", -32022)
-                            .put("message", "Unsupported protocol version")
-                            .put("data", JSONObject().put("supported", supported))
-                    )
-                    .toString()
-                return
-            }
+                    val id = request.opt("id")
 
-            if (method == "server/discover" && legacy) {
+                    if (method == "server/discover" && discoveryErrorCode != null) {
+                        status = 404
+                        responseBody = JSONObject()
+                            .put("jsonrpc", "2.0")
+                            .put("id", id)
+                            .put(
+                                "error",
+                                JSONObject()
+                                    .put("code", discoveryErrorCode)
+                                    .put("message", "Method not found")
+                            )
+                            .toString()
+                        return
+                    }
+
+                    if (method == "server/discover" && versionErrorSupported != null) {
+                        val supported = JSONArray()
+                        versionErrorSupported.forEach { supported.put(it) }
+                        status = 400
+                        responseBody = JSONObject()
+                            .put("jsonrpc", "2.0")
+                            .put("id", id)
+                            .put(
+                                "error",
+                                JSONObject()
+                                    .put("code", -32022)
+                                    .put("message", "Unsupported protocol version")
+                                    .put("data", JSONObject().put("supported", supported))
+                            )
+                            .toString()
+                        return
+                    }
+
+                    if (method == "server/discover" && legacy) {
                         status = 404
                         responseBody = ""
                         return
@@ -190,7 +198,6 @@ class McpConnectorServiceRegressionTest {
                         .put("result", result)
                         .toString()
                 }
-
                 private fun tool(name: String, invalid: Boolean): JSONObject {
                     val schema = if (invalid) {
                         JSONObject().put("type", "string")
