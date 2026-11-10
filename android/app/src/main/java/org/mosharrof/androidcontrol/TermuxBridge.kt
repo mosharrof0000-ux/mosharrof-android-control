@@ -109,7 +109,12 @@ class TermuxResultReceiver : BroadcastReceiver() {
         if (!commandId.isNullOrBlank()) {
             val exitCode = bundle?.getInt("exitCode", -1) ?: -1
             Thread {
-                runCatching { RelayClient.postResult(context, commandId, result, exitCode) }
+                // Persist the duplicate guard only after the server has accepted the
+                // actual Termux result. A failed network acknowledgement remains retryable.
+                runCatching {
+                    RelayClient.postResult(context, commandId, result, exitCode)
+                    RelayClient.markCommandHandled(context, commandId)
+                }
             }.start()
         }
     }
