@@ -144,6 +144,57 @@ class McpProtocolTest {
         }
     }
 
+    @Test fun rejectsUnsupportedSchemaAssertionsInsteadOfIgnoringThem() {
+        val schemas = listOf(
+            mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "value" to mapOf(
+                        "type" to "string",
+                        "oneOf" to listOf(mapOf("const" to "a"), mapOf("const" to "b"))
+                    )
+                )
+            ),
+            mapOf(
+                "type" to "object",
+                "properties" to mapOf("value" to mapOf("type" to "string", "patternProperties" to emptyMap<String, Any>()))
+            ),
+            mapOf(
+                "type" to "object",
+                "properties" to mapOf("items" to mapOf("type" to "array", "uniqueItems" to true))
+            ),
+            mapOf(
+                "type" to "object",
+                "properties" to mapOf("value" to mapOf("\$ref" to "#/definitions/value"))
+            )
+        )
+        schemas.forEach { assertFalse(McpProtocol.validateInputSchema(it)) }
+    }
+
+    @Test fun rejectsMalformedAdditionalPropertiesConstraint() {
+        val schema = mapOf(
+            "type" to "object",
+            "properties" to mapOf("value" to mapOf("type" to "string")),
+            "additionalProperties" to "false"
+        )
+        assertFalse(McpProtocol.validateInputSchema(schema))
+    }
+
+    @Test fun rejectsSchemaNestingBeyondSupportedDepth() {
+        var nested: Map<String, Any?> = mapOf("type" to "string")
+        repeat(40) {
+            nested = mapOf(
+                "type" to "object",
+                "properties" to mapOf("child" to nested)
+            )
+        }
+        val root = mapOf(
+            "type" to "object",
+            "properties" to mapOf("root" to nested)
+        )
+        assertFalse(McpProtocol.validateInputSchema(root))
+    }
+
     @Test fun responseMustMatchRequestAndContainExactlyOneOutcome() {
         assertTrue(McpProtocol.validateResponse(
             McpProtocol.Response(id = "4", result = mapOf("ok" to true)), "4"
