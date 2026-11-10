@@ -46,7 +46,7 @@ class McpTaskStoreTest {
     }
 
     @Test
-    fun removesAllConnectorTasksOnReconnectOrDisconnect() {
+    fun removesAllConnectorTasksOnExplicitDisconnect() {
         val store = InMemoryMcpTaskStore()
         store.upsert(record(taskId = "one"))
         store.upsert(record(taskId = "two"))
