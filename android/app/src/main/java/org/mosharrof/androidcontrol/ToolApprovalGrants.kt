@@ -11,6 +11,8 @@ internal object ToolApprovalGrants {
 
     private const val TTL_MILLIS = 60_000L
     private const val MAX_GRANTS = 1_000
+    private const val MAX_ARGUMENT_DEPTH = 32
+    private const val MAX_ARGUMENT_NODES = 2_048
     private val JSON_NUMBER = Regex("-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?")
 
     private data class Grant(
@@ -86,15 +88,18 @@ internal object ToolApprovalGrants {
     }
 
     private fun fingerprint(arguments: Map<String, Any?>): String {
-        val canonical = canonicalValue(arguments)
+        val canonical = canonicalValue(arguments, 0, intArrayOf(0))
         val bytes = MessageDigest.getInstance("SHA-256")
             .digest(canonical.toByteArray(Charsets.UTF_8))
 
         return bytes.joinToString("") { "%02x".format(it) }
     }
 
-    private fun canonicalValue(value: Any?): String =
-        when (value) {
+    private fun canonicalValue(value: Any?, depth: Int, visited: IntArray): String {
+        require(depth <= MAX_ARGUMENT_DEPTH && ++visited[0] <= MAX_ARGUMENT_NODES) {
+            "Approval input nesting অথবা node limit অতিক্রম করেছে।"
+        }
+        return when (value) {
             null -> "null"
             is String -> JSONObject.quote(value)
             is Boolean -> value.toString()
@@ -127,14 +132,14 @@ internal object ToolApprovalGrants {
                     postfix = "}",
                     separator = ","
                 ) { (key, item) ->
-                    "${JSONObject.quote(key)}:${canonicalValue(item)}"
+                    "${JSONObject.quote(key)}:${canonicalValue(item, depth + 1, visited)}"
                 }
             }
             is List<*> -> value.joinToString(
                 prefix = "[",
                 postfix = "]",
                 separator = ","
-            ) { canonicalValue(it) }
+            ) { canonicalValue(it, depth + 1, visited) }
             else -> error("অসমর্থিত input data type: ${value.javaClass.simpleName}")
         }
 }
