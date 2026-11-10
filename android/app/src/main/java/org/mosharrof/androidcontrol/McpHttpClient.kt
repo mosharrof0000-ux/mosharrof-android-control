@@ -352,6 +352,7 @@ class McpHttpClient(
         val value = when (method) {
             "tools/call", "prompts/get" -> params["name"] as? String
             "resources/read" -> params["uri"] as? String
+            "tasks/get", "tasks/update", "tasks/cancel" -> params["taskId"] as? String
             else -> return null
         } ?: throw IllegalArgumentException("$method-এর জন্য Mcp-Name প্রয়োজন।")
 
