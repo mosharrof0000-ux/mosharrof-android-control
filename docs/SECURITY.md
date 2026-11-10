@@ -13,6 +13,7 @@
 - MCP endpoints must be HTTPS; the connector rejects endpoint user-info and fragments.
 - Connector bearer tokens are encrypted with Android Keystore AES-GCM and authenticated additional data bound to the connector ID.
 - Tool definitions and input schemas are validated before registration/call. Only the explicitly supported JSON Schema subset is accepted; unknown assertions, malformed constraints, and schema trees deeper than 32 levels or 2,048 nodes are rejected instead of silently ignored.
+- MCP `tools/list` follows opaque `nextCursor` values, rejects repeated cursors, and caps discovery at 100 pages / 5,000 tools. Modern list/discovery cache hints must use `public`/`private` scope and a non-negative integer `ttlMs`.
 - Tool calls display the tool risk and exact input JSON. Each call requires a deliberate user action.
 - Write-capable tool calls require a short-lived, single-use approval grant bound to the connector, tool ID, and exact arguments.
 - Disconnect unregisters connector tools and revokes outstanding approval grants.
@@ -29,7 +30,6 @@
 - Relay URLs reject credentials, query strings, and fragments; redirects are disabled; response bodies are bounded; command IDs are validated before use in request paths; the client stores a bounded local handled-ID set.
 
 ## Remaining threats and release gates
-- MCP `tools/list` follows opaque `nextCursor` values, rejects repeated cursors, and caps discovery at 100 pages / 5,000 tools. Modern list/discovery cache hints must use `public`/`private` scope and a non-negative integer `ttlMs`.
 - Verify server-side job expiry, replay/idempotency protection, rate limits, and audit records in the deployed Worker.
 - Verify credential revocation and token invalidation behavior on a physical Android device.
 - Implement and test MCP 2026-07-28 `input_required` multi-round-trip handling before claiming full modern protocol support; optional Tasks extension support is also pending.
