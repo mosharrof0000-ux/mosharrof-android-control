@@ -544,6 +544,21 @@ class McpConnectorService(
     }
 
     /**
+     * Revalidate every restored pending task against the connected server.
+     * This performs network I/O and must be called off the UI thread.
+     * A single stale/unknown task fails the refresh closed rather than trusting local state.
+     */
+    @Synchronized
+    fun refreshPendingTasks(connectorId: String): Result<List<McpTaskProtocol.Snapshot>> = runCatching {
+        requireModernTaskConnection(connectorId)
+        val candidates = taskStore.list(connectorId)
+        require(candidates.size <= 100) { "সংরক্ষিত MCP Task সংখ্যা সীমা অতিক্রম করেছে।" }
+        candidates.map { candidate ->
+            getTask(connectorId, candidate.taskId).getOrThrow()
+        }
+    }
+
+    /**
      * Bounded synchronous polling for callers already running off the UI thread.
      * It stops at terminal status, input_required, poll limit, or elapsed-time limit.
      */
