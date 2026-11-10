@@ -103,10 +103,10 @@ class AiProviderRuntimeEndToEndTest {
         AiProviderRegistry.clearForTests()
     }
 
-    private fun connectedService(server: FakeMcpServer): McpConnectorService {
+    private fun connectedService(server: FakeMcpServer, connectorId: String = "runtime.e2e"): McpConnectorService {
         ConnectorRegistry.registerConnector(
             ConnectorRegistry.Connector(
-                id = "runtime.e2e",
+                id = connectorId,
                 name = "Runtime E2E",
                 transport = ConnectorRegistry.Transport.MCP_STREAMABLE_HTTP,
                 endpoint = "https://example.com/mcp"
@@ -116,7 +116,7 @@ class AiProviderRuntimeEndToEndTest {
             endpoint = "https://example.com/mcp",
             connectionFactory = server::connection
         ))
-        service.connect("runtime.e2e").getOrThrow()
+        service.connect(connectorId).getOrThrow()
         return service
     }
 
@@ -392,7 +392,7 @@ class AiProviderRuntimeEndToEndTest {
             AiProviderId.ANTHROPIC
         ).forEach { provider ->
             val server = FakeMcpServer()
-            val service = connectedService(server)
+            val service = connectedService(server, "runtime.e2e.${provider.name.lowercase()}")
             val requests = mutableListOf<AiProviderHttpRequest>()
             val responses = ArrayDeque(listOf(
                 providerToolCall(provider),
@@ -404,7 +404,6 @@ class AiProviderRuntimeEndToEndTest {
                 prompt = "look this up",
                 service = service,
                 approve = { plan ->
-                    assertEquals(provider, plan.call.let { provider })
                     assertEquals("lookup", plan.call.toolName)
                     assertTrue(plan.approvalRequired)
                     true
