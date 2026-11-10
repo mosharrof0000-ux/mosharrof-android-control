@@ -357,6 +357,8 @@ class MainActivity : Activity() {
             addButton("Relay polling চালু করুন") { startRelayPolling() }
             addButton("Relay সংযোগ বন্ধ / বিচ্ছিন্ন করুন") {
                 relayPolling = false
+                relayApprovalPending = false
+                lastRelayCommand = ""
                 relayHandler.removeCallbacks(relayTick)
                 RelayClient.clear(this@MainActivity)
                 status.text = "Relay token মুছে ফেলা হয়েছে; সংযোগ বিচ্ছিন্ন।"
@@ -536,6 +538,7 @@ class MainActivity : Activity() {
                         RelayClient.markCommandHandled(this@MainActivity, job.commandId)
                     }
                     runOnUiThread {
+                        if (result.isFailure) lastRelayCommand = ""
                         status.text = if (result.isSuccess) {
                             "Relay কাজ প্রত্যাখ্যান করা হয়েছে; Termux-এ কিছু চালানো হয়নি।"
                         } else {
@@ -552,6 +555,7 @@ class MainActivity : Activity() {
                     }
                     if (result.isFailure) {
                         runOnUiThread {
+                            lastRelayCommand = ""
                             status.text = "স্থানীয় duplicate guard সংরক্ষণ হয়নি; কমান্ড চালানো হয়নি।"
                             finishRelayApproval()
                         }
@@ -594,6 +598,8 @@ class MainActivity : Activity() {
             return
         }
         relayPolling = true
+        relayApprovalPending = false
+        lastRelayCommand = ""
         relayHandler.removeCallbacks(relayTick)
         status.text = "Relay polling চালু — অ্যাপ সামনে খোলা রাখুন।"
         relayHandler.post(relayTick)
