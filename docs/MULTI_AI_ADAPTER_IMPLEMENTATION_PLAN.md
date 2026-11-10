@@ -27,7 +27,7 @@ An outbound API adapter does not automatically make MOSHARROF an MCP server. The
 - [x] Add capability profiles with SUPPORTED / UNSUPPORTED / UNKNOWN per feature, model and API version; initial profiles are conservative and leave unverified capabilities UNKNOWN.
 - [x] Project ConnectorRegistry tools into a provider-neutral ToolCatalog snapshot.
 - [ ] Add schema conversion; unsupported constraints must be rejected or explicitly explained, never silently dropped.
-- [ ] Add common bounded HTTPS transport: redirects disabled, timeouts, response caps, retry classification and redacted diagnostics.
+- [ ] Add common bounded HTTPS transport: redirects disabled, timeouts, response caps, retry classification and redacted diagnostics.\n- [x] Add provider-specific first-turn HTTP request construction for Gemini Interactions, OpenAI Responses, xAI Responses and Anthropic Messages, with fixed HTTPS origins, provider auth headers, bounded prompt/credential values and credential-redacted diagnostics. Actual network transport and AiEngine integration remain pending.
 - [ ] Store provider/account credentials separately using Android Keystore; never log secrets.
 - [ ] Keep ConnectorRegistry authorization and ToolApprovalGrants as the final authority for every adapter.
 - [x] Add initial shared adapter contract and Gemini/OpenAI wire-format tests; broaden with fuzzing, malformed payload and live fixtures.
