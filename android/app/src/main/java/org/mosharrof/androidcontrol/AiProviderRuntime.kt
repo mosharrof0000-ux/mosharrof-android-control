@@ -42,13 +42,21 @@ object AiProviderRuntime {
         }
         AiProviderRegistry.registerBuiltIns()
 
+        // Advertise only tools backed by this exact MCP service session.
+        // Registry-wide CONNECTED state is insufficient: another service instance
+        // may own that connector and this service cannot execute its tool calls.
+        val sessionConnectorIds = service?.connectedConnectorIds().orEmpty()
         val connectedIds = ConnectorRegistry.connectorSnapshot()
-            .filter { it.state == ConnectorRegistry.ConnectionState.CONNECTED }
+            .filter {
+                it.state == ConnectorRegistry.ConnectionState.CONNECTED &&
+                    it.id in sessionConnectorIds
+            }
             .map { it.id }
             .toSet()
-        val tools = if (service == null) emptyList() else {
+        val registeredTools = ConnectorRegistry.toolSnapshot()
+        val tools = if (service == null || connectedIds.isEmpty()) emptyList() else {
             CanonicalPluginCatalog.snapshot().filter { definition ->
-                ConnectorRegistry.toolSnapshot().any { tool ->
+                registeredTools.any { tool ->
                     tool.name == definition.name &&
                         tool.id == definition.id &&
                         tool.connectorId in connectedIds
