@@ -839,7 +839,8 @@ object AiProviderCatalog {
             AiProviderImplementationStatus.TRANSLATION_ONLY,
             listOf(
                 "https://platform.claude.com/docs/en/agents-and-tools/tool-use/how-tool-use-works",
-                "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls",\n                "https://platform.claude.com/docs/en/api/versioning"
+                "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls",
+                "https://platform.claude.com/docs/en/api/versioning"
             )
         ),
         Definition(
