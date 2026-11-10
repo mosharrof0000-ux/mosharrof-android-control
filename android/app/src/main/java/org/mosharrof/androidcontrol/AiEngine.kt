@@ -82,7 +82,8 @@ object AiEngine {
             uri.scheme.equals("https", ignoreCase = true) &&
             !uri.host.isNullOrBlank() &&
             uri.userInfo == null &&
-            uri.fragment == null
+            uri.fragment == null &&
+            uri.query == null
         ) {
             "AI endpoint-এ নিরাপদ HTTPS ঠিকানা দিতে হবে।"
         }
