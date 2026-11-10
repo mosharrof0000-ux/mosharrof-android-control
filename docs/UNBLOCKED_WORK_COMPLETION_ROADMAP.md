@@ -29,10 +29,10 @@ Independent work may proceed concurrently, but shared contracts and UI integrati
 ## Phase checklist
 
 ### Phase 0 — Source and architecture audit
-- [ ] Inventory all Android, Worker, MCP, Relay, AI, credential, approval, UI, and test modules.
-- [ ] Map existing classes and ownership boundaries.
-- [ ] Record implemented, partial, pending, and externally gated behavior.
-- [ ] Freeze canonical interfaces and migration requirements.
+- [x] Inventory Android AI provider, profile store, runtime, MCP task/OAuth, Relay, Keystore diagnostic and corresponding test modules at commit `ffd375415030c0a84e722f5de734ed2c8ca78fc2`.
+- [x] Map principal ownership: `AiProviderAdapter`/request factories/HTTP transport; `AiProviderProfileStore`; `AiProviderRuntime` + `AiToolCallOrchestrator`; `McpTaskProtocol`; `McpOAuthMetadata`; `RelayClient`; Android approval UI in `MainActivity`.
+- [x] Record implemented, partial, pending and externally gated behavior in this roadmap.
+- [ ] Freeze canonical interfaces and migration requirements after remaining API compatibility review.
 - **Gate:** audit report is checked against source and test tree.
 
 ### Phase 1 — Provider adapter framework
@@ -63,6 +63,7 @@ Independent work may proceed concurrently, but shared contracts and UI integrati
 - [x] Provider-specific stateless continuation request builders for Gemini, OpenAI, xAI and Anthropic; previous provider output is replayed with matching tool results.
 - [x] Bounded history item count, prompt, request/response bytes, JSON depth/nodes, tool-call count and continuation rounds.
 - [x] Mock continuation request-shape tests for Gemini, OpenAI, xAI, Anthropic and custom OpenAI-compatible providers.
+- [x] Add approved MCP tool-call → execution → provider continuation round-trip test across Gemini, OpenAI, xAI and Anthropic; the test uses provider-shaped mocked responses and isolated connector registries.
 - [ ] Add interrupted-continuation/retry-state tests and provider-specific malformed continuation fixtures.
 - [ ] Confirm live continuation behavior against each official provider API (requires credentials and authorization).
 - **Gate:** each provider completes mock text → tool call → tool result → assistant response flow.
