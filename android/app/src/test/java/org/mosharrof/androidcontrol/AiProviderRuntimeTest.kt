@@ -106,6 +106,37 @@ class AiProviderRuntimeTest {
         assertEquals(0, requests)
     }
 
+    @Test fun cancellationAfterProviderResponsePreventsFurtherContinuationWork() {
+        val config = AiProviderConfig(AiProviderId.GEMINI, "test-model", credentialReference = "test-profile")
+        val profile = ResolvedAiProviderProfile(
+            AiProviderProfileSummary("test-profile", AiProviderId.GEMINI, "test-model", null),
+            config,
+            "fake-key"
+        )
+        val cancellation = AiProviderCancellation()
+        var requests = 0
+        val failure = runCatching {
+            AiProviderRuntime.runConversation(
+                profile = profile,
+                prompt = "hello",
+                service = null,
+                approve = { false },
+                cancellation = cancellation,
+                post = {
+                    requests++
+                    cancellation.cancel()
+                    mapOf("steps" to listOf(
+                        mapOf("type" to "model_output", "content" to listOf(
+                            mapOf("type" to "text", "text" to "should not be consumed")
+                        ))
+                    ))
+                }
+            )
+        }.exceptionOrNull()
+        assertTrue(failure is java.util.concurrent.CancellationException)
+        assertEquals(1, requests)
+    }
+
     @Test fun boundedConversationReturnsProviderTextWithoutToolExecution() {
         val config = AiProviderConfig(
             AiProviderId.GEMINI, "test-model", credentialReference = "test-profile"
