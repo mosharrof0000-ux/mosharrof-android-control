@@ -491,9 +491,9 @@ class McpConnectorServiceRegressionTest {
         val candidates = recoveredService.pendingTasks("test.mcp").getOrThrow()
         assertEquals(listOf("task-1"), candidates.map { it.taskId })
 
-        // A restored ID is only a candidate; tasks/get must revalidate it remotely.
-        val refreshed = recoveredService.getTask("test.mcp", candidates.single().taskId).getOrThrow()
-        assertEquals(McpTaskProtocol.Status.COMPLETED, refreshed.status)
+        // A restored ID is only a candidate; refresh revalidates it via tasks/get.
+        val refreshed = recoveredService.refreshPendingTasks("test.mcp").getOrThrow()
+        assertEquals(listOf(McpTaskProtocol.Status.COMPLETED), refreshed.map { it.status })
         assertTrue(recoveredService.pendingTasks("test.mcp").getOrThrow().isEmpty())
         assertEquals(1, recoveredServer.taskGetCalls.get())
     }
