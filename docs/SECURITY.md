@@ -29,7 +29,6 @@
 - Relay URLs reject credentials, query strings, and fragments; redirects are disabled; response bodies are bounded; command IDs are validated before use in request paths; the client stores a bounded local handled-ID set.
 
 ## Remaining threats and release gates
-- Verify relay-side job expiry, replay/idempotency protection, rate limits, and audit records in the deployed Worker.
 - Verify server-side job expiry, replay/idempotency protection, rate limits, and audit records in the deployed Worker.
 - Verify credential revocation and token invalidation behavior on a physical Android device.
 - Run a real HTTPS MCP server through connect, discovery, approval, tool execution, and disconnect.
