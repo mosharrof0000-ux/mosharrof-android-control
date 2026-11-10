@@ -150,7 +150,11 @@ class PluginDashboardPage(
                     endpoint = endpoint,
                     bearerToken = token
                 )
-                val service = McpConnectorService(client)
+                val taskPreferences = activity.getSharedPreferences("mosharrof_mcp_tasks", Activity.MODE_PRIVATE)
+                val service = McpConnectorService(
+                    client = client,
+                    taskStore = SharedPreferencesMcpTaskStore(taskPreferences)
+                )
                 val info = service.connect(id).getOrThrow()
                 PluginDashboardSession.connectorId = id
                 PluginDashboardSession.service = service
