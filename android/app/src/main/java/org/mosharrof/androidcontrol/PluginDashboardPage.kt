@@ -440,6 +440,26 @@ class PluginDashboardPage(
                 }
         } else null
 
+        if (requests.length() == 1) {
+            val requestKey = requests.keys().asSequence().firstOrNull()
+            val request = requestKey?.let { requests.optJSONObject(it) }
+            val params = request?.optJSONObject("params")
+            if (request?.optString("method") == "elicitation/create" &&
+                params?.optString("mode") == "form"
+            ) {
+                val requestedSchema = params.optJSONObject("requestedSchema")
+                val schema = requestedSchema?.toMap()
+                val fields = schema?.let { McpSchemaForm.fields(it) }
+                if (schema != null && !fields.isNullOrEmpty()) {
+                    showElicitationForm(
+                        toolId, toolName, arguments, requestKey, params.optString("message"),
+                        schema, fields, requestState, round
+                    )
+                    return
+                }
+            }
+        }
+
         val externalUrl = buildList {
             val iterator = requests.keys()
             while (iterator.hasNext()) {
@@ -549,6 +569,130 @@ class PluginDashboardPage(
             }
         }
         dialog.show()
+    }
+
+    private fun showElicitationForm(
+        toolId: String,
+        toolName: String,
+        arguments: Map<String, Any?>,
+        requestKey: String,
+        serverMessage: String,
+        schema: Map<String, Any?>,
+        fields: List<McpSchemaForm.Field>,
+        requestState: String?,
+        round: Int
+    ) {
+        val form = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(20, 8, 20, 8)
+        }
+        val textInputs = linkedMapOf<String, EditText>()
+        val booleanInputs = linkedMapOf<String, CheckBox>()
+        val enumInputs = linkedMapOf<String, Spinner>()
+        fields.forEach { field ->
+            note(form, field.name + if (field.required) " · প্রয়োজনীয়" else " · ঐচ্ছিক")
+            when {
+                field.enumValues.isNotEmpty() -> {
+                    val spinner = Spinner(activity)
+                    val labels = field.enumValues.map { it?.toString() ?: "null" }
+                    spinner.adapter = ArrayAdapter(
+                        activity, android.R.layout.simple_spinner_item, labels
+                    ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+                    if (field.hasDefault) {
+                        val selected = field.enumValues.indexOf(field.defaultValue)
+                        if (selected >= 0) spinner.setSelection(selected)
+                    }
+                    enumInputs[field.name] = spinner
+                    form.addView(spinner, matchParams())
+                }
+                field.type == "boolean" -> {
+                    val check = CheckBox(activity).apply {
+                        text = field.name
+                        isChecked = field.defaultValue as? Boolean ?: false
+                    }
+                    booleanInputs[field.name] = check
+                    form.addView(check, matchParams())
+                }
+                else -> {
+                    val edit = EditText(activity).apply {
+                        hint = field.name
+                        setSingleLine(true)
+                        if (field.hasDefault) setText(field.defaultValue?.toString().orEmpty())
+                        inputType = when (field.type) {
+                            "integer" -> InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_SIGNED
+                            "number" -> InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_SIGNED or InputType.TYPE_NUMBER_FLAG_DECIMAL
+                            else -> InputType.TYPE_CLASS_TEXT
+                        }
+                    }
+                    textInputs[field.name] = edit
+                    form.addView(edit, matchParams())
+                }
+            }
+        }
+        val action = Spinner(activity).apply {
+            adapter = ArrayAdapter(
+                activity, android.R.layout.simple_spinner_item, listOf("accept", "decline", "cancel")
+            ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+        }
+        note(form, "আপনার সিদ্ধান্ত")
+        form.addView(action, matchParams())
+
+        AlertDialog.Builder(activity)
+            .setTitle("MCP নিরাপদ তথ্য-অনুরোধ (${round + 1}/$MAX_MRTR_ROUNDS)")
+            .setMessage(serverMessage.take(1_000) + "\\n\\nসার্ভারের অনুরোধ যাচাই করে সিদ্ধান্ত নিন।")
+            .setView(form)
+            .setNegativeButton("বাতিল", null)
+            .setPositiveButton("উত্তর পাঠান") { _, _ ->
+                val selectedAction = action.selectedItem?.toString() ?: "cancel"
+                val response = if (selectedAction == "accept") {
+                    val content = McpSchemaForm.parse(
+                        fields,
+                        textInputs.mapValues { it.value.text.toString() },
+                        booleanInputs.mapValues { it.value.isChecked },
+                        enumInputs.mapValues { it.value.selectedItemPosition }
+                    ).getOrElse {
+                        onStatus("Elicitation form input সঠিক নয়: ${it.message}")
+                        return@setPositiveButton
+                    }
+                    val required = (schema["required"] as? List<*>)?.filterIsInstance<String>().orEmpty()
+                    if (!McpArgumentsValidator.validate(schema, content, required)) {
+                        onStatus("Elicitation form-এর তথ্য schema অনুযায়ী বৈধ নয়।")
+                        return@setPositiveButton
+                    }
+                    mapOf("action" to "accept", "content" to content)
+                } else {
+                    mapOf("action" to selectedAction)
+                }
+                val service = PluginDashboardSession.service
+                if (service == null) {
+                    onStatus("Connector session সক্রিয় নেই; MRTR বন্ধ করা হয়েছে।")
+                    return@setPositiveButton
+                }
+                worker.execute {
+                    val grant = service.issueApprovalGrant(toolId, arguments).getOrElse { error ->
+                        activity.runOnUiThread {
+                            onStatus("MRTR retry অনুমোদন তৈরি হয়নি: ${error.message}")
+                        }
+                        return@execute
+                    }
+                    service.callTool(
+                        toolId = toolId,
+                        arguments = arguments,
+                        approvalGrant = grant,
+                        inputResponses = mapOf(requestKey to response),
+                        requestState = requestState
+                    ).onSuccess { nextOutput ->
+                        activity.runOnUiThread {
+                            handleToolOutput(toolId, toolName, arguments, nextOutput, round + 1)
+                        }
+                    }.onFailure { error ->
+                        activity.runOnUiThread {
+                            onStatus("MCP MRTR retry ব্যর্থ: ${error.message}")
+                        }
+                    }
+                }
+            }
+            .show()
     }
 
     private fun connectorIdFor(endpoint: String): String? {
