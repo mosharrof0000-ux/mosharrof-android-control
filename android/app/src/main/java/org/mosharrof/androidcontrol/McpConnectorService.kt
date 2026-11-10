@@ -30,6 +30,7 @@ class McpConnectorService(
     private companion object {
         const val MAX_TOOL_LIST_PAGES = 100
         const val MAX_DISCOVERED_TOOLS = 5000
+        const val MAX_JSON_CONVERSION_DEPTH = 32
     }
 
     @Synchronized
@@ -472,7 +473,10 @@ class McpConnectorService(
             .digest(value.toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it) }
 
-    private fun JSONObject.toMap(): Map<String, Any?> {
+    private fun JSONObject.toMap(depth: Int = 0): Map<String, Any?> {
+        require(depth <= MAX_JSON_CONVERSION_DEPTH) {
+            "MCP JSON object nesting limit অতিক্রম করেছে।"
+        }
         val result = linkedMapOf<String, Any?>()
         val iterator = keys()
 
@@ -481,8 +485,8 @@ class McpConnectorService(
             val value = opt(key)
 
             result[key] = when (value) {
-                is JSONObject -> value.toMap()
-                is JSONArray -> value.toValueList()
+                is JSONObject -> value.toMap(depth + 1)
+                is JSONArray -> value.toValueList(depth + 1)
                 JSONObject.NULL -> null
                 else -> value
             }
@@ -503,13 +507,17 @@ class McpConnectorService(
         }
     }
 
-    private fun JSONArray.toValueList(): List<Any?> =
-        (0 until length()).map { index ->
+    private fun JSONArray.toValueList(depth: Int): List<Any?> {
+        require(depth <= MAX_JSON_CONVERSION_DEPTH) {
+            "MCP JSON array nesting limit অতিক্রম করেছে।"
+        }
+        return (0 until length()).map { index ->
             when (val value = opt(index)) {
-                is JSONObject -> value.toMap()
-                is JSONArray -> value.toValueList()
+                is JSONObject -> value.toMap(depth + 1)
+                is JSONArray -> value.toValueList(depth + 1)
                 JSONObject.NULL -> null
                 else -> value
             }
         }
+    }
 }
