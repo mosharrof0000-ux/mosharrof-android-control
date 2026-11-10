@@ -23,10 +23,10 @@ class McpTaskStoreTest {
     @Test
     fun restoresOnlyPendingTasksAndKeepsConnectorScopesSeparate() {
         val store = InMemoryMcpTaskStore()
-        store.upsert(record())
-        store.upsert(record(taskId = "task-input", status = "INPUT_REQUIRED"))
-        store.upsert(record(taskId = "task-done", status = "COMPLETED"))
-        store.upsert(record(connectorId = "connector-b", taskId = "other"))
+        store.upsert(record(), nowEpochMs = 1_000L)
+        store.upsert(record(taskId = "task-input", status = "INPUT_REQUIRED"), nowEpochMs = 1_000L)
+        store.upsert(record(taskId = "task-done", status = "COMPLETED"), nowEpochMs = 1_000L)
+        store.upsert(record(connectorId = "connector-b", taskId = "other"), nowEpochMs = 1_000L)
 
         val pending = store.list("connector-a", nowEpochMs = 2_000L)
         assertEquals(setOf("task-1", "task-input"), pending.map { it.taskId }.toSet())
@@ -37,8 +37,8 @@ class McpTaskStoreTest {
     @Test
     fun expiresRecordsUsingServerTtlAndAllowsNonExpiringTasks() {
         val store = InMemoryMcpTaskStore()
-        store.upsert(record(taskId = "expires"))
-        store.upsert(record(taskId = "no-expiry", ttlMs = null))
+        store.upsert(record(taskId = "expires"), nowEpochMs = 1_000L)
+        store.upsert(record(taskId = "no-expiry", ttlMs = null), nowEpochMs = 1_000L)
 
         assertNotNull(store.find("connector-a", "expires", nowEpochMs = 10_999L))
         assertNull(store.find("connector-a", "expires", nowEpochMs = 11_000L))
@@ -48,9 +48,9 @@ class McpTaskStoreTest {
     @Test
     fun removesAllConnectorTasksOnExplicitDisconnect() {
         val store = InMemoryMcpTaskStore()
-        store.upsert(record(taskId = "one"))
-        store.upsert(record(taskId = "two"))
-        store.upsert(record(connectorId = "connector-b", taskId = "keep"))
+        store.upsert(record(taskId = "one"), nowEpochMs = 1_000L)
+        store.upsert(record(taskId = "two"), nowEpochMs = 1_000L)
+        store.upsert(record(connectorId = "connector-b", taskId = "keep"), nowEpochMs = 1_000L)
 
         store.removeConnector("connector-a")
 
@@ -62,7 +62,7 @@ class McpTaskStoreTest {
     fun capsStoredTaskMetadataAtOneHundredRecords() {
         val store = InMemoryMcpTaskStore()
         repeat(105) { index ->
-            store.upsert(record(taskId = "task-$index", ttlMs = null, observedAt = 1_000L + index))
+            store.upsert(record(taskId = "task-$index", ttlMs = null, observedAt = 1_000L + index), nowEpochMs = 1_000L + index)
         }
 
         val remaining = store.list("connector-a", nowEpochMs = 2_000L)
@@ -74,7 +74,7 @@ class McpTaskStoreTest {
     fun sharedPreferencesStoreRestoresMetadataWithoutPersistingServerPayloads() {
         val preferences = MemorySharedPreferences()
         val firstProcessStore = SharedPreferencesMcpTaskStore(preferences)
-        firstProcessStore.upsert(record(taskId = "restore-me", status = "INPUT_REQUIRED"))
+        firstProcessStore.upsert(record(taskId = "restore-me", status = "INPUT_REQUIRED"), nowEpochMs = 1_000L)
 
         val afterRestart = SharedPreferencesMcpTaskStore(preferences)
         val restored = afterRestart.list("connector-a", nowEpochMs = 2_000L)
