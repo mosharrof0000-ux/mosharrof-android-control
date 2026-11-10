@@ -3,7 +3,7 @@ package org.mosharrof.androidcontrol
 import java.math.BigDecimal
 
 /** Bounded parser for the 2026 MCP Tasks extension wire envelopes. */
-internal object McpTaskProtocol {
+object McpTaskProtocol {
     private const val MAX_TASK_ID_CHARS = 256
     private const val MAX_POLL_INTERVAL_MS = 300_000L
 
