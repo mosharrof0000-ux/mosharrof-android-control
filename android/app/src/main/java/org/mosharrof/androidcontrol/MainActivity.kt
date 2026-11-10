@@ -48,6 +48,7 @@ class MainActivity : Activity() {
     private var aiModelDraft = ""
     private var aiEndpointDraft = ""
     private var aiPromptDraft = ""
+    @Volatile private var activeAiCancellation: AiProviderCancellation? = null
     private var relayUrlDraft = ""
     private val relayHandler = Handler(Looper.getMainLooper())
     @Volatile private var relayPolling = false
@@ -352,6 +353,15 @@ class MainActivity : Activity() {
             }
             addView(aiPrompt)
             addButton("AI-কে প্রশ্ন পাঠান") { runAi() }
+            addButton("চলমান AI অনুরোধ বাতিল করুন") {
+                val active = activeAiCancellation
+                if (active == null) {
+                    status.text = "এখন কোনো AI অনুরোধ চলছে না।"
+                } else {
+                    active.cancel()
+                    status.text = "বাতিলের অনুরোধ পাঠানো হয়েছে; ফলাফল অনিশ্চিত হতে পারে।"
+                }
+            }
             addButton("AI সেটিংসের অবস্থা") {
                 report.text = AiEngine.configurationSummary(this@MainActivity)
             }
@@ -591,16 +601,40 @@ class MainActivity : Activity() {
             status.text = "আগে AI Provider, মডেল ও API Key সংরক্ষণ করুন।"
             return
         }
+        if (activeAiCancellation != null) {
+            status.text = "আগের AI অনুরোধ এখনো শেষ হয়নি। আগে সেটি শেষ বা বাতিল করুন।"
+            return
+        }
 
+        val cancellation = AiProviderCancellation()
+        activeAiCancellation = cancellation
         status.text = "AI উত্তর তৈরি করছে…"
         worker.execute {
-            val result = runCatching { AiEngine.askWithMcpApproval(this@MainActivity, prompt, PluginDashboardSession.service, ::requestAiToolApproval) }
+            val result = runCatching {
+                AiEngine.askWithMcpApproval(
+                    this@MainActivity,
+                    prompt,
+                    PluginDashboardSession.service,
+                    ::requestAiToolApproval,
+                    cancellation
+                )
+            }
             runOnUiThread {
+                if (activeAiCancellation === cancellation) activeAiCancellation = null
                 result.onSuccess {
                     report.text = "AI উত্তর\n\n$it"
                     status.text = "AI উত্তর পাওয়া গেছে।"
-                }.onFailure {
-                    status.text = "AI অনুরোধ ব্যর্থ: ${it.message}"
+                }.onFailure { error ->
+                    if (error is java.util.concurrent.CancellationException || cancellation.isCancelled()) {
+                        if (cancellation.hasUncertainOutcome()) {
+                            report.text = "অনুরোধের ফলাফল অনিশ্চিত। Provider অনুরোধটি পেয়েছে কি না নিশ্চিত নয়। নিরাপদে যাচাই না করা পর্যন্ত একই কাজ স্বয়ংক্রিয়ভাবে আবার পাঠাবেন না।"
+                            status.text = "AI অনুরোধ বাতিল হয়েছে; ফলাফল অনিশ্চিত।"
+                        } else {
+                            status.text = "AI অনুরোধ বাতিল হয়েছে; Provider-এ পাঠানোর আগেই থেমেছে।"
+                        }
+                    } else {
+                        status.text = "AI অনুরোধ ব্যর্থ: ${error.message}"
+                    }
                 }
             }
         }
