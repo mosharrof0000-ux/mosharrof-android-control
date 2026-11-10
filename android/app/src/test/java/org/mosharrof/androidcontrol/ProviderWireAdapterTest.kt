@@ -5,7 +5,11 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ProviderWireAdapterTest {
-    @After fun cleanup() = AiProviderRegistry.clearForTests()
+    @After fun cleanup() {
+        AiProviderRegistry.clearForTests()
+        ConnectorRegistry.clearForTests()
+        ToolApprovalGrants.clearForTests()
+    }
 
     private fun config(provider: AiProviderId) =
         AiProviderConfig(provider, "model-test", credentialReference = "keystore:test")
