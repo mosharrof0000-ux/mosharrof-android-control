@@ -275,7 +275,10 @@ class McpArgumentsValidatorTest {
         val unsupportedNested = mapOf<String, Any?>(
             "type" to "object",
             "properties" to mapOf(
-                "value" to mapOf("type" to "string", "format" to "email")
+                "value" to mapOf(
+                    "type" to "string",
+                    "patternProperties" to mapOf(".*" to mapOf("type" to "string"))
+                )
             )
         )
         assertFalse(McpArgumentsValidator.supportsSchema(unsupportedNested))
