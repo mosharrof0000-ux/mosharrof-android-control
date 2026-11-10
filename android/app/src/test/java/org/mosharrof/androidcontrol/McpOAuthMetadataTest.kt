@@ -34,6 +34,7 @@ class McpOAuthMetadataTest {
             "https://mcp.example.com/.well-known/oauth-protected-resource/api",
             McpOAuthMetadata.protectedResourceMetadataUrl("https://mcp.example.com/api")
         )
+        assertNull(McpOAuthMetadata.protectedResourceMetadataUrl("https://mcp.example.com/api?x=1"))
         assertEquals(
             "https://auth.example.com/.well-known/oauth-authorization-server/tenant",
             McpOAuthMetadata.authorizationServerMetadataUrl("https://auth.example.com/tenant")
