@@ -391,9 +391,15 @@ class AiProviderRuntimeEndToEndTest {
             AiProviderId.XAI,
             AiProviderId.ANTHROPIC
         ).forEach { provider ->
+            // Each iteration must start with an isolated registry; otherwise the
+            // same fake tool name from the previous connector is correctly denied
+            // as ambiguous by the production fail-closed guard.
+            ConnectorRegistry.clearForTests()
+            ToolApprovalGrants.clearForTests()
             val server = FakeMcpServer()
             val service = connectedService(server, "runtime.e2e.${provider.name.lowercase()}")
             val requests = mutableListOf<AiProviderHttpRequest>()
+            var approvals = 0
             val responses = ArrayDeque(listOf(
                 providerToolCall(provider),
                 providerFinalText(provider)
@@ -404,6 +410,7 @@ class AiProviderRuntimeEndToEndTest {
                 prompt = "look this up",
                 service = service,
                 approve = { plan ->
+                    approvals++
                     assertEquals("lookup", plan.call.toolName)
                     assertTrue(plan.approvalRequired)
                     true
@@ -435,7 +442,8 @@ class AiProviderRuntimeEndToEndTest {
             )
 
             assertEquals("$provider final response", "final answer", answer)
-            assertEquals("$provider approval count", 1, server.calls.get())
+            assertEquals("$provider approval count", 1, approvals)
+            assertEquals("$provider MCP execution count", 1, server.calls.get())
             assertEquals("$provider HTTP request count", 2, requests.size)
         }
     }
