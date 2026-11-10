@@ -60,6 +60,7 @@ object TermuxBridge {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putString(LAST_RESULT, operation.label + " অনুরোধ পাঠানো হয়েছে। Termux-এর ফলাফলের অপেক্ষায়…")
             .apply()
+        if (commandId != null) RelayClient.beginCommand(context, commandId)
         try {
             context.startService(intent)
         } catch (error: SecurityException) {
@@ -108,13 +109,11 @@ class TermuxResultReceiver : BroadcastReceiver() {
         val commandId = intent.getStringExtra("relay_command_id")
         if (!commandId.isNullOrBlank()) {
             val exitCode = bundle?.getInt("exitCode", -1) ?: -1
+            // Commit the result before network I/O so process death or a transient
+            // outage cannot discard the only copy of the Termux output.
+            runCatching { RelayClient.savePendingResult(context, commandId, result, exitCode) }
             Thread {
-                // Persist the duplicate guard only after the server has accepted the
-                // actual Termux result. A failed network acknowledgement remains retryable.
-                runCatching {
-                    RelayClient.postResult(context, commandId, result, exitCode)
-                    RelayClient.markCommandHandled(context, commandId)
-                }
+                runCatching { RelayClient.retryPendingResult(context) }
             }.start()
         }
     }
