@@ -120,6 +120,41 @@ class McpOAuthMetadataTest {
     }
 
     @Test
+    fun rejectsOversizedCimdMetadataCollectionsAndNames() {
+        assertFalse(
+            McpOAuthMetadata.validateClientMetadata(
+                metadataUrl,
+                redirect,
+                clientMetadata() + ("client_name" to "x".repeat(129))
+            )
+        )
+        assertFalse(
+            McpOAuthMetadata.validateClientMetadata(
+                metadataUrl,
+                redirect,
+                clientMetadata() + ("redirect_uris" to List(17) { redirect })
+            )
+        )
+        assertFalse(
+            McpOAuthMetadata.validateClientMetadata(
+                metadataUrl,
+                redirect,
+                clientMetadata() + ("grant_types" to List(17) { "authorization_code" })
+            )
+        )
+    }
+
+    @Test
+    fun rejectsOversizedAuthorizationServerCapabilityLists() {
+        assertFalse(
+            McpOAuthMetadata.validateAuthorizationServerMetadata(
+                issuer,
+                serverMetadata() + ("code_challenge_methods_supported" to List(33) { "S256" })
+            )
+        )
+    }
+
+    @Test
     fun requiresAuthorizationResponseIssuerMatch() {
         assertTrue(McpOAuthMetadata.validateAuthorizationIssuer(issuer, issuer))
         assertFalse(McpOAuthMetadata.validateAuthorizationIssuer(null, issuer))
