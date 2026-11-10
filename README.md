@@ -12,7 +12,7 @@ A standalone Android companion for user-authorized device inspection, file/media
 - MCP server discovery, tool listing, schema/argument validation, and tool calls through the Streamable HTTP client.
 - Explicit per-call approval for write-capable tools, with short-lived single-use grants bound to the exact tool and arguments; disconnect revokes connector grants.
 - Connector bearer tokens encrypted with Android Keystore AES-GCM; plaintext tokens are not written to SharedPreferences.
-- Optional device-initiated HTTPS relay client with encrypted device-token storage and a fixed allowlist of read-only Termux diagnostics.
+- Optional device-initiated HTTPS relay client with encrypted device-token storage, bounded responses, validated command IDs, local duplicate protection, and a fixed allowlist of read-only Termux diagnostics. Every incoming job requires an in-app approval before Termux execution.
 - CI-built debug APK artifact.
 
 ## Not yet verified / not claimed
