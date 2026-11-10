@@ -66,7 +66,7 @@ export class RelayDO {
    const body=await req.json().catch(()=>null) as any;
    if(!body||typeof body.output!=="string"||body.output.length>12000||!Number.isInteger(body.exit_code))return json({error:"invalid_result"},400);
    const fingerprintBytes=await crypto.subtle.digest(
-    "SHA-256",new TextEncoder().encode(String(body.exit_code)+"\\0"+body.output)
+    "SHA-256",new TextEncoder().encode(JSON.stringify([body.exit_code,body.output]))
    );
    const fingerprint=Array.from(new Uint8Array(fingerprintBytes),b=>b.toString(16).padStart(2,"0")).join("");
    const outcome=await this.state.storage.transaction(async tx=>{
