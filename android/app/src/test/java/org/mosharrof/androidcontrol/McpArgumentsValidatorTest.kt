@@ -219,4 +219,50 @@ class McpArgumentsValidatorTest {
         )
     }
 
+
+    @Test
+    fun rejectsUnsupportedSchemaAssertionsAtEveryDepth() {
+        val unsupportedRoot = schema + (
+            "patternProperties" to mapOf(".*" to mapOf("type" to "string"))
+        )
+        assertFalse(McpArgumentsValidator.supportsSchema(unsupportedRoot))
+        assertFalse(
+            McpArgumentsValidator.validate(
+                unsupportedRoot,
+                mapOf("text" to "hello"),
+                listOf("text")
+            )
+        )
+
+        val unsupportedNested = mapOf<String, Any?>(
+            "type" to "object",
+            "properties" to mapOf(
+                "value" to mapOf("type" to "string", "format" to "email")
+            )
+        )
+        assertFalse(McpArgumentsValidator.supportsSchema(unsupportedNested))
+    }
+
+    @Test
+    fun rejectsMalformedSupportedConstraintsAndAcceptsSupportedAnnotations() {
+        val malformed = mapOf<String, Any?>(
+            "type" to "object",
+            "properties" to mapOf("value" to mapOf("type" to "string", "pattern" to "["))
+        )
+        assertFalse(McpArgumentsValidator.supportsSchema(malformed))
+
+        val supported = mapOf<String, Any?>(
+            "type" to "object",
+            "title" to "Lookup input",
+            "description" to "Safe lookup",
+            "properties" to mapOf(
+                "value" to mapOf("type" to "string", "minLength" to 1, "maxLength" to 20)
+            ),
+            "required" to listOf("value"),
+            "additionalProperties" to false
+        )
+        assertTrue(McpArgumentsValidator.supportsSchema(supported))
+        assertTrue(McpArgumentsValidator.validate(supported, mapOf("value" to "ok"), listOf("value")))
+    }
+
 }
