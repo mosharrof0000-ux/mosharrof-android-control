@@ -139,7 +139,7 @@ object AiProviderRegistry {
 
     @Synchronized
     fun registerBuiltIns() {
-        if (AiProviderId.GEMINI !in adapters) register(GeminiFunctionCallingAdapter())
+        if (AiProviderId.GEMINI !in adapters) register(GeminiInteractionsAdapter())
         if (AiProviderId.OPENAI !in adapters) register(OpenAiResponsesFunctionCallingAdapter())
         if (AiProviderId.XAI !in adapters) register(XaiResponsesFunctionCallingAdapter())
         if (AiProviderId.ANTHROPIC !in adapters) register(AnthropicMessagesToolUseAdapter())
@@ -168,6 +168,109 @@ object CanonicalPluginCatalog {
                 risk = tool.risk
             )
         }
+}
+
+/** Google Gemini Interactions API function-calling adapter. */
+class GeminiInteractionsAdapter : AiProviderAdapter {
+    override val provider = AiProviderId.GEMINI
+    override val adapterVersion = "2"
+
+    override fun validateConfiguration(config: AiProviderConfig) {
+        require(config.provider == provider) { "Gemini adapter received another provider config." }
+        require(config.endpoint == null) { "Official Gemini Interactions endpoint is fixed in this adapter version." }
+    }
+
+    override fun capabilityProfile(model: String, apiVersion: String): AiCapabilityProfile {
+        require(apiVersion == "v1beta" || apiVersion == "v1") {
+            "Unsupported Gemini Interactions API version."
+        }
+        return AiCapabilityProfile(
+            provider, model, apiVersion, adapterVersion,
+            mapOf(
+                AiCapability.TOOL_CALLING to CapabilitySupport.UNKNOWN,
+                AiCapability.PARALLEL_TOOL_CALLS to CapabilitySupport.UNKNOWN,
+                AiCapability.STREAMING to CapabilitySupport.UNKNOWN,
+                AiCapability.CANCELLATION to CapabilitySupport.UNKNOWN,
+                AiCapability.JSON_SCHEMA to CapabilitySupport.UNKNOWN,
+                AiCapability.STRUCTURED_OUTPUTS to CapabilitySupport.UNKNOWN,
+                AiCapability.MODEL_DISCOVERY to CapabilitySupport.UNSUPPORTED
+            )
+        )
+    }
+
+    override fun encodeToolDefinitions(
+        config: AiProviderConfig,
+        tools: List<CanonicalPluginDefinition>
+    ): Map<String, Any?> {
+        validateConfiguration(config)
+        require(tools.size <= 256)
+        return mapOf(
+            "tools" to tools.map { tool ->
+                mapOf(
+                    "type" to "function",
+                    "name" to tool.name,
+                    "description" to tool.description,
+                    "parameters" to tool.inputSchema
+                )
+            }
+        )
+    }
+
+    override fun decodeResponse(payload: Map<String, Any?>): CanonicalAiResult {
+        val steps = payload["steps"] as? List<*> ?: emptyList<Any?>()
+        val calls = steps.mapNotNull { raw ->
+            val step = raw as? Map<*, *> ?: return@mapNotNull null
+            if (step["type"] != "function_call") return@mapNotNull null
+            val id = step["id"] as? String ?: error("Gemini function_call ID is missing.")
+            val name = step["name"] as? String ?: error("Gemini function_call name is missing.")
+            val rawArguments = step["arguments"]
+            val arguments = when (rawArguments) {
+                is Map<*, *> -> {
+                    require(rawArguments.keys.all { it is String })
+                    rawArguments.entries.associate { it.key as String to it.value }
+                }
+                is String -> org.json.JSONObject(rawArguments).toStringMap()
+                else -> error("Gemini function_call arguments must be an object.")
+            }
+            CanonicalToolCall(id, name, arguments)
+        }
+        if (calls.isNotEmpty()) return CanonicalAiResult.ToolCalls(calls)
+
+        val text = steps.mapNotNull { raw ->
+            val step = raw as? Map<*, *> ?: return@mapNotNull null
+            if (step["type"] != "model_output") return@mapNotNull null
+            val content = step["content"] as? List<*> ?: return@mapNotNull null
+            content.mapNotNull { part ->
+                val item = part as? Map<*, *> ?: return@mapNotNull null
+                if (item["type"] == "text") item["text"] as? String else null
+            }.joinToString("")
+        }.joinToString("")
+        return if (text.isNotBlank()) CanonicalAiResult.Text(text)
+        else CanonicalAiResult.Failure("EMPTY_RESPONSE", "Gemini returned no text or function call.")
+    }
+
+    override fun encodeToolResults(
+        config: AiProviderConfig,
+        results: List<CanonicalToolResult>
+    ): Map<String, Any?> {
+        validateConfiguration(config)
+        require(results.size in 1..32)
+        return mapOf(
+            "input" to results.map { result ->
+                mapOf(
+                    "type" to "function_result",
+                    "name" to result.toolName,
+                    "call_id" to result.providerCallId,
+                    "result" to listOf(
+                        mapOf(
+                            "type" to "text",
+                            "text" to if (result.isError) "ERROR: ${result.content}" else result.content
+                        )
+                    )
+                )
+            }
+        )
+    }
 }
 
 /** Google Gemini generateContent function-calling wire adapter. */
