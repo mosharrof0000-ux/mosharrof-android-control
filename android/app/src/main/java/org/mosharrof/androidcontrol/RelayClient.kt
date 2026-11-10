@@ -54,18 +54,18 @@ object RelayClient {
         val endpoint = endpoint(context) ?: return null
         val token = token(context) ?: return null
         val response = request(endpoint + "/v1/device/jobs/next", "GET", token)
-        val job = response.optJSONObject("job") ?: return null
-        val id = job.optString("command_id")
-        val operation = job.optString("operation_id")
-        if (!isValidCommandId(id) || operation !in allowed) return null
-        if (hasHandledCommand(context, id)) return null
-        return Job(id, operation)
+        if (!response.has("job") || response.isNull("job")) return null
+        val job = response.optJSONObject("job")
+            ?: error("Relay job-এর গঠন অবৈধ; কোনো কমান্ড চালানো হয়নি।")
+        val parsed = parseJob(job)
+        if (hasHandledCommand(context, parsed.commandId)) return null
+        return parsed
     }
 
     fun postResult(context: Context, commandId: String, output: String, exitCode: Int) {
         require(isValidCommandId(commandId)) { "Relay command ID-এর বিন্যাস অবৈধ।" }
-        val endpoint = endpoint(context) ?: return
-        val token = token(context) ?: return
+        val endpoint = endpoint(context) ?: error("Relay endpoint configured নয়; ফলাফল পাঠানো যায়নি।")
+        val token = token(context) ?: error("Relay device token পাওয়া যায়নি; ফলাফল পাঠানো যায়নি।")
         request("$endpoint/v1/device/jobs/$commandId/result", "POST", token,
             JSONObject().put("output", output.take(10000)).put("exit_code", exitCode).toString())
     }
@@ -115,6 +115,18 @@ object RelayClient {
     internal fun isValidCommandId(value: String): Boolean =
         value.length in 1..MAX_COMMAND_ID_LENGTH &&
             value.matches(Regex("[A-Za-z0-9_-]+"))
+
+    internal fun parseJob(job: JSONObject): Job {
+        val id = job.optString("command_id")
+        val operation = job.optString("operation_id")
+        require(isValidCommandId(id)) {
+            "Relay job-এর command_id অবৈধ; কোনো কমান্ড চালানো হয়নি।"
+        }
+        require(operation in allowed) {
+            "Relay job-এর operation_id অনুমোদিত নয়; কোনো কমান্ড চালানো হয়নি।"
+        }
+        return Job(id, operation)
+    }
 
     internal fun readLimited(stream: InputStream?, maxBytes: Int = MAX_RESPONSE_BYTES): String {
         if (stream == null) return ""
