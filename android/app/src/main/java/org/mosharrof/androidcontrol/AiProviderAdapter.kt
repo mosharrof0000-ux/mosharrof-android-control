@@ -141,7 +141,7 @@ object AiProviderRegistry {
     fun registerBuiltIns() {
         if (AiProviderId.GEMINI !in adapters) register(GeminiFunctionCallingAdapter())
         if (AiProviderId.OPENAI !in adapters) register(OpenAiResponsesFunctionCallingAdapter())
-        if (AiProviderId.XAI !in adapters) register(XaiChatCompletionsFunctionCallingAdapter())
+        if (AiProviderId.XAI !in adapters) register(XaiResponsesFunctionCallingAdapter())
         if (AiProviderId.ANTHROPIC !in adapters) register(AnthropicMessagesToolUseAdapter())
     }
 
@@ -387,6 +387,97 @@ private fun org.json.JSONArray.toAnyList(): List<Any?> =
 // JSON conversion helpers above intentionally preserve nested maps and arrays.
 
 
+/** xAI Grok Responses API function-calling adapter. */
+class XaiResponsesFunctionCallingAdapter : AiProviderAdapter {
+    override val provider = AiProviderId.XAI
+    override val adapterVersion = "2"
+
+    override fun validateConfiguration(config: AiProviderConfig) {
+        require(config.provider == provider) { "xAI adapter received another provider config." }
+        require(config.endpoint == null) { "Official xAI Responses endpoint is fixed in this adapter version." }
+    }
+
+    override fun capabilityProfile(model: String, apiVersion: String): AiCapabilityProfile {
+        require(apiVersion == "v1") { "Unsupported xAI Responses API version." }
+        return AiCapabilityProfile(
+            provider, model, apiVersion, adapterVersion,
+            mapOf(
+                AiCapability.TOOL_CALLING to CapabilitySupport.UNKNOWN,
+                AiCapability.PARALLEL_TOOL_CALLS to CapabilitySupport.UNKNOWN,
+                AiCapability.STREAMING to CapabilitySupport.UNKNOWN,
+                AiCapability.CANCELLATION to CapabilitySupport.UNKNOWN,
+                AiCapability.JSON_SCHEMA to CapabilitySupport.UNKNOWN,
+                AiCapability.STRUCTURED_OUTPUTS to CapabilitySupport.UNKNOWN,
+                AiCapability.MODEL_DISCOVERY to CapabilitySupport.UNSUPPORTED
+            )
+        )
+    }
+
+    override fun encodeToolDefinitions(
+        config: AiProviderConfig,
+        tools: List<CanonicalPluginDefinition>
+    ): Map<String, Any?> {
+        validateConfiguration(config)
+        require(tools.size <= 256)
+        return mapOf(
+            "tools" to tools.map { tool ->
+                mapOf(
+                    "type" to "function",
+                    "name" to tool.name,
+                    "description" to tool.description,
+                    "parameters" to tool.inputSchema,
+                    "strict" to false
+                )
+            }
+        )
+    }
+
+    override fun decodeResponse(payload: Map<String, Any?>): CanonicalAiResult {
+        val output = payload["output"] as? List<*> ?: emptyList<Any?>()
+        val calls = output.mapNotNull { raw ->
+            val item = raw as? Map<*, *> ?: return@mapNotNull null
+            if (item["type"] != "function_call") return@mapNotNull null
+            val callId = item["call_id"] as? String
+                ?: error("xAI function_call call_id is missing.")
+            val name = item["name"] as? String
+                ?: error("xAI function_call name is missing.")
+            val arguments = item["arguments"] as? String
+                ?: error("xAI function_call arguments are missing.")
+            CanonicalToolCall(callId, name, org.json.JSONObject(arguments).toStringMap())
+        }
+        if (calls.isNotEmpty()) return CanonicalAiResult.ToolCalls(calls)
+
+        val text = output.mapNotNull { raw ->
+            val item = raw as? Map<*, *> ?: return@mapNotNull null
+            if (item["type"] != "message") return@mapNotNull null
+            val content = item["content"] as? List<*> ?: return@mapNotNull null
+            content.mapNotNull { part ->
+                val entry = part as? Map<*, *> ?: return@mapNotNull null
+                if (entry["type"] == "output_text") entry["text"] as? String else null
+            }.joinToString("")
+        }.joinToString("")
+        return if (text.isNotBlank()) CanonicalAiResult.Text(text)
+        else CanonicalAiResult.Failure("EMPTY_RESPONSE", "Grok returned no text or function call.")
+    }
+
+    override fun encodeToolResults(
+        config: AiProviderConfig,
+        results: List<CanonicalToolResult>
+    ): Map<String, Any?> {
+        validateConfiguration(config)
+        require(results.size in 1..32)
+        return mapOf(
+            "input" to results.map { result ->
+                mapOf(
+                    "type" to "function_call_output",
+                    "call_id" to result.providerCallId,
+                    "output" to if (result.isError) "ERROR: ${result.content}" else result.content
+                )
+            }
+        )
+    }
+}
+
 /** xAI Grok Chat Completions-compatible custom function-calling adapter. */
 class XaiChatCompletionsFunctionCallingAdapter : AiProviderAdapter {
     override val provider = AiProviderId.XAI
@@ -485,7 +576,7 @@ class AnthropicMessagesToolUseAdapter : AiProviderAdapter {
     }
 
     override fun capabilityProfile(model: String, apiVersion: String): AiCapabilityProfile {
-        require(apiVersion == "2023-06-01") { "Unsupported Anthropic Messages API version." }
+        require(apiVersion == "2026-10-21") { "Unsupported Anthropic Messages API version." }
         return AiCapabilityProfile(
             provider, model, apiVersion, adapterVersion,
             mapOf(
