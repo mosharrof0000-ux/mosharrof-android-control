@@ -25,6 +25,10 @@ object RelayClient {
     private const val MAX_RESPONSE_BYTES = 64 * 1024
     private const val MAX_COMMAND_ID_LENGTH = 128
     private const val HANDLED_IDS = "handled_command_ids"
+    private const val PENDING_COMMAND_ID = "pending_command_id"
+    private const val PENDING_COMMAND_STARTED = "pending_command_started"
+    private const val PENDING_RESULT = "pending_result"
+    private const val RESULT_TIMEOUT_MS = 90_000L
 
     private val allowed = setOf(
         "termux.python_version",
@@ -51,6 +55,8 @@ object RelayClient {
     }
 
     fun poll(context: Context): Job? {
+        // Never dispatch a second job while the previous Termux result is unresolved.
+        if (pendingCommandId(context) != null) return null
         val endpoint = endpoint(context) ?: return null
         val token = token(context) ?: return null
         val response = request(endpoint + "/v1/device/jobs/next", "GET", token)
@@ -84,9 +90,71 @@ object RelayClient {
         val ids = prefs.getStringSet(HANDLED_IDS, emptySet()).orEmpty().toMutableSet()
         ids.add(commandId)
         while (ids.size > 100) ids.remove(ids.first())
-        check(prefs.edit().putStringSet(HANDLED_IDS, ids).commit()) {
+        val editor = prefs.edit().putStringSet(HANDLED_IDS, ids)
+        if (prefs.getString(PENDING_COMMAND_ID, null) == commandId) {
+            editor.remove(PENDING_COMMAND_ID).remove(PENDING_COMMAND_STARTED)
+        }
+        check(editor.commit()) {
             "Relay command-এর স্থানীয় duplicate guard সংরক্ষণ করা যায়নি।"
         }
+    }
+
+    fun beginCommand(context: Context, commandId: String) {
+        require(isValidCommandId(commandId)) { "Relay command ID-এর বিন্যাস অবৈধ।" }
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        check(prefs.edit()
+            .putString(PENDING_COMMAND_ID, commandId)
+            .putLong(PENDING_COMMAND_STARTED, System.currentTimeMillis())
+            .commit()) { "Relay execution state সংরক্ষণ করা যায়নি।" }
+    }
+
+    fun pendingCommandId(context: Context): String? =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(PENDING_COMMAND_ID, null)
+
+    fun savePendingResult(context: Context, commandId: String, output: String, exitCode: Int) {
+        require(isValidCommandId(commandId)) { "Relay command ID-এর বিন্যাস অবৈধ।" }
+        val pending = JSONObject()
+            .put("command_id", commandId)
+            .put("output", output.take(10000))
+            .put("exit_code", exitCode)
+        check(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString(PENDING_RESULT, pending.toString())
+            .commit()) { "Relay ফলাফল retry queue-তে সংরক্ষণ করা যায়নি।" }
+    }
+
+    fun retryPendingResult(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        var raw = prefs.getString(PENDING_RESULT, null)
+        if (raw == null) {
+            val pendingId = prefs.getString(PENDING_COMMAND_ID, null)
+            val started = prefs.getLong(PENDING_COMMAND_STARTED, 0L)
+            if (pendingId != null && started > 0L &&
+                System.currentTimeMillis() - started >= RESULT_TIMEOUT_MS
+            ) {
+                savePendingResult(
+                    context,
+                    pendingId,
+                    "Termux result callback timed out. Command outcome is unknown; it was not automatically re-executed.",
+                    -2
+                )
+                raw = prefs.getString(PENDING_RESULT, null)
+            }
+        }
+        if (raw == null) return true
+        val pending = JSONObject(raw)
+        val commandId = pending.getString("command_id")
+        postResult(
+            context,
+            commandId,
+            pending.optString("output"),
+            pending.optInt("exit_code", -1)
+        )
+        markCommandHandled(context, commandId)
+        check(prefs.edit().remove(PENDING_RESULT).commit()) {
+            "Relay ফলাফল পাঠানো হয়েছে, কিন্তু স্থানীয় retry state পরিষ্কার করা যায়নি।"
+        }
+        return true
     }
 
     fun configured(context: Context): Boolean = endpoint(context) != null && token(context) != null
