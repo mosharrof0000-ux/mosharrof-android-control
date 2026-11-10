@@ -6,6 +6,10 @@ This is the working completion ledger for PR #7 and the Android Plugin System. S
 
 | Workstream | Status | Acceptance gate |
 |---|---|---|
+| AI-provider-neutral adapter architecture | Architecture specified; implementation pending | Canonical provider-neutral plugin contract, per-provider adapters, capability profiles, official-documentation review/update process, fail-closed behavior and cross-adapter contract tests are specified in `docs/AI_PROVIDER_ADAPTER_ARCHITECTURE.md`. No Grok/Gemini/Claude/Copilot/OpenAI adapter is claimed complete until implemented and verified independently |
+
+| Workstream | Status | Acceptance gate |
+|---|---|---|
 | Connector registry and least-privilege authorization | Implemented; source audit and regression coverage pass | Unavailable connectors fail closed; READ_ONLY is the only no-approval risk; WRITE, EXTERNAL_SIDE_EFFECT and DESTRUCTIVE require approval; schema snapshots are defensive copies; Android CI run 42809461736 passed |
 | Single-use, argument-bound approval grants | Implemented; recursive input bound added and CI verified | Expiry, replay, mismatch, revoke, capacity, timestamp overflow and deep-input tests; Android CI run 42804238420 passed |
 | MCP 2026-07-28 discovery and tools/list pagination | Implemented in source | Current-head Android tests pass; real server interoperability remains separate |
@@ -30,6 +34,7 @@ This is the working completion ledger for PR #7 and the Android Plugin System. S
 - Termux integration requires the user to enable Termux RUN_COMMAND permission and the external-app setting.
 - Cloudflare deployment changes the live Worker and must not run without explicit approval.
 - ChatGPT connector configuration and a real relay round-trip require live credentials and user-side setup.
+- Each AI provider integration requires its own official API/documentation review, adapter, credentials where applicable, and live interoperability verification. A provider without a suitable documented interface remains unsupported until the vendor exposes one or an approved alternative exists.
 - PR #7 must remain open until the user explicitly approves merge; no release is authorized by this plan.
 
 ## Rules
@@ -38,3 +43,4 @@ This is the working completion ledger for PR #7 and the Android Plugin System. S
 - Record the exact commit SHA and CI run for every verified build/test gate.
 - Keep protocol versions distinct: modern 2026-07-28 behavior must not be conflated with legacy 2025 protocol behavior.
 - Never claim full MCP conformance while Tasks, OAuth/CIMD, schema-driven forms, or URL-mode handoff remain incomplete.
+- Never claim multi-provider support based only on a generic architecture document; verify each provider/model/API version and its capability profile separately.
