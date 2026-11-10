@@ -430,6 +430,24 @@ class McpConnectorServiceRegressionTest {
     }
 
     @Test
+    fun taskOperationsRejectSnapshotForDifferentTaskId() {
+        registerConnector()
+        val server = FakeServer()
+        val connectorService = service(server)
+        connectorService.connect("test.mcp").getOrThrow()
+
+        assertTrue(connectorService.getTask("test.mcp", "task-2").isFailure)
+        assertTrue(
+            connectorService.updateTask(
+                "test.mcp",
+                "task-2",
+                mapOf("confirm" to mapOf("action" to "accept"))
+            ).isFailure
+        )
+        assertTrue(connectorService.cancelTask("test.mcp", "task-2").isFailure)
+    }
+
+    @Test
     fun taskPollingStopsOnTerminalStateAndRespectsInjectedDelay() {
         registerConnector()
         val server = FakeServer(taskGetStatuses = listOf("working", "completed"))
