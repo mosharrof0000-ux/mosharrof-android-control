@@ -106,6 +106,59 @@ class McpHttpClientTransportTest {
     }
 
     @Test
+    fun httpErrorDoesNotExposeEchoedBearerTokenInExceptionMessage() {
+        val secret = "sensitive-bearer-token-value"
+        val fake = FakeConnection(
+            URL("https://example.com/mcp"),
+            401,
+            """{"error":{"code":-32001,"message":"Rejected $secret"}}"""
+        )
+        val client = McpHttpClient(
+            endpoint = "https://example.com/mcp",
+            bearerToken = secret,
+            connectionFactory = { fake }
+        )
+
+        val failure = try {
+            client.post(request())
+            throw AssertionError("Expected MCP HTTP failure")
+        } catch (error: McpHttpException) {
+            error
+        }
+
+        assertFalse(failure.message.orEmpty().contains(secret))
+        assertFalse(failure.message.orEmpty().contains("Rejected"))
+        assertNull(failure.rpcErrorData)
+        assertTrue(fake.wasDisconnected)
+    }
+
+    @Test
+    fun unsupportedVersionErrorRetainsOnlySupportedVersionHint() {
+        val fake = FakeConnection(
+            URL("https://example.com/mcp"),
+            400,
+            """{"error":{"code":-32022,"message":"bad","data":{"supported":["2025-11-25"],"echo":"secret-value"}}}"""
+        )
+        val client = McpHttpClient(
+            endpoint = "https://example.com/mcp",
+            connectionFactory = { fake }
+        )
+        val failure = try {
+            client.post(request())
+            throw AssertionError("Expected MCP HTTP failure")
+        } catch (error: McpHttpException) {
+            error
+        }
+
+        assertEquals(-32022, failure.rpcErrorCode)
+        assertEquals(
+            "2025-11-25",
+            failure.rpcErrorData?.optJSONArray("supported")?.optString(0)
+        )
+        assertFalse(failure.rpcErrorData.toString().contains("secret-value"))
+    }
+
+    @Test
     fun successfulJsonResponseUsesExpectedTransportSettingsAndBearerToken() {
         val fake = FakeConnection(
             URL("https://example.com/mcp"),
