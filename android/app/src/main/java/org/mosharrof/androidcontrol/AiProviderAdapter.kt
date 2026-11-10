@@ -138,7 +138,6 @@ object AiProviderRegistry {
     }
 
     @Synchronized
-    @Synchronized
     fun registerBuiltIns() {
         if (AiProviderId.GEMINI !in adapters) register(GeminiFunctionCallingAdapter())
         if (AiProviderId.OPENAI !in adapters) register(OpenAiResponsesFunctionCallingAdapter())
