@@ -244,6 +244,43 @@ class McpArgumentsValidatorTest {
     }
 
     @Test
+    fun acceptsProtocolSupportedFormatAndMcpHeaderAnnotations() {
+        val schema = mapOf<String, Any?>(
+            "type" to "object",
+            "properties" to mapOf(
+                "region" to mapOf(
+                    "type" to "string",
+                    "format" to "email",
+                    "x-mcp-header" to "Region"
+                )
+            ),
+            "required" to listOf("region")
+        )
+
+        assertTrue(McpProtocol.validateInputSchema(schema))
+        assertTrue(McpArgumentsValidator.supportsSchema(schema))
+        assertTrue(McpArgumentsValidator.validate(schema, mapOf("region" to "a@example.com"), listOf("region")))
+    }
+
+    @Test
+    fun rejectsInvalidMcpHeaderPlacementAndNames() {
+        val rootHeader = mapOf<String, Any?>(
+            "type" to "object",
+            "x-mcp-header" to "Region",
+            "properties" to emptyMap<String, Any?>()
+        )
+        val invalidHeaderName = mapOf<String, Any?>(
+            "type" to "object",
+            "properties" to mapOf(
+                "region" to mapOf("type" to "string", "x-mcp-header" to "Bad Header")
+            )
+        )
+
+        assertFalse(McpArgumentsValidator.supportsSchema(rootHeader))
+        assertFalse(McpArgumentsValidator.supportsSchema(invalidHeaderName))
+    }
+
+    @Test
     fun rejectsNullValuesForPresentSchemaKeywords() {
         val nullType = mapOf<String, Any?>("type" to null)
         val nullAdditionalProperties = mapOf<String, Any?>(
