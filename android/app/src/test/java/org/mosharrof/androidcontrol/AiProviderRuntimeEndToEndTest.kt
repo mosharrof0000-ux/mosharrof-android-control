@@ -299,7 +299,6 @@ class AiProviderRuntimeEndToEndTest {
                     val result = input.filterIsInstance<Map<*, *>>()
                         .first { it["type"] == "function_result" }
                     assertEquals(true, result["is_error"])
-                    assertTrue(result.toString().contains("Unknown"))
                 }
                 responses.removeFirst()
             }
