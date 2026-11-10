@@ -522,7 +522,7 @@ class McpConnectorService(
                 clientVersion = clientVersion
             )
         )
-        parseTaskResponse(response)
+        parseTaskResponse(response, taskId)
     }
 
     /**
