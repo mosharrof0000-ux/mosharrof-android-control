@@ -101,4 +101,71 @@ class ProviderWireAdapterTest {
             GeminiFunctionCallingAdapter().validateConfiguration(config(AiProviderId.OPENAI))
         }
     }
+
+    @Test fun grokAdapterParsesChatCompletionToolCall() {
+        val result = XaiChatCompletionsFunctionCallingAdapter().decodeResponse(mapOf(
+            "choices" to listOf(mapOf("message" to mapOf(
+                "tool_calls" to listOf(mapOf(
+                    "id" to "grok-call-1",
+                    "function" to mapOf(
+                        "name" to "search",
+                        "arguments" to "{\"q\":\"mosharrof\"}"
+                    )
+                ))
+            )))
+        )) as CanonicalAiResult.ToolCalls
+        assertEquals("grok-call-1", result.calls.single().providerCallId)
+        assertEquals("mosharrof", result.calls.single().arguments["q"])
+    }
+
+    @Test fun grokAdapterEncodesToolResultsWithCallId() {
+        val result = XaiChatCompletionsFunctionCallingAdapter().encodeToolResults(
+            config(AiProviderId.XAI),
+            listOf(CanonicalToolResult("grok-call-1", "search", "ok"))
+        )
+        val messages = result["messages"] as List<*>
+        val message = messages.single() as Map<*, *>
+        assertEquals("grok-call-1", message["tool_call_id"])
+    }
+
+    @Test fun claudeAdapterParsesToolUseBlock() {
+        val result = AnthropicMessagesToolUseAdapter().decodeResponse(mapOf(
+            "stop_reason" to "tool_use",
+            "content" to listOf(mapOf(
+                "type" to "tool_use",
+                "id" to "toolu_123",
+                "name" to "read_file",
+                "input" to mapOf("path" to "README.md")
+            ))
+        )) as CanonicalAiResult.ToolCalls
+        assertEquals("toolu_123", result.calls.single().providerCallId)
+        assertEquals("README.md", result.calls.single().arguments["path"])
+    }
+
+    @Test fun claudeAdapterEncodesToolResultErrorFlag() {
+        val result = AnthropicMessagesToolUseAdapter().encodeToolResults(
+            config(AiProviderId.ANTHROPIC),
+            listOf(CanonicalToolResult("toolu_123", "read_file", "denied", true))
+        )
+        val content = result["content"] as List<*>
+        val block = content.single() as Map<*, *>
+        assertEquals("tool_result", block["type"])
+        assertEquals(true, block["is_error"])
+    }
+
+    @Test fun allImplementedAdaptersRejectMismatchedProviderConfigs() {
+        val adapters = listOf(
+            GeminiFunctionCallingAdapter() to AiProviderId.GEMINI,
+            OpenAiResponsesFunctionCallingAdapter() to AiProviderId.OPENAI,
+            XaiChatCompletionsFunctionCallingAdapter() to AiProviderId.XAI,
+            AnthropicMessagesToolUseAdapter() to AiProviderId.ANTHROPIC
+        )
+        adapters.forEach { (adapter, provider) ->
+            val wrong = AiProviderId.values().first { it != provider }
+            assertThrows(IllegalArgumentException::class.java) {
+                adapter.validateConfiguration(config(wrong))
+            }
+        }
+    }
+
 }
