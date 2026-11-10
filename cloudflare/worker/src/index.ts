@@ -46,13 +46,20 @@ export class RelayDO {
    // visible again after its lease expires, while concurrent polls remain atomic.
    const job=await this.state.storage.transaction(async tx=>{
     const queue=await tx.get<Array<any>>("queue")??[];
-    const now=Date.now(),live=queue.filter(j=>j.expires_at>now);
+    const now=Date.now(),expired=queue.filter(j=>j.expires_at<=now);
+    const live=queue.filter(j=>j.expires_at>now);
+    for(const item of expired){
+     const audit=await tx.get<any>("audit:"+item.command_id);
+     if(audit&&audit.status!=="completed")await tx.put("audit:"+item.command_id,{...audit,status:"expired",expired_at:new Date(now).toISOString()});
+    }
     const index=live.findIndex(j=>!j.lease_until||j.lease_until<=now);
     let next=null;
     if(index>=0){
      const current=live[index],attempts=(current.attempts??0)+1;
      next={...current,attempts,lease_until:now+Math.min(30_000,15_000*attempts)};
      live[index]=next;
+     const audit=await tx.get<any>("audit:"+current.command_id);
+     if(audit)await tx.put("audit:"+current.command_id,{...audit,status:"leased",attempts,lease_until:next.lease_until});
     }
     await tx.put("queue",live);
     return next;
@@ -129,6 +136,7 @@ export class RelayDO {
    if(result&&result.expires_at>Date.now())return json({status:"completed",...result});
    const audit=await this.state.storage.get<any>("audit:"+commandId);
    if(audit?.status==="completed")return json({status:"completed_result_expired",command_id:commandId,completed_at:audit.completed_at,exit_code:audit.exit_code});
+   if(audit?.status==="expired")return json({status:"expired",command_id:commandId,expired_at:audit.expired_at},410);
    const queue=await this.state.storage.get<Array<any>>("queue")??[];
    const job=queue.find(item=>item.command_id===commandId&&item.expires_at>Date.now());
    if(job)return json({status:job.lease_until>Date.now()?"leased":"queued",command_id:commandId,expires_at:job.expires_at,attempts:job.attempts},202);
