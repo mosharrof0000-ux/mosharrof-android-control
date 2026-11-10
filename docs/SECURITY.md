@@ -27,10 +27,12 @@
 - The result receiver is private to this app; returned output is truncated before local storage.
 - Relay traffic uses HTTPS and bearer authentication. The device token is encrypted with Android Keystore AES-GCM.
 - The app-side relay accepts only the four predefined read-only Termux operation IDs. Every incoming job requires an in-app approval dialog; the app never auto-executes a polled job.
-- Relay URLs reject credentials, query strings, and fragments; redirects are disabled; response bodies are bounded; command IDs are validated before use in request paths; the client stores a bounded local handled-ID set.
+- Relay URLs reject credentials, query strings, and fragments; redirects are disabled; response bodies are bounded; command IDs and fixed operation IDs are validated before use.
+- Android persists the active Relay command and Termux result locally before network delivery. GET polling and result submissions use bounded retries with exponential backoff; pairing is not retried. A missing Termux result callback times out after 90 seconds and reports an unknown outcome instead of silently re-running the command.
+- Relay Worker source uses 15–30 second job leases with a 60-second job expiry, requires idempotency keys, accepts identical result retries, rejects conflicting results, applies route-specific rate limits, and updates audit status when results are accepted. These are source-level controls until deployed-worker verification passes.
 
 ## Remaining threats and release gates
-- Verify server-side job expiry, replay/idempotency protection, rate limits, and audit records in the deployed Worker.
+- Verify the deployed Worker’s lease/retry, idempotency, rate-limit, and audit behavior end-to-end; source-level implementation alone is not deployment evidence.
 - Verify credential revocation and token invalidation behavior on a physical Android device.
 - Implement and test MCP 2026-07-28 `input_required` multi-round-trip handling before claiming full modern protocol support; optional Tasks extension support is also pending.
 - Add OAuth/CIMD authorization for servers that do not support manually provisioned Bearer tokens.
