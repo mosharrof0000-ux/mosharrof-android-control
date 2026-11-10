@@ -69,6 +69,41 @@ data class CanonicalToolCall(
     init {
         require(providerCallId.isNotBlank() && providerCallId.length <= 256)
         require(toolName.isNotBlank() && toolName.length <= 128)
+        CanonicalArgumentBounds.validate(arguments)
+    }
+}
+
+/** Bounds provider-controlled nested arguments before they reach the tool guard. */
+internal object CanonicalArgumentBounds {
+    const val MAX_DEPTH = 32
+    const val MAX_NODES = 2_048
+    const val MAX_KEY_CHARS = 256
+
+    fun validate(arguments: Map<String, Any?>) {
+        var visited = 0
+        fun visit(value: Any?, depth: Int) {
+            require(depth <= MAX_DEPTH) { "Provider tool arguments exceed the maximum nesting depth." }
+            visited += 1
+            require(visited <= MAX_NODES) { "Provider tool arguments exceed the maximum node count." }
+            when (value) {
+                is Map<*, *> -> value.forEach { (key, child) ->
+                    require(key is String && key.length <= MAX_KEY_CHARS) {
+                        "Provider tool argument keys must be bounded strings."
+                    }
+                    visit(child, depth + 1)
+                }
+                is List<*> -> value.forEach { child -> visit(child, depth + 1) }
+                is String -> require(value.length <= 256 * 1024) {
+                    "Provider tool argument string exceeds the configured limit."
+                }
+                is Number, is Boolean, null -> Unit
+                else -> throw IllegalArgumentException("Provider tool arguments contain an unsupported value.")
+            }
+        }
+        arguments.forEach { (key, value) ->
+            require(key.length <= MAX_KEY_CHARS) { "Provider tool argument keys must be bounded strings." }
+            visit(value, 1)
+        }
     }
 }
 
@@ -461,31 +496,56 @@ class OpenAiResponsesFunctionCallingAdapter : AiProviderAdapter {
     }
 }
 
-private fun org.json.JSONObject.toStringMap(): Map<String, Any?> {
+private class ProviderJsonConversionBudget(var remaining: Int = CanonicalArgumentBounds.MAX_NODES) {
+    fun consume() {
+        remaining -= 1
+        require(remaining >= 0) { "Provider tool arguments exceed the maximum node count." }
+    }
+}
+
+private fun org.json.JSONObject.toStringMap(
+    depth: Int = 0,
+    budget: ProviderJsonConversionBudget = ProviderJsonConversionBudget()
+): Map<String, Any?> {
+    require(depth <= CanonicalArgumentBounds.MAX_DEPTH) {
+        "Provider tool arguments exceed the maximum nesting depth."
+    }
     val result = linkedMapOf<String, Any?>()
     val keys = keys()
     while (keys.hasNext()) {
+        budget.consume()
         val key = keys.next()
+        require(key.length <= CanonicalArgumentBounds.MAX_KEY_CHARS) {
+            "Provider tool argument keys must be bounded strings."
+        }
         val value = opt(key)
         result[key] = when (value) {
             org.json.JSONObject.NULL -> null
-            is org.json.JSONObject -> value.toStringMap()
-            is org.json.JSONArray -> value.toAnyList()
+            is org.json.JSONObject -> value.toStringMap(depth + 1, budget)
+            is org.json.JSONArray -> value.toAnyList(depth + 1, budget)
             else -> value
         }
     }
     return result
 }
 
-private fun org.json.JSONArray.toAnyList(): List<Any?> =
-    (0 until length()).map { index ->
+private fun org.json.JSONArray.toAnyList(
+    depth: Int,
+    budget: ProviderJsonConversionBudget
+): List<Any?> {
+    require(depth <= CanonicalArgumentBounds.MAX_DEPTH) {
+        "Provider tool arguments exceed the maximum nesting depth."
+    }
+    return (0 until length()).map { index ->
+        budget.consume()
         when (val value = opt(index)) {
             org.json.JSONObject.NULL -> null
-            is org.json.JSONObject -> value.toStringMap()
-            is org.json.JSONArray -> value.toAnyList()
+            is org.json.JSONObject -> value.toStringMap(depth + 1, budget)
+            is org.json.JSONArray -> value.toAnyList(depth + 1, budget)
             else -> value
         }
     }
+}
 
 // JSON conversion helpers above intentionally preserve nested maps and arrays.
 

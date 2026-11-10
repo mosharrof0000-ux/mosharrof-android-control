@@ -100,6 +100,40 @@ class ProviderWireAdapterTest {
         assertEquals("call_abc", output["call_id"])
     }
 
+    @Test fun canonicalToolCallRejectsDeepOrOversizedProviderArguments() {
+        var nested: Any? = "leaf"
+        repeat(CanonicalArgumentBounds.MAX_DEPTH + 1) {
+            nested = mapOf("child" to nested)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            CanonicalToolCall("deep-call", "lookup", mapOf("root" to nested))
+        }
+
+        val wide = (1..CanonicalArgumentBounds.MAX_NODES + 1)
+            .associate { "key$it" to it }
+        assertThrows(IllegalArgumentException::class.java) {
+            CanonicalToolCall("wide-call", "lookup", wide)
+        }
+    }
+
+    @Test fun responsesAdapterRejectsExcessivelyNestedJsonArguments() {
+        val nestedJson = """{"x":""".repeat(0) + buildString {
+            repeat(CanonicalArgumentBounds.MAX_DEPTH + 2) { append("""{"x":""") }
+            append("\"leaf\"")
+            repeat(CanonicalArgumentBounds.MAX_DEPTH + 2) { append("}") }
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            OpenAiResponsesFunctionCallingAdapter().decodeResponse(mapOf(
+                "output" to listOf(mapOf(
+                    "type" to "function_call",
+                    "call_id" to "deep-call",
+                    "name" to "lookup",
+                    "arguments" to nestedJson
+                ))
+            ))
+        }
+    }
+
     @Test fun adaptersRejectWrongProviderConfig() {
         assertThrows(IllegalArgumentException::class.java) {
             GeminiFunctionCallingAdapter().validateConfiguration(config(AiProviderId.OPENAI))
