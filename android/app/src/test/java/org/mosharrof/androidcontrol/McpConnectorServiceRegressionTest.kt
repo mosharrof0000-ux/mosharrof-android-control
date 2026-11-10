@@ -289,10 +289,10 @@ class McpConnectorServiceRegressionTest {
             }
     }
 
-    private fun registerConnector() {
+    private fun registerConnector(id: String = "test.mcp") {
         ConnectorRegistry.registerConnector(
             ConnectorRegistry.Connector(
-                id = "test.mcp",
+                id = id,
                 name = "Test MCP",
                 transport = ConnectorRegistry.Transport.MCP_STREAMABLE_HTTP,
                 endpoint = "https://example.com/mcp"
@@ -311,6 +311,25 @@ class McpConnectorServiceRegressionTest {
     @After
     fun cleanup() {
         ConnectorRegistry.clearForTests()
+    }
+
+
+    @Test
+    fun serviceReportsOnlyConnectorSessionsItOwns() {
+        registerConnector()
+        registerConnector("test.mcp.two")
+        val firstService = service(FakeServer())
+        val secondService = service(FakeServer())
+
+        firstService.connect("test.mcp").getOrThrow()
+        secondService.connect("test.mcp.two").getOrThrow()
+
+        assertEquals(setOf("test.mcp"), firstService.connectedConnectorIds())
+        assertEquals(setOf("test.mcp.two"), secondService.connectedConnectorIds())
+
+        firstService.disconnect("test.mcp").getOrThrow()
+        assertTrue(firstService.connectedConnectorIds().isEmpty())
+        assertEquals(setOf("test.mcp.two"), secondService.connectedConnectorIds())
     }
 
     @Test
