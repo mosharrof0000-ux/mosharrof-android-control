@@ -11,7 +11,8 @@ import java.util.UUID
 class McpConnectorService(
     private val client: McpHttpClient,
     private val clientName: String = "MOSHARROF Android Control",
-    private val clientVersion: String = "1.0"
+    private val clientVersion: String = "1.0",
+    private val taskStore: McpTaskStore = InMemoryMcpTaskStore()
 ) {
     data class ConnectionInfo(
         val connectorId: String,
@@ -51,6 +52,7 @@ class McpConnectorService(
         // A reconnect must invalidate previous tools and approval grants.
         ToolApprovalGrants.revokeConnector(connectorId)
         connected.remove(connectorId)
+        taskStore.removeConnector(connectorId)
         ConnectorRegistry.unregisterToolsForConnector(connectorId)
 
         try {
@@ -493,7 +495,7 @@ class McpConnectorService(
                 clientVersion = clientVersion
             )
         )
-        parseTaskResponse(response, taskId)
+        parseTaskResponse(connectorId, response, taskId)
     }
 
     /** Submit user-mediated MRTR answers for a task awaiting input. */
@@ -516,7 +518,7 @@ class McpConnectorService(
                 clientVersion = clientVersion
             )
         )
-        parseTaskResponse(response, taskId)
+        parseTaskResponse(connectorId, response, taskId)
     }
 
     @Synchronized
@@ -530,7 +532,14 @@ class McpConnectorService(
                 clientVersion = clientVersion
             )
         )
-        parseTaskResponse(response, taskId)
+        parseTaskResponse(connectorId, response, taskId)
+    }
+
+    /** Pending task identifiers restored from durable local metadata after process restart. */
+    @Synchronized
+    fun pendingTasks(connectorId: String): Result<List<McpTaskRecord>> = runCatching {
+        requireModernTaskConnection(connectorId)
+        taskStore.list(connectorId)
     }
 
     /**
@@ -572,7 +581,11 @@ class McpConnectorService(
         }
     }
 
-    private fun parseTaskResponse(response: JSONObject, expectedTaskId: String): McpTaskProtocol.Snapshot {
+    private fun parseTaskResponse(
+        connectorId: String,
+        response: JSONObject,
+        expectedTaskId: String
+    ): McpTaskProtocol.Snapshot {
         if (response.has("error")) {
             val rpcError = response.optJSONObject("error")
             error(rpcError?.optString("message") ?: "MCP Task operation ব্যর্থ হয়েছে।")
@@ -585,6 +598,16 @@ class McpConnectorService(
         require(snapshot.taskId == expectedTaskId) {
             "MCP Task response-এর taskId অনুরোধের সঙ্গে মেলেনি।"
         }
+        taskStore.upsert(
+            McpTaskRecord(
+                connectorId = connectorId,
+                taskId = snapshot.taskId,
+                status = snapshot.status.name,
+                ttlMs = snapshot.ttlMs,
+                pollIntervalMs = snapshot.pollIntervalMs,
+                observedAtEpochMs = System.currentTimeMillis()
+            )
+        )
         return snapshot
     }
 
@@ -597,6 +620,7 @@ class McpConnectorService(
     fun disconnect(connectorId: String): Result<Unit> = runCatching {
         ToolApprovalGrants.revokeConnector(connectorId)
         connected.remove(connectorId)
+        taskStore.removeConnector(connectorId)
         ConnectorRegistry.unregisterToolsForConnector(connectorId)
 
         ConnectorRegistry.updateConnectionState(
