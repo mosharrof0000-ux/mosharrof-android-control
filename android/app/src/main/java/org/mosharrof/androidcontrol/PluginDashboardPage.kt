@@ -441,11 +441,11 @@ class PluginDashboardPage(
         } else null
 
         if (requests.length() == 1) {
-            val requestKey = requests.keys().asSequence().firstOrNull()
-            val request = requestKey?.let { requests.optJSONObject(it) }
-            val params = request?.optJSONObject("params")
-            if (request?.optString("method") == "elicitation/create" &&
-                params?.optString("mode") == "form"
+            val requestKey = requests.keys().asSequence().firstOrNull() ?: return
+            val request = requests.optJSONObject(requestKey) ?: return
+            val params = request.optJSONObject("params")
+            if (request.optString("method") == "elicitation/create" &&
+                params != null && params.optString("mode") == "form"
             ) {
                 val requestedSchema = params.optJSONObject("requestedSchema")
                 val schema = requestedSchema?.toMap()
