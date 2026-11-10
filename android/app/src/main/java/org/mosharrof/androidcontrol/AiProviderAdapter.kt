@@ -594,3 +594,79 @@ object CanonicalToolCallGuard {
         }
     }
 }
+
+
+enum class AiProviderIntegrationDirection { OUTBOUND_MODEL_API, INBOUND_MCP_CLIENT }
+enum class AiProviderImplementationStatus {
+    TRANSLATION_ONLY, INBOUND_BRIDGE_PENDING, NOT_IMPLEMENTED
+}
+
+data class AiProviderCatalogEntry(
+    val provider: AiProviderId,
+    val displayName: String,
+    val direction: AiProviderIntegrationDirection,
+    val status: AiProviderImplementationStatus,
+    val officialDocumentation: List<String>,
+    val adapterRegistered: Boolean
+)
+
+/** Machine-readable provider inventory; status deliberately distinguishes translation from live support. */
+object AiProviderCatalog {
+    private data class Definition(
+        val provider: AiProviderId,
+        val name: String,
+        val direction: AiProviderIntegrationDirection,
+        val status: AiProviderImplementationStatus,
+        val docs: List<String>
+    )
+
+    private val definitions = listOf(
+        Definition(
+            AiProviderId.GEMINI, "Google Gemini",
+            AiProviderIntegrationDirection.OUTBOUND_MODEL_API,
+            AiProviderImplementationStatus.TRANSLATION_ONLY,
+            listOf("https://ai.google.dev/gemini-api/docs/function-calling")
+        ),
+        Definition(
+            AiProviderId.OPENAI, "OpenAI",
+            AiProviderIntegrationDirection.OUTBOUND_MODEL_API,
+            AiProviderImplementationStatus.TRANSLATION_ONLY,
+            listOf("https://developers.openai.com/api/docs/guides/function-calling")
+        ),
+        Definition(
+            AiProviderId.XAI, "xAI Grok",
+            AiProviderIntegrationDirection.OUTBOUND_MODEL_API,
+            AiProviderImplementationStatus.TRANSLATION_ONLY,
+            listOf("https://docs.x.ai/developers/tools/function-calling")
+        ),
+        Definition(
+            AiProviderId.ANTHROPIC, "Anthropic Claude",
+            AiProviderIntegrationDirection.OUTBOUND_MODEL_API,
+            AiProviderImplementationStatus.TRANSLATION_ONLY,
+            listOf(
+                "https://platform.claude.com/docs/en/agents-and-tools/tool-use/how-tool-use-works",
+                "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+            )
+        ),
+        Definition(
+            AiProviderId.MICROSOFT, "Microsoft 365 Copilot / Copilot Studio",
+            AiProviderIntegrationDirection.INBOUND_MCP_CLIENT,
+            AiProviderImplementationStatus.INBOUND_BRIDGE_PENDING,
+            listOf(
+                "https://learn.microsoft.com/en-us/microsoft-365/copilot/extensibility/overview-plugins",
+                "https://learn.microsoft.com/en-us/microsoft-copilot-studio/add-tools-custom-agent"
+            )
+        )
+    )
+
+    fun snapshot(): List<AiProviderCatalogEntry> = definitions.map { definition ->
+        AiProviderCatalogEntry(
+            provider = definition.provider,
+            displayName = definition.name,
+            direction = definition.direction,
+            status = definition.status,
+            officialDocumentation = definition.docs.toList(),
+            adapterRegistered = AiProviderRegistry.get(definition.provider) != null
+        )
+    }
+}
