@@ -87,7 +87,8 @@ Independent work may proceed concurrently, but shared contracts and UI integrati
 - [x] Expire task metadata by server TTL, cap storage at 100 records, synchronously commit metadata, and clear a connector's records on explicit disconnect.
 - [x] Expose pending recovery candidates through the service and persist snapshots returned by `tasks/get`, `tasks/update` and `tasks/cancel`.
 - [x] Keep synchronous polling bounded by caller-supplied elapsed-time and poll-count limits; it stops on terminal or input-required states.
-- [ ] Add service-level reconnect/recovery and polling interruption tests, and integrate task-result handling with the approved Android UI.
+- [x] Add service-level reconnect/recovery tests: pending candidates survive service recreation, are revalidated through `tasks/get`, and terminal server state removes them from the pending list.
+- [ ] Add polling cancellation/interruption tests and integrate task-result handling with the approved Android UI.
 - **Gate:** task recovery works in deterministic store and service tests; stale candidates are revalidated against the server before use; unsupported task-start/tool flows remain fail-closed until UI approval and orchestration are integrated.
 
 ### Phase 6 — Android UX
@@ -116,6 +117,14 @@ Independent work may proceed concurrently, but shared contracts and UI integrati
 - Service integration records snapshots returned by tasks/get/update/cancel and exposes pending candidates; Android UI task-start/approval integration remains pending.
 - Commits: `a8172fa` (store), `92198dc` / `cf00f16` (service integration), `743b763` (Android wiring), `c469594` / `6db8d5d` (tests), `9efee46` (synchronous persistence).
 - CI: PENDING for latest source head.
+
+### MCP Task service recovery CI evidence
+- Android CI run #42870349189 completed SUCCESS on source commit `735bfd6514a8d3a1b768fc72d7fbef18a1f80696`; includes Android unit tests, Debug APK assembly and artifact upload.
+- Worker typecheck run #42870348894 completed SUCCESS on the same commit.
+- Debug APK artifact `mosharrof-android-control-debug`, artifact ID `13788863906`, SHA-256 `bd1efc5cfa6208d306f24edda681e2e6f5a26085a730f1947add4dfed615e93c`. This is a CI artifact only; it has not been installed or device-tested.
+- Recovery tests verify store persistence across service recreation, remote revalidation via `refreshPendingTasks`, terminal-state removal, and explicit-disconnect cleanup.
+- Follow-up added cancellable polling (`shouldCancel` checked before network work and after each delay) plus a regression test proving cancellation prevents the next request. CI for that follow-up is pending at commit `dd61f3cd68239c25821f87332d89de8c8102d43b`.
+- Task execution remains fail-closed for `resultType=task`; task start/result handling is not yet wired into the approved Android UI.
 
 ## External gates excluded from this roadmap
 
