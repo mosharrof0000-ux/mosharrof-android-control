@@ -118,9 +118,20 @@ object RelayClient {
             .put("command_id", commandId)
             .put("output", output.take(10000))
             .put("exit_code", exitCode)
-        check(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putString(PENDING_RESULT, pending.toString())
-            .commit()) { "Relay ফলাফল retry queue-তে সংরক্ষণ করা যায়নি।" }
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val existing = prefs.getString(PENDING_RESULT, null)
+        if (existing != null) {
+            val existingCommand = JSONObject(existing).optString("command_id")
+            require(existingCommand == commandId) {
+                "অন্য Relay job-এর ফলাফল এখনো retry queue-তে আছে।"
+            }
+            // Keep the first durable outcome. In particular, a late Termux callback
+            // must not replace a timeout outcome already submitted to the server.
+            return
+        }
+        check(prefs.edit().putString(PENDING_RESULT, pending.toString()).commit()) {
+            "Relay ফলাফল retry queue-তে সংরক্ষণ করা যায়নি।"
+        }
     }
 
     fun retryPendingResult(context: Context): Boolean {
