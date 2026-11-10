@@ -574,6 +574,27 @@ class McpConnectorServiceRegressionTest {
     }
 
     @Test
+    fun taskPollingStopsWhenCallerCancelsDuringDelay() {
+        registerConnector()
+        val server = FakeServer(taskGetStatuses = listOf("working", "completed"))
+        val connectorService = service(server)
+        connectorService.connect("test.mcp").getOrThrow()
+        var cancelled = false
+        val result = connectorService.pollTask(
+            connectorId = "test.mcp",
+            taskId = "task-1",
+            maxWaitMs = 1_000,
+            maxPolls = 5,
+            sleeper = { cancelled = true },
+            shouldCancel = { cancelled }
+        )
+
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull() is java.util.concurrent.CancellationException)
+        assertEquals("Cancellation must prevent the next network request", 1, server.taskGetCalls.get())
+    }
+
+    @Test
     fun taskPollingRejectsUnboundedArgumentsBeforeNetworkCalls() {
         registerConnector()
         val server = FakeServer()
