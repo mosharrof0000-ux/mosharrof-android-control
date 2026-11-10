@@ -527,13 +527,13 @@ class MainActivity : Activity() {
             .setNegativeButton("প্রত্যাখ্যান") { _, _ ->
                 worker.execute {
                     val result = runCatching {
-                        RelayClient.markCommandHandled(this@MainActivity, job.commandId)
                         RelayClient.postResult(
                             this@MainActivity,
                             job.commandId,
                             "Rejected by user in Android app",
                             126
                         )
+                        RelayClient.markCommandHandled(this@MainActivity, job.commandId)
                     }
                     runOnUiThread {
                         status.text = if (result.isSuccess) {
