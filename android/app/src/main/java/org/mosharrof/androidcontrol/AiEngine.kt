@@ -6,6 +6,8 @@ import android.security.keystore.KeyProperties
 import android.util.Base64
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
@@ -27,6 +29,10 @@ object AiEngine {
     private const val PREFS = "android_control_ai"
     private const val KEY_ALIAS = "android_control_ai_key_v1"
     private const val KEY_API = "encrypted_api_key"
+    private const val MAX_API_KEY_CHARS = 8_192
+    private const val MAX_MODEL_CHARS = 128
+    private const val MAX_PROMPT_CHARS = 64 * 1024
+    private const val MAX_RESPONSE_BYTES = 256 * 1024
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -47,6 +53,8 @@ object AiEngine {
     ) {
         require(model.isNotBlank()) { "AI মডেলের নাম লিখুন।" }
         require(apiKey.isNotBlank()) { "API key লিখুন।" }
+        require(apiKey.length <= MAX_API_KEY_CHARS) { "API key নির্ধারিত আকারের চেয়ে বড়।" }
+        require(model.trim().length <= MAX_MODEL_CHARS) { "AI মডেলের নাম অতিরিক্ত বড়।" }
         val safeEndpoint = if (provider == Provider.OPENAI_COMPATIBLE) {
             validateEndpoint(endpoint)
         } else {
@@ -88,6 +96,7 @@ object AiEngine {
 
     fun ask(context: Context, prompt: String): String {
         require(prompt.isNotBlank()) { "AI-কে করার প্রশ্ন লিখুন।" }
+        require(prompt.length <= MAX_PROMPT_CHARS) { "AI prompt ৬৪ KB সীমা অতিক্রম করেছে।" }
         val p = prefs(context)
         val provider = runCatching {
             Provider.valueOf(p.getString("provider", "") ?: "")
@@ -146,7 +155,7 @@ object AiEngine {
             }
             val code = connection.responseCode
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-            val raw = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+            val raw = readBoundedAiResponse(stream, MAX_RESPONSE_BYTES)
             if (code !in 200..299) {
                 throw IllegalStateException(
                     "AI সার্ভার HTTP $code দিয়েছে। API key, model, quota ও endpoint পরীক্ষা করুন।"
@@ -225,4 +234,23 @@ object AiEngine {
             Charsets.UTF_8
         )
     }
+
+/** Reads an AI response with a strict byte cap, including HTTP error bodies. */
+internal fun readBoundedAiResponse(input: InputStream?, maxBytes: Int = 256 * 1024): String {
+    require(maxBytes in 1..(1024 * 1024)) { "AI response byte limit is invalid." }
+    if (input == null) return ""
+    val output = ByteArrayOutputStream(minOf(maxBytes, 8 * 1024))
+    input.use { stream ->
+        val buffer = ByteArray(8 * 1024)
+        var total = 0
+        while (true) {
+            val count = stream.read(buffer)
+            if (count < 0) break
+            total += count
+            require(total <= maxBytes) { "AI response size limit exceeded." }
+            output.write(buffer, 0, count)
+        }
+    }
+    return String(output.toByteArray(), Charsets.UTF_8)
 }
+
