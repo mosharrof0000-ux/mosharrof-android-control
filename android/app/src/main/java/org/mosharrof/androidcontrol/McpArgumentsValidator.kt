@@ -29,12 +29,13 @@ object McpArgumentsValidator {
      * could make the app approve arguments the server considers invalid.
      */
     fun supportsSchema(schema: Map<String, Any?>): Boolean =
-        validateSchemaNode(schema, 0, ValidationBudget())
+        McpProtocol.validateInputSchema(schema) &&
+            validateSchemaNode(schema, 0, ValidationBudget())
 
     private val supportedSchemaKeys = setOf(
         "$" + "schema", "$" + "id", "$" + "comment",
         "title", "description", "default", "examples", "deprecated", "readOnly", "writeOnly",
-        "type", "const", "enum", "properties", "required", "additionalProperties", "items",
+        "type", "const", "enum", "properties", "required", "additionalProperties", "items", "format", "x-mcp-header",
         "minItems", "maxItems", "minProperties", "maxProperties", "minLength", "maxLength",
         "pattern", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"
     )
@@ -127,7 +128,7 @@ object McpArgumentsValidator {
             val divisor = decimal(schema["multipleOf"]) ?: return false
             if (divisor <= BigDecimal.ZERO) return false
         }
-        for (key in listOf("$" + "schema", "$" + "id", "$" + "comment", "title", "description")) {
+        for (key in listOf("$" + "schema", "$" + "id", "$" + "comment", "title", "description", "format")) {
             if (schema.containsKey(key) && (schema[key] !is String || (schema[key] as String).length > 4_096)) return false
         }
         for (key in listOf("deprecated", "readOnly", "writeOnly")) {
