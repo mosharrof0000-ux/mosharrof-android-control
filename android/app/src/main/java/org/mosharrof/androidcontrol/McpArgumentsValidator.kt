@@ -15,9 +15,7 @@ object McpArgumentsValidator {
     ): Boolean {
         if (schema["type"] != "object" || !supportsSchema(schema)) return false
 
-        if (requiredFields.any {
-            !arguments.containsKey(it) || arguments[it] == null
-        }) return false
+        if (requiredFields.any { !arguments.containsKey(it) }) return false
 
         return validateValue(schema, arguments, 0, ValidationBudget())
     }
@@ -238,7 +236,7 @@ object McpArgumentsValidator {
                     val names = required as? List<*> ?: return false
                     if (names.any { it !is String }) return false
                     if (names.distinct().size != names.size) return false
-                    if (names.any { !value.containsKey(it) || value[it] == null }) return false
+                    if (names.any { !value.containsKey(it) }) return false
                 }
 
                 val propertyMap = when (val properties = schema["properties"]) {
