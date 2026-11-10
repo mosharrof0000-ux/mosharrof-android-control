@@ -313,4 +313,33 @@ class McpProtocolTest {
             assertTrue(true)
         }
     }
+
+    @Test
+    fun elicitationUrlAllowsOnlySafeHttpsTargets() {
+        assertEquals(
+            "https://auth.example.com/continue?state=abc#step",
+            McpProtocol.validateElicitationUrl("https://auth.example.com/continue?state=abc#step")
+        )
+        assertEquals(
+            "https://auth.example.com:8443/continue",
+            McpProtocol.validateElicitationUrl("https://auth.example.com:8443/continue")
+        )
+    }
+
+    @Test
+    fun elicitationUrlRejectsInsecureOrCredentialBearingTargets() {
+        val invalid = listOf(
+            null,
+            "",
+            "not a url",
+            "http://auth.example.com/continue",
+            "javascript:alert(1)",
+            "https://user:password@auth.example.com/continue",
+            "https:///missing-host",
+            "https://auth.example.com:99999/continue"
+        )
+        invalid.forEach { value ->
+            assertNull("Expected URL to be rejected: $value", McpProtocol.validateElicitationUrl(value))
+        }
+    }
 }
