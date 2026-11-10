@@ -312,6 +312,17 @@ class MainActivity : Activity() {
     private fun showAiRelayPage() {
         showPage("AI ও Relay") {
             addHeading(this, "AI সংযোগ")
+            if (hasPendingUnknownAiOutcome()) {
+                addTextNote(
+                    this,
+                    "আগের একটি AI অনুরোধের ফলাফল অনিশ্চিত রয়ে গেছে। Provider সেটি পেয়েছিল কি না নিশ্চিত নয়; একই কাজ পুনরায় পাঠানোর আগে Provider-এর অবস্থা যাচাই করুন।"
+                )
+                addButton("অনিশ্চিত অনুরোধ পর্যালোচনা সম্পন্ন") {
+                    clearPendingUnknownAiOutcome()
+                    status.text = "অনিশ্চিত অনুরোধের সতর্কতা পর্যালোচনা করে সরানো হয়েছে।"
+                    showAiRelayPage()
+                }
+            }
             aiModel = EditText(this@MainActivity).apply {
                 hint = "AI মডেলের নাম (যেমন: gemini-2.5-flash)"
                 setText(aiModelDraft)
@@ -591,6 +602,26 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun unknownAiOutcomePrefs() =
+        getSharedPreferences("ai_request_recovery", MODE_PRIVATE)
+
+    private fun hasPendingUnknownAiOutcome(): Boolean =
+        unknownAiOutcomePrefs().getBoolean("pending_unknown_outcome", false)
+
+    private fun savePendingUnknownAiOutcome() {
+        unknownAiOutcomePrefs().edit()
+            .putBoolean("pending_unknown_outcome", true)
+            .putLong("recorded_at_epoch_ms", System.currentTimeMillis())
+            .apply()
+    }
+
+    private fun clearPendingUnknownAiOutcome() {
+        unknownAiOutcomePrefs().edit()
+            .remove("pending_unknown_outcome")
+            .remove("recorded_at_epoch_ms")
+            .apply()
+    }
+
     private fun runAi() {
         val prompt = aiPrompt.text.toString().trim()
         if (prompt.isBlank()) {
@@ -627,6 +658,7 @@ class MainActivity : Activity() {
                 }.onFailure { error ->
                     if (error is java.util.concurrent.CancellationException || cancellation.isCancelled()) {
                         if (cancellation.hasUncertainOutcome()) {
+                            savePendingUnknownAiOutcome()
                             report.text = "অনুরোধের ফলাফল অনিশ্চিত। Provider অনুরোধটি পেয়েছে কি না নিশ্চিত নয়। নিরাপদে যাচাই না করা পর্যন্ত একই কাজ স্বয়ংক্রিয়ভাবে আবার পাঠাবেন না।"
                             status.text = "AI অনুরোধ বাতিল হয়েছে; ফলাফল অনিশ্চিত।"
                         } else {
