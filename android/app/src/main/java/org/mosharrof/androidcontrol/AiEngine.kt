@@ -19,6 +19,41 @@ import javax.crypto.spec.GCMParameterSpec
  * API keys are encrypted with an Android Keystore AES-GCM key.
  * Network requests must use HTTPS. Redirects are disabled.
  */
+internal data class LegacyAiProfileTarget(
+    val id: String,
+    val provider: AiProviderId,
+    val endpoint: String?
+)
+
+internal fun legacyAiProfileTarget(
+    provider: AiEngine.Provider,
+    endpoint: String?
+): LegacyAiProfileTarget = when (provider) {
+    AiEngine.Provider.GEMINI -> LegacyAiProfileTarget(
+        id = "legacy-gemini",
+        provider = AiProviderId.GEMINI,
+        endpoint = null
+    )
+    AiEngine.Provider.OPENAI_COMPATIBLE -> LegacyAiProfileTarget(
+        id = "legacy-openai-compatible",
+        provider = AiProviderId.CUSTOM,
+        endpoint = run {
+            val value = endpoint.orEmpty().trim()
+            val uri = runCatching { URI(value) }.getOrElse {
+                throw IllegalArgumentException("AI endpoint-এর ঠিকানা সঠিক নয়।")
+            }
+            require(
+                uri.scheme.equals("https", ignoreCase = true) &&
+                    !uri.host.isNullOrBlank() &&
+                    uri.userInfo == null &&
+                    uri.fragment == null &&
+                    uri.query == null
+            ) { "AI endpoint-এ নিরাপদ HTTPS ঠিকানা দিতে হবে।" }
+            value
+        }
+    )
+}
+
 object AiEngine {
     enum class Provider { GEMINI, OPENAI_COMPATIBLE }
 
@@ -111,23 +146,9 @@ object AiEngine {
         }.getOrNull() ?: return false
         val model = p.getString("model", null) ?: return false
         val key = decrypt(p.getString(KEY_API, null) ?: return false)
-        val providerId: AiProviderId
-        val endpoint: String?
-        val id: String
-        when (legacyProvider) {
-            Provider.GEMINI -> {
-                providerId = AiProviderId.GEMINI
-                endpoint = null
-                id = "legacy-gemini"
-            }
-            Provider.OPENAI_COMPATIBLE -> {
-                providerId = AiProviderId.CUSTOM
-                endpoint = validateEndpoint(p.getString("endpoint", null).orEmpty())
-                id = "legacy-openai-compatible"
-            }
-        }
-        AiProviderProfileStore.save(context, id, providerId, model, key, endpoint)
-        AiProviderProfileStore.setActive(context, id)
+        val target = legacyAiProfileTarget(legacyProvider, p.getString("endpoint", null))
+        AiProviderProfileStore.save(context, target.id, target.provider, model, key, target.endpoint)
+        AiProviderProfileStore.setActive(context, target.id)
         return true
     }
 
