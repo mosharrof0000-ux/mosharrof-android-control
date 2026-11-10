@@ -11,6 +11,20 @@ enum class AiProviderRetryClass { NEVER, TRANSIENT, RATE_LIMITED }
 class AiProviderCancellation {
     private val cancelled = java.util.concurrent.atomic.AtomicBoolean(false)
     private val activeConnection = java.util.concurrent.atomic.AtomicReference<HttpURLConnection?>(null)
+    private val requestDispatched = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val responseReceived = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    fun markRequestDispatched() {
+        requestDispatched.set(true)
+        responseReceived.set(false)
+    }
+
+    fun markResponseReceived() {
+        responseReceived.set(true)
+    }
+
+    /** True only when a request may have reached the provider but no response arrived. */
+    fun hasUncertainOutcome(): Boolean = requestDispatched.get() && !responseReceived.get()
 
     fun cancel() {
         cancelled.set(true)
@@ -123,27 +137,33 @@ class AiProviderHttpTransport(
             }
             connection.setFixedLengthStreamingMode(bodyBytes.size)
             cancellation.throwIfCancelled()
-            connection.outputStream.use { output -> output.write(bodyBytes) }
-
-            cancellation.throwIfCancelled()
-            val status = connection.responseCode
-            val responseStream = if (status in 200..299) {
+            cancellation.markRequestDispatched()
+            try {
+                connection.outputStream.use { output -> output.write(bodyBytes) }
+                cancellation.throwIfCancelled()
+                val status = connection.responseCode
+                cancellation.markResponseReceived()
+                val responseStream = if (status in 200..299) {
                 connection.inputStream
-            } else {
-                connection.errorStream
-            }
-            val raw = try {
+                } else {
+                    connection.errorStream
+                }
+                val raw = try {
                 readBoundedAiResponse(responseStream, MAX_RESPONSE_BYTES)
+                } catch (failure: Throwable) {
+                    cancellation.throwIfCancelled()
+                    throw failure
+                }
+                cancellation.throwIfCancelled()
+                if (status !in 200..299) {
+                    throw AiProviderHttpException(status, classifyStatus(status))
+                }
+                require(raw.isNotBlank()) { "AI provider returned an empty response." }
+                return AiProviderHttpResponse(status, JSONObject(raw))
             } catch (failure: Throwable) {
                 cancellation.throwIfCancelled()
                 throw failure
             }
-            cancellation.throwIfCancelled()
-            if (status !in 200..299) {
-                throw AiProviderHttpException(status, classifyStatus(status))
-            }
-            require(raw.isNotBlank()) { "AI provider returned an empty response." }
-            return AiProviderHttpResponse(status, JSONObject(raw))
         } finally {
             cancellation.detach(connection)
             connection.disconnect()
