@@ -190,8 +190,8 @@ class McpHttpClient(
                 val resultObject = response.optJSONObject("result")
                     ?: throw IOException("আধুনিক MCP result অবজেক্ট নয়।")
                 val resultType = resultObject.optString("resultType", "")
-                if (!isSupportedModernResultType(resultType)) {
-                    throw IOException("আধুনিক MCP resultType অসমর্থিত; শুধু complete সমর্থিত।")
+                if (resultType.isBlank()) {
+                    throw IOException("আধুনিক MCP result-এ resultType অনুপস্থিত।")
                 }
             }
             return response
@@ -208,9 +208,6 @@ class McpHttpClient(
             "2025-06-18",
             "2025-11-25"
         )
-
-        internal fun isSupportedModernResultType(value: String): Boolean =
-            value == "complete"
 
         internal fun hasValidModernMetadata(
             params: Map<String, Any?>,
