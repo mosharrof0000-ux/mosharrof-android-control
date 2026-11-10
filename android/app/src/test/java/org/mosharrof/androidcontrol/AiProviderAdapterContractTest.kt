@@ -95,4 +95,24 @@ class AiProviderAdapterContractTest {
         assertEquals("vendor-call-7", call.providerCallId)
         assertEquals(args, call.arguments)
     }
+
+    @Test fun providerCatalogSeparatesTranslationFromInboundBridge() {
+        AiProviderRegistry.registerBuiltIns()
+        val catalog = AiProviderCatalog.snapshot().associateBy { it.provider }
+        assertEquals(
+            AiProviderImplementationStatus.TRANSLATION_ONLY,
+            catalog[AiProviderId.GEMINI]?.status
+        )
+        assertTrue(catalog[AiProviderId.GEMINI]?.adapterRegistered == true)
+        assertEquals(
+            AiProviderIntegrationDirection.INBOUND_MCP_CLIENT,
+            catalog[AiProviderId.MICROSOFT]?.direction
+        )
+        assertEquals(
+            AiProviderImplementationStatus.INBOUND_BRIDGE_PENDING,
+            catalog[AiProviderId.MICROSOFT]?.status
+        )
+        assertFalse(catalog[AiProviderId.MICROSOFT]?.adapterRegistered == true)
+    }
+
 }
