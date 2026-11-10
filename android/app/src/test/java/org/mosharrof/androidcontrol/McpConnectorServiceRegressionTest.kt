@@ -222,6 +222,12 @@ class McpConnectorServiceRegressionTest {
                                         )
                                         put("requestState", "opaque-state-from-server")
                                     }
+                                    if (toolResultType == "task") {
+                                        put("taskId", "task-started")
+                                        put("status", "working")
+                                        put("ttlMs", 60_000)
+                                        put("pollIntervalMs", 25)
+                                    }
                                 }
                         }
 
@@ -449,6 +455,30 @@ class McpConnectorServiceRegressionTest {
         assertEquals("opaque-state-from-server", retryParams.optString("requestState"))
         assertEquals("hello", retryParams.optJSONObject("arguments")?.optString("text"))
         assertEquals(2, server.toolCalls.get())
+    }
+
+    @Test
+    fun approvedToolTaskHandleIsPersistedAsPendingRecoveryMetadata() {
+        registerConnector()
+        val server = FakeServer(toolResultType = "task")
+        val store = InMemoryMcpTaskStore()
+        val connectorService = service(server, store)
+        connectorService.connect("test.mcp").getOrThrow()
+        val tool = ConnectorRegistry.toolsFor("test.mcp").single()
+        val arguments = mapOf<String, Any?>("text" to "start")
+        val grant = connectorService.issueApprovalGrant(tool.id, arguments).getOrThrow()
+            ?: error("Approval Grant পাওয়া যায়নি।")
+
+        val payload = JSONObject(
+            connectorService.callTool(tool.id, arguments, grant).getOrThrow()
+        )
+
+        assertEquals("task", payload.optString("resultType"))
+        val pending = connectorService.pendingTasks("test.mcp").getOrThrow()
+        assertEquals(1, pending.size)
+        assertEquals("task-started", pending.single().taskId)
+        assertEquals("WORKING", pending.single().status)
+        assertEquals(25L, pending.single().pollIntervalMs)
     }
 
     @Test
