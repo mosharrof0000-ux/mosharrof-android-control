@@ -48,18 +48,6 @@ object AiProviderRequestFactory {
             AiProviderId.OPENAI, AiProviderId.XAI -> "v1"
             AiProviderId.ANTHROPIC -> "2026-10-21"
             AiProviderId.CUSTOM -> "v1"
-
-            AiProviderId.CUSTOM -> {
-                url = config.endpoint ?: error("Custom HTTPS endpoint is required.")
-                headers["Authorization"] = "Bearer $apiKey"
-                body = mapOf(
-                    "model" to config.model,
-                    "messages" to listOf(mapOf("role" to "user", "content" to prompt)),
-                    "tools" to toolDefinitions,
-                    "tool_choice" to "auto",
-                    "parallel_tool_calls" to false
-                )
-            }
             else -> error("This provider does not have an outbound model API.")
         }
         adapter.capabilityProfile(config.model, apiVersion)
@@ -117,6 +105,17 @@ object AiProviderRequestFactory {
                         "type" to "auto",
                         "disable_parallel_tool_use" to true
                     )
+                )
+            }
+            AiProviderId.CUSTOM -> {
+                url = config.endpoint ?: error("Custom HTTPS endpoint is required.")
+                headers["Authorization"] = "Bearer $apiKey"
+                body = mapOf(
+                    "model" to config.model,
+                    "messages" to listOf(mapOf("role" to "user", "content" to prompt)),
+                    "tools" to toolDefinitions,
+                    "tool_choice" to "auto",
+                    "parallel_tool_calls" to false
                 )
             }
             else -> error("This provider does not have an outbound model API.")
