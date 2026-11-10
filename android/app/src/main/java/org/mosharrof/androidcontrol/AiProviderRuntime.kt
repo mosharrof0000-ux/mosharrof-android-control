@@ -21,13 +21,15 @@ object AiProviderRuntime {
         profile: ResolvedAiProviderProfile,
         prompt: String,
         service: McpConnectorService?,
-        approve: (AiToolCallPlan.Ready) -> Boolean
+        approve: (AiToolCallPlan.Ready) -> Boolean,
+        cancellation: AiProviderCancellation = AiProviderCancellation()
     ): String = runConversation(
         profile = profile,
         prompt = prompt,
         service = service,
         approve = approve,
-        post = { request -> AiProviderHttpTransport().post(request).payload.toBoundedMap() }
+        cancellation = cancellation,
+        post = { request -> AiProviderHttpTransport().post(request, cancellation).payload.toBoundedMap() }
     )
 
     internal fun runConversation(
@@ -35,6 +37,7 @@ object AiProviderRuntime {
         prompt: String,
         service: McpConnectorService?,
         approve: (AiToolCallPlan.Ready) -> Boolean,
+        cancellation: AiProviderCancellation = AiProviderCancellation(),
         post: (AiProviderHttpRequest) -> Map<String, Any?>
     ): String {
         require(prompt.isNotBlank() && prompt.length <= AiProviderRequestFactory.MAX_PROMPT_CHARS) {
@@ -69,7 +72,9 @@ object AiProviderRuntime {
             prompt = prompt,
             tools = tools
         )
-        cancellation.throwIfCancelled()\n        var payload = post(request)\n        cancellation.throwIfCancelled()
+        cancellation.throwIfCancelled()
+        var payload = post(request)
+        cancellation.throwIfCancelled()
         var totalCalls = 0
         var continuationRounds = 0
 
@@ -99,6 +104,7 @@ object AiProviderRuntime {
                                 isError = true
                             )
                             is AiToolCallPlan.Ready -> {
+                                cancellation.throwIfCancelled()
                                 if (plan.approvalRequired && !runCatching { approve(plan) }.getOrDefault(false)) {
                                     CanonicalToolResult(
                                         providerCallId = plan.call.providerCallId,
@@ -107,6 +113,7 @@ object AiProviderRuntime {
                                         isError = true
                                     )
                                 } else {
+                                    cancellation.throwIfCancelled()
                                     val grant = if (plan.approvalRequired) {
                                         service.issueApprovalGrant(plan.toolId, plan.call.arguments)
                                             .getOrThrow()
@@ -144,7 +151,9 @@ object AiProviderRuntime {
                         results = toolResults,
                         tools = tools
                     )
+                    cancellation.throwIfCancelled()
                     payload = post(continuation)
+                    cancellation.throwIfCancelled()
                     continuationRounds++
                 }
             }
