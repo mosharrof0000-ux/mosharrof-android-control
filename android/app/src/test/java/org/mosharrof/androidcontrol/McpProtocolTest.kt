@@ -34,6 +34,51 @@ class McpProtocolTest {
         assertTrue(request.params.containsKey("_meta"))
     }
 
+    @Test fun modernToolsCallCarriesMrtrResponsesAndOpaqueRequestState() {
+        val responses = mapOf(
+            "confirm" to mapOf("action" to "accept", "content" to mapOf("ok" to true))
+        )
+        val opaqueState = "opaque-state:%2Fmust-remain-unchanged"
+        val request = McpProtocol.modernToolsCallRequest(
+            id = "14",
+            toolName = "files.read",
+            arguments = mapOf("path" to "notes.txt"),
+            clientName = "Mosharrof",
+            clientVersion = "1.0",
+            inputResponses = responses,
+            requestState = opaqueState
+        )
+
+        assertEquals(responses, request.params["inputResponses"])
+        assertEquals(opaqueState, request.params["requestState"])
+        assertEquals("files.read", request.params["name"])
+    }
+
+    @Test fun modernToolsCallOmitsMrtrFieldsOnInitialRequest() {
+        val request = McpProtocol.modernToolsCallRequest(
+            id = "15",
+            toolName = "files.read",
+            clientName = "Mosharrof",
+            clientVersion = "1.0"
+        )
+
+        assertFalse(request.params.containsKey("inputResponses"))
+        assertFalse(request.params.containsKey("requestState"))
+    }
+
+    @Test fun modernToolsCallRejectsBlankMrtrResponseKeys() {
+        val result = runCatching {
+            McpProtocol.modernToolsCallRequest(
+                id = "16",
+                toolName = "files.read",
+                clientName = "Mosharrof",
+                clientVersion = "1.0",
+                inputResponses = mapOf("" to mapOf("action" to "accept"))
+            )
+        }
+        assertTrue(result.isFailure)
+    }
+
     @Test fun modernToolsListCarriesOpaqueCursor() {
         val request = McpProtocol.modernToolsListRequest(
             "12", "Mosharrof", "1.0", cursor = "opaque-next"
