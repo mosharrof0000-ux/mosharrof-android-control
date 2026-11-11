@@ -85,6 +85,41 @@ class AiProviderProfileRepositoryTest {
         }
     }
 
+    @Test fun credentialReplacementPreservesProfileMetadataAndActiveSelection() {
+        val (repo, storage) = repository()
+        repo.save("gemini-main", AiProviderId.GEMINI, "gemini-model", null, "old-secret")
+        repo.setActive("gemini-main")
+
+        val summary = repo.replaceCredential("gemini-main", "new-secret")
+
+        assertEquals("gemini-main", summary.id)
+        assertEquals("gemini-model", summary.model)
+        assertEquals(AiProviderId.GEMINI, summary.provider)
+        assertEquals("gemini-main", repo.active()!!.summary.id)
+        assertEquals("new-secret", repo.get("gemini-main")!!.apiKey)
+        assertFalse(storage.get("profile_secret_gemini-main")!!.contains("old-secret"))
+    }
+
+    @Test fun credentialReplacementRejectsMissingProfileAndInvalidKeysWithoutChangingExistingKey() {
+        val (repo, storage) = repository()
+        repo.save("gemini-main", AiProviderId.GEMINI, "gemini-model", null, "old-secret")
+
+        assertThrows(IllegalArgumentException::class.java) {
+            repo.replaceCredential("missing-profile", "new-secret")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            repo.replaceCredential("gemini-main", "")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            repo.replaceCredential("gemini-main", "x".repeat(8193))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            repo.replaceCredential("gemini-main", "bad\nsecret")
+        }
+        assertEquals("old-secret", repo.get("gemini-main")!!.apiKey)
+        assertTrue(storage.get("profile_secret_gemini-main")!!.contains("old-secret"))
+    }
+
     @Test fun resolvedProfileNeverPrintsCredential() {
         val (repo) = repository()
         repo.save("gemini-main", AiProviderId.GEMINI, "gemini-model", null, "top-secret")
