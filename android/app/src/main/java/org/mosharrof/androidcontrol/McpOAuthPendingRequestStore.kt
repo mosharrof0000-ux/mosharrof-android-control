@@ -133,7 +133,7 @@ internal object McpOAuthPendingRequestStore {
         val digest = MessageDigest.getInstance("SHA-256")
             .digest(connectorId.toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it) }
-        return "oauth.pending.issuer.$digest"
+        return "oauth.iss.$digest"
     }
 
     internal fun storageId(connectorId: String): String {
