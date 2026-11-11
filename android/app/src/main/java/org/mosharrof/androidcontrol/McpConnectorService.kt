@@ -516,6 +516,7 @@ class McpConnectorService(
      * OAuth-aware tool execution. All policy checks and the single-use approval
      * grant are consumed before the asynchronous transport is started.
      */
+    @Synchronized
     internal fun callToolAsync(
         toolId: String,
         arguments: Map<String, Any?>,
