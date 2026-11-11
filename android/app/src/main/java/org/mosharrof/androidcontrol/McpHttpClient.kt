@@ -64,7 +64,7 @@ class McpHttpClient(
      */
     internal fun postAsync(
         connectorId: String,
-        tokenProvider: McpOAuthAccessTokenProvider,
+        tokenProvider: McpAccessTokenResolver,
         ioExecutor: Executor,
         request: McpProtocol.Request,
         toolDefinition: McpProtocol.ToolDefinition? = null,
