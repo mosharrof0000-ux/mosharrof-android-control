@@ -35,8 +35,14 @@ subprojects {
     // changed by this subproject-only rule.
     configurations.configureEach {
         resolutionStrategy.eachDependency {
-            if (requested.group == "io.netty") {
+            if (requested.group == "io.netty" &&
+                requested.name.startsWith("netty-") &&
+                !requested.name.startsWith("netty-tcnative")) {
                 useVersion("4.1.140.Final")
+            }
+            if (requested.group == "com.google.guava" && requested.name == "guava") {
+                // Keep the Android-specific artifact variant for app/test tooling.
+                useVersion("33.8.0-android")
             }
         }
     }
