@@ -11,4 +11,16 @@ subprojects {
     dependencyLocking {
         lockAllConfigurations()
     }
+
+    // Keep Netty modules aligned on the maintained 4.1 security release across
+    // Android test-platform configurations that currently resolve older lines.
+    // Root plugin/buildscript classpaths are audited separately and are not
+    // changed by this subproject-only rule.
+    configurations.configureEach {
+        resolutionStrategy.eachDependency {
+            if (requested.group == "io.netty") {
+                useVersion("4.1.140.Final")
+            }
+        }
+    }
 }
