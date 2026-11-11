@@ -25,16 +25,49 @@ class McpOAuthRefreshRecoveryTest {
     }
 
     @Test
-    fun typedFailurePreservesReasonAndCauseWithoutExposingCauseText() {
-        val cause = IllegalStateException("sensitive provider response")
-        val failure = McpOAuthRefreshException(
-            McpOAuthRefreshFailure.REFRESH_REJECTED,
-            cause
-        )
+    fun typedFailureKeepsOnlySafeReasonAndNeverRetainsRawCause() {
+        val failure = McpOAuthRefreshException(McpOAuthRefreshFailure.REFRESH_REJECTED)
         assertEquals(McpOAuthRefreshFailure.REFRESH_REJECTED, failure.reason)
-        assertEquals(cause, failure.cause)
+        assertEquals(null, failure.cause)
         assertNotNull(failure.message)
-        assertFalse(failure.message!!.contains("sensitive provider response"))
+    }
+
+    @Test
+    fun blankAccessTokenIsRejectedBeforePersistence() {
+        var persisted = false
+        val result = McpOAuthRefreshCommit.persistBeforeRelease(
+            accessToken = "  ",
+            tokenType = "Bearer",
+            authorizationError = null
+        ) {
+            persisted = true
+            Result.success(Unit)
+        }
+        assertTrue(result.isFailure)
+        assertFalse(persisted)
+        assertEquals(
+            McpOAuthRefreshFailure.REFRESH_REJECTED,
+            (result.exceptionOrNull() as McpOAuthRefreshException).reason
+        )
+    }
+
+    @Test
+    fun missingTokenTypeIsRejectedBeforePersistence() {
+        var persisted = false
+        val result = McpOAuthRefreshCommit.persistBeforeRelease(
+            accessToken = "opaque-token",
+            tokenType = null,
+            authorizationError = null
+        ) {
+            persisted = true
+            Result.success(Unit)
+        }
+        assertTrue(result.isFailure)
+        assertFalse(persisted)
+        assertEquals(
+            McpOAuthRefreshFailure.BEARER_TOKEN_REQUIRED,
+            (result.exceptionOrNull() as McpOAuthRefreshException).reason
+        )
     }
 
     @Test
