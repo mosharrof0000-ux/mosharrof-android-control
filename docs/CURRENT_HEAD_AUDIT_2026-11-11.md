@@ -230,3 +230,10 @@ Commits:
 - Changed the authorization-server list check to use the HTTPS issuer validator, rejecting both query and fragment components while retaining HTTPS, host and no-user-info checks.
 - Added JVM regression coverage for valid issuer entries and rejection of query-bearing and fragment-bearing entries.
 - This is validator-only hardening. OAuth metadata fetching, CIMD discovery, PKCE, token exchange, refresh/revocation and live interoperability remain unimplemented. Exact-head Android and Worker CI are pending for this change.
+
+
+## 2026-11-11 MCP Task input-response validation follow-up
+
+- Task `input_required` UI now validates that submitted response keys exactly match the server's validated request keys and that each response is a non-empty object with bounded nonblank string keys.
+- Added JVM tests for a valid response, mismatched keys, scalar payload rejection and empty object rejection. This guards the client-side envelope before `tasks/update`; server-side semantic validation and real-server interoperability remain required.
+- Native Android dialog interaction/process recreation is not covered by these JVM tests. Exact-head CI is pending for this follow-up.
