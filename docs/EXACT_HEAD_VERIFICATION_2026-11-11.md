@@ -185,3 +185,13 @@ This exact-head CI verifies JVM unit tests and build behavior, not live OAuth se
 - Android Debug APK artifact ID: `13879926314`, size 2,586,036 bytes, uploaded artifact ZIP SHA-256 `32c59324be498a7bc603e785d1a7e29cdaf46a852b1c12fb3ddfb26c9011102c`. Android dependency evidence artifact ID: `13879906381`. OSV SARIF artifact ID: `13879981470`.
 - Added revocation regression cases reject endpoint userinfo/fragment before network access; reject blank/oversized client IDs and blank tokens before network access; and accept `access_token` token hint while verifying URL form encoding. Existing tests also cover HTTPS-only endpoints, redirect/non-success rejection, invalid token hints and token bounds.
 - These are JVM/unit and CI checks, not live RFC 7009 server interoperability or Android Keystore physical-device verification. The APK is CI-only and was not installed or launched. No deployment or merge was performed.
+
+
+## Exact-head verification — 2026-11-12 (`bcfb632d44f4196d988c7c96f2bfc6fdce16299a`)
+
+- Android CI run `43073796330` (#565): **SUCCESS** on the exact documentation head. Strict Gradle dependency lock/checksum verification, Android JVM unit tests, CycloneDX SBOM, binary-level runtime notice audit, Debug APK assembly, APK notice validation, dependency evidence upload and OSV scan all completed successfully.
+- Android workflow artifact `mosharrof-android-control-debug`: ID `13881210413`, size 2,586,037 bytes, uploaded ZIP SHA-256 `30e3ac8efab0957cfe0e20958514388c4bf7600dcbba689e204efc993ceb19d4`. CI-only; not installed or physically tested.
+- Android dependency evidence artifact ID `13879962092`; OSV SARIF artifact ID `13881880351`.
+- Binary notice audit covered 34/34 release-runtime components and inspected 34/34 collected AAR/JAR binaries, but extracted archive LICENSE/NOTICE text from 0/34. All 34 were classified `SBOM_DECLARED_LICENSE_ONLY`; do not describe this as 34 extracted notices. The APK contains the Apache-2.0 license text and generated component inventory, while upstream attribution obligations remain to be verified.
+- Gate 16 remains **Partial** pending authoritative upstream attribution/NOTICE review, final APK obligation validation and checksum/signature provenance review. OSV reported no findings for this scan; that is point-in-time SCA evidence, not legal or complete supply-chain clearance.
+- PR #7 remains open/unmerged. No live OAuth/MCP interoperability, Android Keystore/device verification, deployment, or APK installation is claimed.
