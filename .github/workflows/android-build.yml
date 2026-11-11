@@ -64,8 +64,14 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Test binary-level license and notice scanner
-        run: python3 -m unittest discover -s tools -p 'test_audit_binary_notices.py' -v
+      - name: Test license and notice audit tools
+        run: |
+          python3 -m unittest discover -s tools -p 'test_audit_binary_notices.py' -v
+          python3 -m unittest discover -s tools -p 'test_audit_maven_metadata.py' -v
+
+      - name: Audit upstream Maven POM license and source metadata
+        run: |
+          python3 tools/audit_maven_metadata.py --sbom android/app/build/reports/cyclonedx-direct/bom.json --json-report android/build/reports/license-review/maven-metadata-audit.json --markdown-report android/build/reports/license-review/MAVEN_METADATA_AUDIT.md --attributions android/app/src/main/assets/POM_THIRD_PARTY_ATTRIBUTIONS.txt
 
       - name: Build license inventory and enrich reviewed SBOM metadata
         run: |
@@ -149,6 +155,9 @@ jobs:
             android/app/build/reports/cyclonedx-direct/bom.json
             android/build/reports/license-review/**
             android/app/src/main/assets/UPSTREAM_THIRD_PARTY_NOTICES.txt
+            android/app/src/main/assets/POM_THIRD_PARTY_ATTRIBUTIONS.txt
+            android/build/reports/license-review/maven-metadata-audit.json
+            android/build/reports/license-review/MAVEN_METADATA_AUDIT.md
             android/build/reports/dependency-triage/**
           if-no-files-found: error
 
