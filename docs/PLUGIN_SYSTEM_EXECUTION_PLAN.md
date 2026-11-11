@@ -186,3 +186,13 @@ Dependency/license review is not complete: Worker dependencies still use semver 
 - Refresh failure exceptions retain only typed safe reasons; raw authorization/storage causes are not attached. Regression coverage includes blank/missing token fields and persistence-before-release.
 - CI artifact IDs: Debug APK `13879111294`; Android dependency evidence `13878632831`. CI artifact only; not installed.
 - This does not prove live OAuth/MCP interoperability, device Keystore behavior, deployed Worker behavior or independent security clearance. PR #7 remains open/unmerged; no deployment or install.
+
+
+## Exact-head OAuth revocation verification — 2026-11-11
+
+- Source/test head: `98fb0deb97627299211022ab09dbe6ab3516f66f`.
+- Android CI `43073118767`: PASS — strict dependency verification, Android JVM unit tests, CycloneDX SBOM, Debug APK assembly, binary notice audit (34/34 runtime components), APK notice validation and OSV scan/SARIF upload.
+- Worker CI `43073118888`: PASS — locked dependency installation, dependency audit, SBOM, typecheck/tests, dependency evidence and OSV scan.
+- Revocation tests now cover endpoint userinfo/fragment rejection, invalid client/token fields rejected before network calls, accepted `access_token` hint and form encoding. This remains automated client-side contract coverage, not live authorization-server revocation interoperability.
+- CI Debug APK artifact `13879926314` (2,586,036 bytes; uploaded ZIP SHA-256 `32c59324be498a7bc603e785d1a7e29cdaf46a852b1c12fb3ddfb26c9011102c`); dependency evidence `13879906381`; OSV SARIF `13879981470`. CI artifacts only; no installation or physical-device testing.
+- PR #7 remains open/unmerged. Live OAuth/CIMD interoperability, real MCP/provider checks, Android Keystore device verification, deployed Worker verification and independent security review remain separate blockers. No deployment, APK install or merge.
