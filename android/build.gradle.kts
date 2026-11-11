@@ -46,7 +46,7 @@ plugins {
 }
 
 // Lock every resolvable dependency configuration in Android subprojects.
-// CI uses --write-locks to generate the reviewed lock state from real resolution.
+// CI enforces the committed lock state; lock updates are an explicit maintenance action.
 subprojects {
     dependencyLocking {
         lockAllConfigurations()
