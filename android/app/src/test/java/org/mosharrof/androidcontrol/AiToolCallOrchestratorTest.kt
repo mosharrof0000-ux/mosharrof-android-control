@@ -137,7 +137,16 @@ class AiToolCallOrchestratorTest {
         } as AiToolCallExecution.Completed
 
         assertTrue(result.result.isError)
-        assertEquals("temporary failure retry later", result.result.content)
+        assertEquals("Plugin execution failed. Remote error details are redacted for safety.", result.result.content)
+        assertFalse(result.result.content.contains("temporary failure"))
+    }
+
+    @Test fun untrustedExceptionTextNeverAppearsInUiErrorMessage() {
+        val secret = "Bearer private-token-123"
+        val visible = safeUiErrorMessage(IllegalStateException(secret))
+        assertFalse(visible.contains(secret))
+        assertFalse(visible.contains("private-token-123"))
+        assertTrue(visible.contains("আড়াল"))
     }
 
     @Test fun successfulOutputIsBounded() {
