@@ -64,6 +64,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Test binary-level license and notice scanner
+        run: python3 -m unittest discover -s tools -p 'test_audit_binary_notices.py' -v
+
       - name: Build license inventory and enrich reviewed SBOM metadata
         run: |
           python3 tools/audit_sbom_licenses.py \
@@ -71,6 +74,22 @@ jobs:
             --reviewed-sbom android/build/reports/license-review/bom-reviewed.json \
             --report android/build/reports/license-review/THIRD_PARTY_LICENSE_REVIEW.md \
             --app-notices android/app/src/main/assets/THIRD_PARTY_NOTICES.md
+
+      - name: Collect resolved release runtime AAR/JAR artifacts
+        run: |
+          gradle -p android --dependency-verification=strict \
+            --init-script tools/collect_runtime_artifacts.init.gradle \
+            :app:collectReleaseRuntimeArtifacts
+          test -d android/app/build/reports/license-review/runtime-artifacts
+
+      - name: Audit binary-level licenses and preserve upstream notices
+        run: |
+          python3 tools/audit_binary_notices.py \
+            --sbom android/app/build/reports/cyclonedx-direct/bom.json \
+            --artifact-dir android/app/build/reports/license-review/runtime-artifacts \
+            --notice-output android/app/src/main/assets/UPSTREAM_THIRD_PARTY_NOTICES.txt \
+            --json-report android/build/reports/license-review/binary-notice-audit.json \
+            --markdown-report android/build/reports/license-review/BINARY_NOTICE_AUDIT.md
 
       - name: Package Apache License 2.0 text for runtime dependencies
         run: |
@@ -94,6 +113,7 @@ jobs:
               names = set(archive.namelist())
               required = {
                   "assets/THIRD_PARTY_NOTICES.md",
+                  "assets/UPSTREAM_THIRD_PARTY_NOTICES.txt",
                   "assets/licenses/Apache-2.0.txt",
               }
               missing = sorted(required - names)
@@ -101,9 +121,14 @@ jobs:
                   raise SystemExit(f"APK is missing required notice assets: {missing}")
               license_text = archive.read("assets/licenses/Apache-2.0.txt").decode("utf-8")
               notices = archive.read("assets/THIRD_PARTY_NOTICES.md").decode("utf-8")
-              if "Version 2.0" not in license_text or "appauth" not in notices:
+              upstream = archive.read("assets/UPSTREAM_THIRD_PARTY_NOTICES.txt").decode("utf-8")
+              if "Version 2.0" not in license_text or "appauth" not in notices or not upstream.strip():
                   raise SystemExit("APK license/notice content validation failed")
-          print("APK contains Apache-2.0 license text and runtime dependency notices.")
+          import json
+          audit = json.load(open("android/build/reports/license-review/binary-notice-audit.json", encoding="utf-8"))
+          if audit["component_count"] == 0 or audit["binary_component_count"] != audit["component_count"] or audit["failures"]:
+              raise SystemExit("Binary notice audit did not cover every SBOM component")
+          print(f"APK contains license notices; binary audit covered {audit['binary_component_count']} runtime components.")
           PY
 
       - name: Upload debug APK
@@ -123,6 +148,7 @@ jobs:
             android/gradle/verification-metadata.xml
             android/app/build/reports/cyclonedx-direct/bom.json
             android/build/reports/license-review/**
+            android/app/src/main/assets/UPSTREAM_THIRD_PARTY_NOTICES.txt
             android/build/reports/dependency-triage/**
           if-no-files-found: error
 
