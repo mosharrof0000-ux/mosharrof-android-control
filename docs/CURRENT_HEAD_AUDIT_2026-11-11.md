@@ -215,3 +215,10 @@ Commits:
 - Follow-up: the authorization-response issuer comparison now independently requires a valid HTTPS issuer identifier too, so an invalid query-bearing expected issuer cannot pass merely by matching the response value.
 
 - Regression coverage extended to fragment-bearing issuer identifiers as well as query-bearing identifiers; both metadata URL derivation and authorization-server metadata validation reject them.
+
+
+## OAuth issuer hardening CI verification — source commit `ccdff5cd4859bb0107bd318f91984b9e44e81b47`
+- Android workflow run `42973901349` (#339): PASS — Android unit tests, debug APK assembly and artifact upload all completed successfully.
+- Worker workflow run `42973901430` (#295): PASS.
+- CI debug artifact `mosharrof-android-control-debug`, ID `13833924281`, size 2,415,687 bytes, SHA-256 `7206fc24f538e7e5fecbf312edcd787aa55a57ba34c828dcd14e4dbc2f06b30a`. CI artifact only; not installed or physically tested.
+- The subsequent test-only commit `c2fa0e0c983d5c0df9646d0db3bfcd78d0ae4107` adds fragment-bearing issuer coverage and is not covered by this prior run; its exact-head CI must complete before that extension is considered verified.
