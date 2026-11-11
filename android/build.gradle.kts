@@ -16,6 +16,14 @@ buildscript {
                 // the other Jackson 2.22 modules use patch versions such as 2.22.4.
                 useVersion(if (requested.name == "jackson-annotations") "2.22" else "2.22.4")
             }
+            if (requested.group == "com.google.protobuf" &&
+                requested.name in setOf("protobuf-java", "protobuf-kotlin", "protobuf-javalite", "protobuf-kotlin-lite", "protobuf-java-util")) {
+                useVersion("3.25.5")
+            }
+            if (requested.group == "com.google.protobuf" &&
+                requested.name in setOf("protobuf-java", "protobuf-kotlin", "protobuf-javalite", "protobuf-kotlin-lite", "protobuf-java-util")) {
+                useVersion("3.25.5")
+            }
         }
     }
 }
