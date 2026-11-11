@@ -617,50 +617,48 @@ class PluginDashboardPage(
         return authorizationService to McpOAuthAccessTokenProvider(activity, authorizationService)
     }
 
-    private fun executeApprovedToolCall(
+    private fun callToolWithTransport(
+        service: McpConnectorService,
+        connectorId: String,
         toolId: String,
-        toolName: String,
-        args: Map<String, Any?>
+        arguments: Map<String, Any?>,
+        approvalGrant: String?,
+        inputResponses: Map<String, Any?>? = null,
+        requestState: String? = null,
+        onComplete: (Result<String>) -> Unit
     ) {
-        val service = PluginDashboardSession.service
-        val connectorId = PluginDashboardSession.connectorId
-        if (service == null || connectorId == null) {
-            onStatus("Connector session সক্রিয় নেই।")
+        val oauth = runCatching { oauthResolverFor(connectorId) }.getOrElse { onComplete(Result.failure(it)); return }
+        if (oauth == null) {
+            onComplete(service.callTool(toolId, arguments, approvalGrant, inputResponses, requestState))
             return
         }
+        val (authorizationService, resolver) = oauth
+        service.callToolAsync(
+            toolId = toolId,
+            arguments = arguments,
+            approvalGrant = approvalGrant,
+            inputResponses = inputResponses,
+            requestState = requestState,
+            tokenProvider = resolver,
+            ioExecutor = worker
+        ) { result ->
+            authorizationService.dispose()
+            onComplete(result)
+        }
+    }
+
+    private fun executeApprovedToolCall(toolId: String, toolName: String, args: Map<String, Any?>) {
+        val service = PluginDashboardSession.service
+        val connectorId = PluginDashboardSession.connectorId
+        if (service == null || connectorId == null) { onStatus("Connector session সক্রিয় নেই।"); return }
         worker.execute {
             val grant = service.issueApprovalGrant(toolId, args).getOrElse { error ->
                 activity.runOnUiThread { onStatus("অনুমোদন তৈরি হয়নি: ${safeUiErrorMessage(error)}") }
                 return@execute
             }
-            val oauth = runCatching { oauthResolverFor(connectorId) }.getOrElse {
-                activity.runOnUiThread { onStatus("Encrypted OAuth state যাচাই ব্যর্থ; Tool call বন্ধ রাখা হয়েছে।") }
-                return@execute
-            }
-            if (oauth == null) {
-                service.callTool(toolId, args, approvalGrant = grant)
-                    .onSuccess { output -> activity.runOnUiThread {
-                        handleToolOutput(toolId, toolName, args, output, 0)
-                    } }
-                    .onFailure { error -> activity.runOnUiThread {
-                        onStatus("Tool call ব্যর্থ: ${safeUiErrorMessage(error)}")
-                    } }
-                return@execute
-            }
-            val (authorizationService, tokenResolver) = oauth
-            service.callToolAsync(
-                toolId = toolId,
-                arguments = args,
-                approvalGrant = grant,
-                tokenProvider = tokenResolver,
-                ioExecutor = worker
-            ) { result ->
-                authorizationService.dispose()
-                result.onSuccess { output -> activity.runOnUiThread {
-                    handleToolOutput(toolId, toolName, args, output, 0)
-                } }.onFailure { error -> activity.runOnUiThread {
-                    onStatus("OAuth-সুরক্ষিত Tool call ব্যর্থ: ${safeUiErrorMessage(error)}")
-                } }
+            callToolWithTransport(service, connectorId, toolId, args, grant) { result ->
+                result.onSuccess { output -> activity.runOnUiThread { handleToolOutput(toolId, toolName, args, output, 0) } }
+                    .onFailure { error -> activity.runOnUiThread { onStatus("Tool call ব্যর্থ: ${safeUiErrorMessage(error)}") } }
             }
         }
     }
@@ -706,24 +704,12 @@ class PluginDashboardPage(
                         return@execute
                     }
 
-                    service.callTool(
-                        toolId = toolId,
-                        arguments = args,
-                        approvalGrant = grant
-                    ).onSuccess { output ->
-                        activity.runOnUiThread {
-                            handleToolOutput(
-                                toolId = toolId,
-                                toolName = toolName,
-                                arguments = args,
-                                output = output,
-                                round = 0
-                            )
-                        }
-                    }.onFailure { error ->
-                        activity.runOnUiThread {
+                    callToolWithTransport(service, PluginDashboardSession.connectorId ?: return@execute, toolId, args, grant) { result ->
+                        result.onSuccess { output -> activity.runOnUiThread {
+                            handleToolOutput(toolId, toolName, args, output, 0)
+                        } }.onFailure { error -> activity.runOnUiThread {
                             onStatus("Tool call ব্যর্থ: ${safeUiErrorMessage(error)}")
-                        }
+                        } }
                     }
                 }
             }
@@ -872,26 +858,12 @@ class PluginDashboardPage(
                         }
                         return@execute
                     }
-                    service.callTool(
-                        toolId = toolId,
-                        arguments = arguments,
-                        approvalGrant = grant,
-                        inputResponses = responses,
-                        requestState = requestState
-                    ).onSuccess { nextOutput ->
-                        activity.runOnUiThread {
-                            handleToolOutput(
-                                toolId = toolId,
-                                toolName = toolName,
-                                arguments = arguments,
-                                output = nextOutput,
-                                round = round + 1
-                            )
-                        }
-                    }.onFailure { error ->
-                        activity.runOnUiThread {
+                    callToolWithTransport(service, PluginDashboardSession.connectorId ?: return@execute, toolId, arguments, grant, responses, requestState) { result ->
+                        result.onSuccess { nextOutput -> activity.runOnUiThread {
+                            handleToolOutput(toolId, toolName, arguments, nextOutput, round + 1)
+                        } }.onFailure { error -> activity.runOnUiThread {
                             onStatus("MCP MRTR retry ব্যর্থ: ${safeUiErrorMessage(error)}")
-                        }
+                        } }
                     }
                 }
             }
@@ -1019,20 +991,12 @@ class PluginDashboardPage(
                         }
                         return@execute
                     }
-                    service.callTool(
-                        toolId = toolId,
-                        arguments = arguments,
-                        approvalGrant = grant,
-                        inputResponses = mapOf(requestKey to response),
-                        requestState = requestState
-                    ).onSuccess { nextOutput ->
-                        activity.runOnUiThread {
+                    callToolWithTransport(service, PluginDashboardSession.connectorId ?: return@execute, toolId, arguments, grant, mapOf(requestKey to response), requestState) { result ->
+                        result.onSuccess { nextOutput -> activity.runOnUiThread {
                             handleToolOutput(toolId, toolName, arguments, nextOutput, round + 1)
-                        }
-                    }.onFailure { error ->
-                        activity.runOnUiThread {
+                        } }.onFailure { error -> activity.runOnUiThread {
                             onStatus("MCP MRTR retry ব্যর্থ: ${safeUiErrorMessage(error)}")
-                        }
+                        } }
                     }
                 }
             }
