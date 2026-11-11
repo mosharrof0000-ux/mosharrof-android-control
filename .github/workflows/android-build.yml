@@ -78,7 +78,7 @@ jobs:
       - name: Collect resolved release runtime AAR/JAR artifacts
         run: |
           gradle -p android --dependency-verification=strict \
-            --init-script tools/collect_runtime_artifacts.init.gradle \
+            --init-script "$GITHUB_WORKSPACE/tools/collect_runtime_artifacts.init.gradle" \
             :app:collectReleaseRuntimeArtifacts
           test -d android/app/build/reports/license-review/runtime-artifacts
 
