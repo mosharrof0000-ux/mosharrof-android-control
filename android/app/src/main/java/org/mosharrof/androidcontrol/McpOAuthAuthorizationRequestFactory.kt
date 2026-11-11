@@ -33,6 +33,10 @@ internal object McpOAuthAuthorizationRequestFactory {
                 clientMetadataUrl, REDIRECT_URI, clientMetadata
             )
         ) return false
+        if (!McpOAuthMetadata.validateProtectedResourceMetadata(
+                resourceUrl, resourceMetadata
+            )
+        ) return false
         if (scopes.isEmpty() || scopes.size > 32 || scopes.size != scopes.toSet().size) {
             return false
         }
