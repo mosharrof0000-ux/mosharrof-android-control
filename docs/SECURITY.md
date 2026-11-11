@@ -57,3 +57,12 @@ Until these gates pass, describe remote relay and physical-device behavior as im
 - Exact source commit `d162a314ac0520d5511dd06ad751b9ce163e3c3b`: Android CI `42970919165` PASS (unit tests, debug APK assembly and upload); Worker CI `42970919190` PASS.
 - Artifact `13832594882`, SHA-256 `30f9dfe103e9003f6a6af8bc50d40da20d7e368b36d582064666e45150e6a76d`; CI artifact only, not installed.
 - These checks do not close live provider/MCP, physical Android, deployed Worker, OAuth/CIMD, full repository/history, dependency/license, or independent security-review gates.
+
+
+### Expanded Android source error-surface pass — 2026-11-11
+- Expanded the static pattern scan to all 35 tracked Android production Kotlin files.
+- Four additional exception-origin paths were found in the Android Keystore diagnostic, app self-test, permission settings fallback and module lifecycle failure registry.
+- Those paths now store/display the shared fixed redacted message; module lifecycle tests now assert redaction rather than the raw thrown message.
+- Source commits: `14c460e97b439ceb420bd2611c5f2f4a7611c7db`, `c76254451b91cf17c18146d33c96fb31a3990ddf`, `6222ebaa78efabb2a62a728709dc4e075af33242`, `99ce8ec7309bc417b4fa05f4948bceffc1eb5205`; test commit `b465c948d47129b6d3df1d77f6b548ad0353e7fc`.
+- Selected patterns found no remaining direct exception-message, logging, stack-trace, raw response-body or obvious authorization-concatenation matches in the newly inspected files after fixes.
+- This does not close a semantic full-repository/history audit or dependency/license, crash-report, runtime-log and deployed-service review. Android CI for the latest source/test commit is pending.
