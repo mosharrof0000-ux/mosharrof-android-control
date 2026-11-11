@@ -204,3 +204,13 @@ Dependency/license review is not complete: Worker dependencies still use semver 
 - Android CI run `43073796330` (#565) passed strict dependency verification, Android unit tests, CycloneDX SBOM, runtime binary notice audit, Debug APK assembly, APK notice validation, artifact upload and OSV scan.
 - Runtime dependency evidence artifact `13879962092` shows 34/34 runtime binaries inspected but 0/34 archive LICENSE/NOTICE texts extracted. The full Apache-2.0 license and generated dependency table are packaged; upstream copyright/attribution requirements remain under review. Gate 16 remains **Partial**.
 - Debug APK artifact `13881210413` is CI-only and has not been installed. PR #7 remains open/unmerged; no merge, deployment or physical-device test was performed.
+
+
+## 2026-11-12 latest verified PR-head checkpoint — `2b85dd324fa53e21835f6f34e6399646d00a9123`
+
+- PR #7 remains OPEN and UNMERGED on branch `fix/mcp-pagination-20261110`.
+- Android CI #569 / run `43077143591`: PASS. Strict dependency verification, Android unit tests, CycloneDX runtime SBOM, binary-notice scanner regression tests, runtime license audit, Debug APK assembly, packaged notice validation, dependency evidence upload and OSV scan all succeeded.
+- Worker CI #525 / run `43077143541`: PASS. Locked npm install, dependency audit, SBOM, typecheck/tests, dependency evidence upload and OSV scan succeeded.
+- The binary notice scanner now has a passing regression test for a nested JAR larger than the 2 MiB text limit. This repairs the scanner's nested-archive size-gating bug.
+- Actual dependency evidence artifact `13883105708` still reports 34/34 runtime binaries inspected and 0/34 archive notice texts extracted; all 34 remain `SBOM_DECLARED_LICENSE_ONLY`. Gate 16 therefore remains PARTIAL and requires upstream POM/source attribution review plus final APK obligation validation.
+- Debug APK artifact `13883320532` is CI-only; not installed or physically tested. No merge, deployment, live provider/MCP test or physical-device QA is claimed.
