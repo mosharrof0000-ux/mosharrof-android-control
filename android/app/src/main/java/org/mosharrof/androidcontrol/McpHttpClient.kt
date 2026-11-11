@@ -9,6 +9,7 @@ import java.net.URI
 import java.net.URL
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.Executor
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * HTTPS Streamable HTTP transport for MCP.
@@ -70,22 +71,36 @@ class McpHttpClient(
         toolDefinition: McpProtocol.ToolDefinition? = null,
         onComplete: (Result<JSONObject>) -> Unit
     ) {
-        ioExecutor.execute {
-            tokenProvider.resolve(connectorId, endpoint) { tokenResult ->
-                tokenResult.fold(
-                    onSuccess = { token ->
-                        ioExecutor.execute {
-                            val result = runCatching {
-                                postWithBearer(request, toolDefinition, token.value)
-                            }
-                            onComplete(result)
-                        }
-                    },
-                    onFailure = { failure ->
-                        onComplete(Result.failure(failure))
+        val completed = AtomicBoolean(false)
+        fun complete(result: Result<JSONObject>) {
+            if (completed.compareAndSet(false, true)) onComplete(result)
+        }
+
+        try {
+            ioExecutor.execute {
+                try {
+                    tokenProvider.resolve(connectorId, endpoint) { tokenResult ->
+                        tokenResult.fold(
+                            onSuccess = { token ->
+                                try {
+                                    ioExecutor.execute {
+                                        complete(runCatching {
+                                            postWithBearer(request, toolDefinition, token.value)
+                                        })
+                                    }
+                                } catch (failure: Throwable) {
+                                    complete(Result.failure(failure))
+                                }
+                            },
+                            onFailure = { failure -> complete(Result.failure(failure)) }
+                        )
                     }
-                )
+                } catch (failure: Throwable) {
+                    complete(Result.failure(failure))
+                }
             }
+        } catch (failure: Throwable) {
+            complete(Result.failure(failure))
         }
     }
 
