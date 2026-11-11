@@ -24,3 +24,10 @@
 - The app lockfile and verification metadata must be reviewed and committed, then a clean exact-head CI run must demonstrate that Gradle uses the committed lock and checksum state without bootstrap-only regeneration.
 - Gate 16 remains **Partial**. Do not raise the overall Gate count based on this scan alone.
 - PR #7 remains open/unmerged. No merge, deployment, APK installation, live OAuth/provider operation or physical Android QA was performed. The CI debug APK is evidence only and has not been installed.
+
+
+## Lockfile persistence bootstrap — 2026-11-11
+
+- Android workflow commit `3022cac97ac64949f6a53d394e7b4de41bc2a1b6` adds a one-time, same-repository PR bootstrap step to commit the exact Gradle-generated app lockfile, root buildscript lockfile and verification metadata after successful dependency resolution.
+- This is a temporary bootstrap stage only. The subsequent exact-head workflow must remove `--write-locks` and `--write-verification-metadata`, run Gradle with dependency verification enabled, and prove that the committed files are enforced rather than regenerated.
+- No lockfile persistence or enforcement is claimed until the bootstrap commit and the follow-up strict CI run are both observed successful.
