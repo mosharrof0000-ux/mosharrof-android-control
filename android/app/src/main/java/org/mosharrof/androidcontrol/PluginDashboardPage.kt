@@ -188,6 +188,7 @@ class PluginDashboardPage(
             .setNegativeButton("বাতিল", null)
             .setPositiveButton("Remote Token Revocation করুন") { _, _ ->
                 worker.execute {
+                    var remoteRevocationConfirmed = false
                     runCatching {
                         val authState = McpOAuthAuthStateStore
                             .read(activity, connectorId).getOrThrow()
@@ -208,6 +209,7 @@ class PluginDashboardPage(
                             token = token,
                             tokenTypeHint = hint
                         ).getOrThrow()
+                        remoteRevocationConfirmed = true
 
                         McpOAuthAuthStateStore.delete(activity, connectorId).getOrThrow()
                         McpOAuthPendingRequestStore.delete(activity, connectorId).getOrThrow()
@@ -218,7 +220,12 @@ class PluginDashboardPage(
                         }
                     }.onFailure { error ->
                         activity.runOnUiThread {
-                            onStatus("OAuth revocation ব্যর্থ; স্থানীয় OAuth credentials অক্ষত রাখা হয়েছে: " + safeUiErrorMessage(error))
+                            val message = if (remoteRevocationConfirmed) {
+                                "Remote token revocation সফল, তবে স্থানীয় OAuth cleanup সম্পূর্ণ হয়নি: "
+                            } else {
+                                "OAuth revocation ব্যর্থ; স্থানীয় OAuth credentials পরিবর্তন করা হয়নি: "
+                            }
+                            onStatus(message + safeUiErrorMessage(error))
                         }
                     }
                 }
