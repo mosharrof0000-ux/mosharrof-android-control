@@ -93,6 +93,30 @@ internal class AiProviderProfileRepository(
         return summary
     }
 
+    /**
+     * Replaces only the encrypted credential for an existing profile.
+     * Metadata and active-profile selection remain unchanged. The old value
+     * remains intact if validation/encryption/storage commit fails.
+     */
+    @Synchronized
+    fun replaceCredential(id: String, apiKey: String): AiProviderProfileSummary {
+        validateId(id)
+        val metadata = storage.get(META_PREFIX + id)
+            ?: throw IllegalArgumentException("AI provider profile does not exist.")
+        val summary = parseSummary(metadata)
+        require(apiKey.isNotBlank() && apiKey.length <= MAX_KEY_CHARS) {
+            "AI credential is empty or exceeds the configured limit."
+        }
+        require(apiKey.none { it.isISOControl() }) {
+            "AI credential contains control characters."
+        }
+        val encrypted = cipher.encrypt(id, apiKey)
+        check(storage.put(SECRET_PREFIX + id, encrypted)) {
+            "Replacement AI credential could not be stored."
+        }
+        return summary
+    }
+
     @Synchronized
     fun get(id: String): ResolvedAiProviderProfile? {
         validateId(id)
@@ -229,6 +253,9 @@ object AiProviderProfileStore {
 
     fun get(context: Context, id: String): ResolvedAiProviderProfile? =
         repository(context).get(id)
+
+    fun replaceCredential(context: Context, id: String, apiKey: String): AiProviderProfileSummary =
+        repository(context).replaceCredential(id, apiKey)
 
     fun list(context: Context): List<AiProviderProfileSummary> =
         repository(context).list()
