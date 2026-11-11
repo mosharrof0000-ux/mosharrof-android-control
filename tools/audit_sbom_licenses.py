@@ -134,7 +134,7 @@ def main() -> int:
         "This application includes the following release-runtime dependencies.",
         "All listed components declare Apache-2.0 in the generated releaseRuntimeClasspath SBOM.",
         "A full copy of Apache License, Version 2.0, is packaged at "
-        "\`assets/licenses/Apache-2.0.txt\` in this APK.",
+        "`assets/licenses/Apache-2.0.txt` in this APK.",
         "",
         "## Components",
         "",
@@ -150,7 +150,7 @@ def main() -> int:
         "must be checked against the final release artifact and retained as required.",
     ]
     args.app_notices.parent.mkdir(parents=True, exist_ok=True)
-    args.app_notices.write_text("\\n".join(notices) + "\\n", encoding="utf-8")
+    args.app_notices.write_text("\n".join(notices) + "\n", encoding="utf-8")
 
     print(f"License inventory generated: {len(original_components)} components; {len(corrected)} explicit metadata correction(s); no unresolved entries.")
     return 0
