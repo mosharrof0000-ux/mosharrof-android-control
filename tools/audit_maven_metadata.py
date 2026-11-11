@@ -43,7 +43,9 @@ def parse_pom(data: bytes) -> dict[str, Any]:
         if any(developer.values()): developers.append(developer)
     organization = root.find("./organization")
     org = {k: child_text(organization, k) for k in ("name", "url")} if organization is not None else {}
-    return {"licenses": licenses, "scm": scm_data, "developers": developers, "organization": org}
+    parent = root.find("./parent")
+    parent_data = {k: child_text(parent, k) for k in ("groupId", "artifactId", "version")} if parent is not None else {}
+    return {"licenses": licenses, "scm": scm_data, "developers": developers, "organization": org, "parent": parent_data}
 
 def pom_urls(group: str, name: str, version: str) -> list[str]:
     if not all(SAFE.fullmatch(x) for x in (group, name, version)):
@@ -65,6 +67,41 @@ def fetch_pom(urls: list[str]) -> tuple[bytes, str]:
         except (OSError, urllib.error.URLError, ValueError) as exc:
             errors.append(url + ": " + str(exc))
     raise RuntimeError("; ".join(errors))
+
+def resolve_license_metadata(data: bytes, source_url: str, depth: int = 0,
+                             seen: set[tuple[str, str, str]] | None = None) -> dict[str, Any]:
+    """Resolve license declarations from the artifact POM or its bounded parent chain."""
+    if seen is None:
+        seen = set()
+    metadata = parse_pom(data)
+    if metadata["licenses"]:
+        return {"metadata": metadata, "license_source": "pom",
+                "license_pom_url": source_url,
+                "license_pom_sha256": hashlib.sha256(data).hexdigest(),
+                "parent_pom_url": None, "parent_pom_sha256": None}
+    parent = metadata.get("parent") or {}
+    if depth >= 4 or not all(parent.get(k) for k in ("groupId", "artifactId", "version")):
+        return {"metadata": metadata, "license_source": "missing",
+                "license_pom_url": None, "license_pom_sha256": None,
+                "parent_pom_url": None, "parent_pom_sha256": None}
+    coordinate = (parent["groupId"], parent["artifactId"], parent["version"])
+    if coordinate in seen:
+        raise ValueError("Maven parent POM cycle detected")
+    seen.add(coordinate)
+    parent_data, parent_url = fetch_pom(pom_urls(*coordinate))
+    resolved = resolve_license_metadata(parent_data, parent_url, depth + 1, seen)
+    if resolved["license_source"] == "missing":
+        return {"metadata": metadata, "license_source": "missing",
+                "license_pom_url": None, "license_pom_sha256": None,
+                "parent_pom_url": parent_url,
+                "parent_pom_sha256": hashlib.sha256(parent_data).hexdigest()}
+    return {"metadata": metadata, "license_source": "parent_pom",
+            "license_pom_url": resolved["license_pom_url"],
+            "license_pom_sha256": resolved["license_pom_sha256"],
+            "parent_pom_url": parent_url,
+            "parent_pom_sha256": hashlib.sha256(parent_data).hexdigest(),
+            "inherited_licenses": resolved["metadata"]["licenses"]}
+
 
 def sbom_licenses(component: dict[str, Any]) -> list[str]:
     values = set()
@@ -88,15 +125,23 @@ def audit(sbom_path: Path) -> dict[str, Any]:
             continue
         try:
             data, source_url = fetch_pom(pom_urls(group, name, version))
-            metadata = parse_pom(data)
-            pom_licenses = sorted({x["normalized"] for x in metadata["licenses"] if x["normalized"]})
+            resolved = resolve_license_metadata(data, source_url)
+            metadata = resolved["metadata"]
+            license_entries = metadata["licenses"] or resolved.get("inherited_licenses", [])
+            pom_licenses = sorted({x["normalized"] for x in license_entries if x["normalized"]})
             declared = sbom_licenses(component)
             mismatch = bool(declared and pom_licenses and not set(declared).intersection(pom_licenses))
-            if not metadata["licenses"]: failures.append(coordinate + ": POM has no license declaration")
-            if mismatch: failures.append(coordinate + ": POM license declaration does not match SBOM")
+            if resolved["license_source"] == "missing":
+                failures.append(coordinate + ": POM and bounded parent chain have no license declaration")
+            if mismatch: failures.append(coordinate + ": POM/parent license declaration does not match SBOM")
             results.append({"coordinate": coordinate, "pom_url": source_url,
                             "pom_sha256": hashlib.sha256(data).hexdigest(),
-                            "sbom_licenses": declared, "pom_licenses": metadata["licenses"],
+                            "license_source": resolved["license_source"],
+                            "license_pom_url": resolved["license_pom_url"],
+                            "license_pom_sha256": resolved["license_pom_sha256"],
+                            "parent_pom_url": resolved["parent_pom_url"],
+                            "parent_pom_sha256": resolved["parent_pom_sha256"],
+                            "sbom_licenses": declared, "pom_licenses": license_entries,
                             "pom_license_ids": pom_licenses, "scm": metadata["scm"],
                             "developers": metadata["developers"], "organization": metadata["organization"],
                             "license_match": bool(declared and pom_licenses and not mismatch)})
@@ -124,7 +169,7 @@ def main() -> int:
              f"- SBOM components: **{report['component_count']}**",
              f"- POMs retrieved: **{report['pom_component_count']}**",
              f"- POM/SBOM license matches: **{report['license_match_count']}**", "",
-             "| Component | SBOM license | POM license | Match | POM SHA-256 |",
+             "| Component | SBOM license | POM license | Source | Match | POM SHA-256 |",
              "|---|---|---|---|---|"]
     attribution = ["UPSTREAM MAVEN POM LICENSE AND SOURCE ATTRIBUTIONS",
                    "Metadata is copied from the exact Maven POM for each resolved coordinate.",
@@ -132,10 +177,17 @@ def main() -> int:
     for item in report["components"]:
         pom_names = ", ".join(x["name"] or x["url"] for x in item["pom_licenses"]) or "UNDECLARED"
         sbom_names = ", ".join(item["sbom_licenses"]) or "UNDECLARED"
-        lines.append(f"| {item['coordinate']} | {sbom_names} | {pom_names} | {'YES' if item['license_match'] else 'NO'} | {item['pom_sha256']} |")
+        lines.append(f"| {item['coordinate']} | {sbom_names} | {pom_names} | {item['license_source']} | {'YES' if item['license_match'] else 'NO'} | {item['pom_sha256']} |")
         attribution += ["## " + item["coordinate"], "POM: " + item["pom_url"],
                         "POM SHA-256: " + item["pom_sha256"],
+                        "License metadata source: " + item["license_source"],
                         "SBOM license(s): " + sbom_names, "POM license(s): " + pom_names]
+        if item.get("parent_pom_url"):
+            attribution += ["Parent POM: " + item["parent_pom_url"],
+                            "Parent POM SHA-256: " + str(item["parent_pom_sha256"])]
+        if item.get("license_pom_url") and item["license_pom_url"] != item["pom_url"]:
+            attribution += ["License declaration POM: " + item["license_pom_url"],
+                            "License declaration POM SHA-256: " + str(item["license_pom_sha256"])]
         for lic in item["pom_licenses"]:
             if lic["url"]: attribution.append("License URL: " + lic["url"])
         for key, value in item["scm"].items():
