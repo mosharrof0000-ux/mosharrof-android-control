@@ -123,3 +123,11 @@ The historical implementation logs above are retained as a record of what was tr
 - OAuth/CIMD is still helper/validation-only, not a working authorization flow.
 - The exact-head Android CI run 42966451646 and Worker CI run 42966451641 passed on 8713269590dc3a1b9621d1abf66bbe7a15ea8bd0. A later documentation-only commit must be independently checked if CI is expected to validate the updated documentation.
 - No live provider API, real MCP server, physical Android device, deployed Worker, APK installation, or PR merge is claimed.
+
+### 2026-11-11 provider profile UX follow-up
+
+- Added credential-only replacement for an existing provider profile. It keeps provider/model/endpoint metadata and active selection unchanged; invalid replacement input is rejected before storage is touched.
+- Added MainActivity profile action to replace the hidden credential without displaying the previous key. Existing profile deletion remains the credential revoke/remove action.
+- Added per-profile model/API-version/adapter-version capability summary. Each capability is shown as SUPPORTED, UNSUPPORTED or UNKNOWN; UNKNOWN is not promoted to a positive claim. This is adapter metadata, not a live vendor test.
+- Added repository regression tests for credential replacement, active-profile/metadata preservation and invalid replacement rejection.
+- Source commit `fad2354c48d96f0f2a2c2e82eb6842a19e328814`: Android CI run `42968929411` is IN PROGRESS (unit tests started; APK assembly/upload pending); Worker CI run `42968929491` PASS. Do not mark Android verification complete until the run finishes.
