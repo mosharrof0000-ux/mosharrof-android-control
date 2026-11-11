@@ -149,6 +149,8 @@ def main() -> int:
     args.markdown_report.write_text("\n".join(lines) + "\n", encoding="utf-8")
     args.attributions.write_text("\n".join(attribution).rstrip() + "\n", encoding="utf-8")
     print(f"Maven POM audit: {report['pom_component_count']}/{report['component_count']} POMs; {report['license_match_count']} license matches.")
+    for failure in report["failures"]:
+        print("AUDIT_FAILURE: " + failure, file=sys.stderr)
     return 1 if report["failures"] or report["pom_component_count"] != report["component_count"] else 0
 
 if __name__ == "__main__":
