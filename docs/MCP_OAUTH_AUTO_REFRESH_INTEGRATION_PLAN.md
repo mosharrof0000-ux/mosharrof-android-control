@@ -122,3 +122,14 @@ Remaining high-priority migration work:
 - Convert every tools/list pagination page to its own fresh-token request while preserving bounded cursor validation and atomic tool registration.
 - Wire MainActivity's connection entry point to the async service API; ensure no OAuth connector can fall back to a stale static token.
 - Add deterministic fake-resolver/fake-transport tests for negotiation fallback, pagination continuation, duplicate cursors, resolver failure, and cancellation.
+
+
+## Async connection lifecycle migration — 2026-11-11
+
+- Added `McpConnectorService.connectAsync(...)` to route modern discovery, legacy initialize fallback, `notifications/initialized`, and every `tools/list` page through `McpHttpClient.postAsync`. Each outbound request therefore asks the supplied resolver for a fresh-or-valid Bearer token; no OAuth token is retained by the HTTP client.
+- Tool definitions are staged in memory and registered only after the full pagination chain validates. A resolver, protocol, schema, cursor, or registration failure removes connector tools, revokes grants, and leaves the connector disconnected. Pagination remains bounded by the 100-page / 5,000-tool limits; duplicate or blank cursors fail closed.
+- `PluginDashboardPage.connect()` now selects the OAuth async connection path when encrypted OAuth state exists and no explicit manual token was entered. The prior stale static-token reconnect guard is replaced by a live async path. Explicit manual-token connection remains separate.
+- `MainActivity` now uses the async connection path after the user completes the explicit AppAuth authorization flow. It no longer performs an initial one-off refresh and pins that access token into a long-lived client; the resolver is used for every handshake and discovery request.
+- Added regression coverage for per-request resolver count across modern discovery + two-page pagination, legacy discovery + initialize + initialized notification + tools/list, and rollback when a later page contains an invalid tool.
+- Source changes are currently on branch `fix/mcp-pagination-20261110`; exact latest head at this note: `57026a9d2928d6b999190c60a182ea49a64302fa`. Worker Typecheck passed at run `43000892511`; Android unit/build job `43000892481` was still in progress when this note was written. Do not mark this migration verified until Android completes successfully.
+- No live OAuth browser login, token refresh, real MCP server connection, remote revocation, device QA, APK install, merge, or deployment was performed.
