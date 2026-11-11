@@ -127,6 +127,40 @@ class McpTaskProtocolTest {
     }
 
     @Test
+    fun taskInputResponsesRequireExactKeysAndObjectPayloads() {
+        val requests = mapOf<String, Any?>(
+            "confirm" to mapOf(
+                "method" to "elicitation/create",
+                "params" to mapOf("mode" to "form")
+            )
+        )
+        assertTrue(
+            McpTaskProtocol.validateInputResponses(
+                requests,
+                mapOf("confirm" to mapOf("action" to "accept", "content" to mapOf("ok" to true)))
+            )
+        )
+        assertFalse(
+            McpTaskProtocol.validateInputResponses(
+                requests,
+                mapOf("unexpected" to mapOf("action" to "accept"))
+            )
+        )
+        assertFalse(
+            McpTaskProtocol.validateInputResponses(
+                requests,
+                mapOf("confirm" to "accept")
+            )
+        )
+        assertFalse(
+            McpTaskProtocol.validateInputResponses(
+                requests,
+                mapOf("confirm" to emptyMap<String, Any?>())
+            )
+        )
+    }
+
+    @Test
     fun taskRequestBuildersBindTaskIdsAndValidateUpdateAnswers() {
         val get = McpProtocol.modernTasksGetRequest(
             "rpc-1", "task-1", "MOSHARROF", "1"
