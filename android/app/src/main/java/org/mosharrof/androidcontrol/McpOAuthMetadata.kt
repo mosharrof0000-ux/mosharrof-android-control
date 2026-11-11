@@ -61,7 +61,7 @@ internal object McpOAuthMetadata {
         expectedIssuer: String,
         metadata: Map<String, Any?>
     ): Boolean {
-        if (!isHttpsUrl(expectedIssuer)) return false
+        if (!isHttpsIssuer(expectedIssuer)) return false
         if (metadata["issuer"] != expectedIssuer) return false
         if (!isHttpsUrl(metadata["authorization_endpoint"] as? String)) return false
         if (!isHttpsUrl(metadata["token_endpoint"] as? String)) return false
@@ -79,6 +79,16 @@ internal object McpOAuthMetadata {
 
     fun validateAuthorizationIssuer(responseIssuer: String?, expectedIssuer: String): Boolean =
         !responseIssuer.isNullOrBlank() && responseIssuer == expectedIssuer
+
+    /** RFC 8414 issuer identifiers must not contain query or fragment components. */
+    private fun isHttpsIssuer(value: String?): Boolean {
+        val issuer = value ?: return false
+        if (!isHttpsUrl(issuer)) return false
+        return runCatching {
+            val uri = URI(issuer)
+            uri.rawQuery == null && uri.rawFragment == null
+        }.getOrDefault(false)
+    }
 
     private fun isHttpsUrl(value: String?): Boolean = runCatching {
         if (value.isNullOrBlank() || value.length > 4_096) return false
