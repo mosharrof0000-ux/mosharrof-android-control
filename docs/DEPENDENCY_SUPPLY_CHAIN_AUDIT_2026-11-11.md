@@ -115,3 +115,33 @@ The previous artifact inventory was rechecked from the latest exact-head CI runs
 The generated files are still CI artifacts and are **not committed** at `cloudflare/worker/package-lock.json`, `android/app/gradle.lockfile` or `android/gradle/verification-metadata.xml`. The current workflows still regenerate them during CI, so the successful runs verify the bootstrap process rather than persistent lockfile enforcement. Do not change Worker CI to committed-lock-only `npm ci`, or remove Gradle bootstrap flags, until the reviewed files are committed and exact-head CI proves enforcement.
 
 No dependency files were committed by this audit update. No PR merge, deployment, live OAuth operation, APK installation or physical Android QA was performed.
+
+
+## Latest exact-head verification — 2026-11-11 (commit 2d2a7fd230aafc5bba996d624d59e971485512b9)
+
+Both workflows completed successfully on the same exact commit:
+
+- Android run `43011378426`: **SUCCESS**. Dependency lock/verification bootstrap, Android unit tests, Android CycloneDX SBOM generation, Debug APK assembly, and all artifact uploads completed successfully.
+- Worker run `43011378298`: **SUCCESS**. Worker lock generation, npm install/audit, CycloneDX SBOM, typecheck/tests and evidence upload completed successfully.
+
+### Android artifacts re-extracted
+
+- Debug APK artifact ID `13851540008`, archive size 2,468,593 bytes; contained `app-debug.apk` (2,739,536 bytes). APK SHA-256: `663735001c3fd59333051334e8ba3198bcfa5d32fe7e29cd96076457f9c7f15c`.
+- Android dependency evidence artifact ID `13850203073`:
+  - `app/gradle.lockfile`: 133 non-comment lock entries; SHA-256 `977ff67791dc5b95cc7a4e66c2ad8085f023104e50f37f40ec59c2676a395bb9`.
+  - `gradle/verification-metadata.xml`: 367 components, 667 artifacts and 667 SHA-256 entries; SHA-256 `aab16216982b7aa1c386570ad906bed5622479c5b71ed076b047d0b3fdeddc23`. `verify-signatures` remains empty/disabled; the generated checksum metadata is not independently authenticated.
+  - Android CycloneDX SBOM `app/build/reports/cyclonedx-direct/bom.json`: CycloneDX 1.6, 132 components; SHA-256 `b6e2226540cdf527cf80b83f0d9946f9d34fd5aa6d2436bcaa2cdf89ac7ec542`.
+  - SBOM license declarations include three LGPL-2.1-only entries, in addition to Apache-2.0 and other licenses. Identify the exact components and review distribution/notice obligations before release; this is not a legal conclusion.
+
+### Worker artifacts re-extracted
+
+- Worker evidence artifact ID `13851240801` contains package-lock and SBOM.
+- `package-lock.json`: 94 package objects including root; SHA-256 `f1762eaec0854be47bdc25a1208afc93ee96e091ac90cd4e1e8669b337f64dc9`.
+- CycloneDX 1.5 SBOM: 42 components; SHA-256 `9b4c2ee443afbaff14229df35154931c00eefc0f60b9d13bccbae8a2bae44813`.
+- License declarations again include LGPL-3.0-or-later and the compound Apache/LGPL/MIT expression previously noted. The Worker audit passed at the configured high-severity threshold; this is not a zero-risk guarantee.
+
+### Remaining limitations
+
+The Android and Worker lock/verification outputs remain CI artifacts rather than committed, enforced repository files. Android Gradle verification signatures are not enabled, and the generated hashes need independent provenance review. The SBOMs now provide both Android and Worker inventories, but LGPL-2.1 Android components and Worker LGPL/compound-license entries require a component-level distribution/notice review. No full vulnerability or license clearance is claimed.
+
+No deployment, PR merge, APK installation, live OAuth operation or physical Android QA was performed. The APK artifact is build evidence only, not approval to install it.
