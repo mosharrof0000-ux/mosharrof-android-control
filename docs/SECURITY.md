@@ -105,3 +105,5 @@ Dependency inventory is preliminary: Android direct dependencies are DocumentFil
 ### Protected-resource OAuth issuer validation note — 2026-11-11
 - Authorization-server identifiers in protected-resource metadata are validated as HTTPS issuer URLs, rejecting query and fragment components as required for issuer identifiers.
 - Regression tests cover valid entries and query/fragment rejection. This does not implement metadata fetching or the OAuth authorization/token lifecycle; those remain release blockers.
+
+- MCP Task `tasks/update` input is gated by exact request-key matching and non-empty object response envelopes with bounded key names before transmission. This is structural validation only; the remote server remains authoritative for request-specific semantics.
