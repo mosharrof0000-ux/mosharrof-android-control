@@ -42,3 +42,14 @@
 - Workflow change commit: `0457f065e7bb7c6cfc3ca2d8437f003144bf05ab`; build configuration documentation commit: `5dbab2cdd41aafbd25052101b033f55b0dbd8607`.
 - Exact-head strict CI is required before claiming lock enforcement. The new workflow deliberately has no mechanism to generate or commit replacement dependency state.
 - Gate 16 remains Partial pending strict exact-head CI, independent checksum/signature provenance assessment, license/notice review, and final APK provenance. PR #7 remains open/unmerged; no APK install, deployment, live OAuth/provider operation, or physical Android QA.
+
+
+## Exact-head strict verification and SBOM/license triage — 2026-11-11
+
+- Strict Android CI run `43045627327` completed successfully at PR head `143ced51aba4c3670ddf0d985f564e7ee5e52863`: assemble **SUCCESS** and `dependency-scan / osv-scan` **SUCCESS**.
+- The assemble job ran Gradle with `--dependency-verification=strict`, tested committed app/root lockfiles and verification metadata, built the CycloneDX SBOM and debug APK, and passed `git diff --exit-code` for all three dependency-state files. No bootstrap/write flags were used.
+- OSV job log confirms the scanner parsed app lockfile (167 packages), root buildscript lockfile (192 packages), and verification metadata (409 packages); scanner reported `No issues found`. Downloaded SARIF artifact `13867351200` contains one run and **0 result records**; archive SHA-256 `948a3ece5feaa29141445ec94d9c3df4847f2fe08a7c0a0f19b8ae81b9546431`.
+- CI evidence artifact `13866524798` contains the three committed dependency files, CycloneDX SBOM and dependency path reports. The SBOM has 167 components; license expressions are present for 166 components. One component, `javax.annotation:javax.annotation-api:1.3.2`, has no license field in the SBOM and requires authoritative license identification. Identified license entries include Apache-2.0 (152), Android SDK license agreement (5), BSD-3-Clause (4), LGPL-2.1-only (2), Public Domain (2), MIT (2), EPL-1.0 (1), and BSD style (1). This is triage, not legal approval; LGPL and other non-Apache obligations require review before distribution.
+- Verification metadata covers 745 artifact entries with SHA-256 checksums and zero PGP signature entries; `verify-signatures=false`. Strict checksum verification is proven, but independent publisher-signature/provenance verification is not.
+- Debug APK artifact `13867945154` is CI evidence only and has not been installed. PR #7 remains open/unmerged; no deployment, live OAuth/provider operation or physical Android QA was performed.
+- Gate 16 remains **Partial** pending authoritative license/notice review (including missing javax.annotation license and LGPL obligations), checksum provenance/signature policy, and final release APK provenance. Do not promote overall Gate completion based on clean OSV output alone.
