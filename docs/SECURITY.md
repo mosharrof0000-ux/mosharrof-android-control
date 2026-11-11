@@ -107,3 +107,5 @@ Dependency inventory is preliminary: Android direct dependencies are DocumentFil
 - Regression tests cover valid entries and query/fragment rejection. This does not implement metadata fetching or the OAuth authorization/token lifecycle; those remain release blockers.
 
 - MCP Task `tasks/update` input is gated by exact request-key matching and non-empty object response envelopes with bounded key names before transmission. This is structural validation only; the remote server remains authoritative for request-specific semantics.
+
+- MCP Task `tasks/update` now validates response envelopes again inside the connector service, not only in the UI: 1–16 bounded request keys, each with a non-empty object payload and bounded property count. UI also checks exact server-request key correspondence. Server-side semantic validation remains authoritative.
