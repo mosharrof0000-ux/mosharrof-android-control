@@ -69,10 +69,42 @@ jobs:
           python3 tools/audit_sbom_licenses.py \
             --sbom android/app/build/reports/cyclonedx-direct/bom.json \
             --reviewed-sbom android/build/reports/license-review/bom-reviewed.json \
-            --report android/build/reports/license-review/THIRD_PARTY_LICENSE_REVIEW.md
+            --report android/build/reports/license-review/THIRD_PARTY_LICENSE_REVIEW.md \
+            --app-notices android/app/src/main/assets/THIRD_PARTY_NOTICES.md
+
+      - name: Package Apache License 2.0 text for runtime dependencies
+        run: |
+          mkdir -p android/app/src/main/assets/licenses
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            https://www.apache.org/licenses/LICENSE-2.0.txt \
+            --output android/app/src/main/assets/licenses/Apache-2.0.txt
+          grep -q "Apache License" android/app/src/main/assets/licenses/Apache-2.0.txt
+          grep -q "Version 2.0" android/app/src/main/assets/licenses/Apache-2.0.txt
+
 
       - name: Assemble debug APK
         run: gradle -p android --dependency-verification=strict :app:assembleDebug
+
+      - name: Verify APK contains third-party license notices
+        run: |
+          python3 - <<'PY'
+          import zipfile
+          apk = "android/app/build/outputs/apk/debug/app-debug.apk"
+          with zipfile.ZipFile(apk) as archive:
+              names = set(archive.namelist())
+              required = {
+                  "assets/THIRD_PARTY_NOTICES.md",
+                  "assets/licenses/Apache-2.0.txt",
+              }
+              missing = sorted(required - names)
+              if missing:
+                  raise SystemExit(f"APK is missing required notice assets: {missing}")
+              license_text = archive.read("assets/licenses/Apache-2.0.txt").decode("utf-8")
+              notices = archive.read("assets/THIRD_PARTY_NOTICES.md").decode("utf-8")
+              if "Version 2.0" not in license_text or "appauth" not in notices:
+                  raise SystemExit("APK license/notice content validation failed")
+          print("APK contains Apache-2.0 license text and runtime dependency notices.")
+          PY
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
