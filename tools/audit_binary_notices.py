@@ -93,10 +93,13 @@ def audit(sbom_path: Path, artifact_dir: Path, notice_output: Path):
         else: lines.append("No matching LICENSE/NOTICE/COPYING/COPYRIGHT text file found in this binary archive.")
         lines.append("")
     notice_output.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    manual_review = [x["coordinate"] for x in results if not x["notice_found"]]
     return {"schema_version": 1, "component_count": len(results),
             "binary_component_count": sum(bool(x["binary_files"]) for x in results),
             "binary_file_count": sum(x["binary_count"] for x in results),
             "archive_notice_component_count": sum(x["notice_found"] for x in results),
+            "manual_review_component_count": len(manual_review),
+            "manual_review_components": manual_review,
             "evidence_counts": dict(Counter(x["evidence_level"] for x in results)),
             "components": results, "failures": failures}
 
@@ -124,6 +127,12 @@ def main():
     for item in report["components"]:
         lines.append("| " + item["coordinate"] + " | " + (", ".join(item["binary_files"]) or "MISSING") +
                      " | " + (", ".join(item["declared_licenses"]) or "UNIDENTIFIED") + " | " + item["evidence_level"] + " |")
+    lines += ["", "## Manual notice review required", ""]
+    if report["manual_review_components"]:
+        lines += ["The following components contain no matching archive LICENSE/NOTICE/COPYING/COPYRIGHT text. Their upstream attribution obligations require manual review; an SBOM license declaration is not a substitute for this review.", ""]
+        lines += ["- `" + item + "`" for item in report["manual_review_components"]]
+    else:
+        lines.append("Every inspected component contained at least one matching archive notice/license text file.")
     if report["failures"]: lines += ["", "## Failures", ""] + ["- " + x for x in report["failures"]]
     else: lines += ["", "No missing runtime binaries or unidentified license declarations detected."]
     args.markdown_report.parent.mkdir(parents=True, exist_ok=True)
