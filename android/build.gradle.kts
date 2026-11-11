@@ -25,6 +25,15 @@ buildscript {
                 // 1.86 is the upstream release that resolves the audited 1.79 findings.
                 useVersion("1.86")
             }
+            if (requested.group == "org.jdom" && requested.name == "jdom2") {
+                useVersion("2.0.6.1")
+            }
+            if (requested.group == "org.bitbucket.b_c" && requested.name == "jose4j") {
+                useVersion("0.9.6")
+            }
+            if (requested.group == "org.apache.commons" && requested.name == "commons-compress") {
+                useVersion("1.28.0")
+            }
         }
     }
 }
