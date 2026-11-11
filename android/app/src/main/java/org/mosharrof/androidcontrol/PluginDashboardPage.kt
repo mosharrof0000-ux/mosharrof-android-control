@@ -453,7 +453,16 @@ class PluginDashboardPage(
                     resourceMetadata = discovery.resourceMetadata,
                     scopes = scopes
                 )
-                McpOAuthPendingRequestStore.save(activity, connectorId, request).getOrThrow()
+                val issuerRequired = McpOAuthMetadata.authorizationResponseIssuerRequired(
+                    discovery.authorizationServerMetadata
+                ) ?: error("Authorization-server issuer capability metadata অবৈধ।")
+                McpOAuthPendingRequestStore.saveBound(
+                    activity,
+                    connectorId,
+                    request,
+                    discovery.authorizationServerIssuer,
+                    issuerRequired
+                ).getOrThrow()
             }.onSuccess {
                 activity.runOnUiThread {
                     oauthRequestPreparationInProgress = false
@@ -481,7 +490,7 @@ class PluginDashboardPage(
         }
         worker.execute {
             val pending = McpOAuthPendingRequestStore
-                .read(activity, connectorId)
+                .readBound(activity, connectorId)
                 .getOrElse {
                     activity.runOnUiThread {
                         onStatus("Encrypted OAuth request পড়া যায়নি; আগে PKCE request প্রস্তুত করুন।")
@@ -495,7 +504,7 @@ class PluginDashboardPage(
                 return@execute
             }
             activity.runOnUiThread {
-                onStartOAuthAuthorization(connectorId, endpoint, pending)
+                onStartOAuthAuthorization(connectorId, endpoint, pending.request)
             }
         }
     }
