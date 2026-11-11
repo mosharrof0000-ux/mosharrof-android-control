@@ -16,7 +16,9 @@ internal object McpOAuthAuthorizationCallbackHandler {
 
     fun validateAuthorizationResponse(
         callbackIntent: Intent?,
-        pendingRequest: AuthorizationRequest?
+        pendingRequest: AuthorizationRequest?,
+        expectedIssuer: String,
+        issuerRequired: Boolean
     ): Result<AuthorizationResponse> = runCatching {
         requireNotNull(callbackIntent) { "OAuth callback অনুপস্থিত।" }
         val originalRequest = requireNotNull(pendingRequest) {
@@ -32,6 +34,14 @@ internal object McpOAuthAuthorizationCallbackHandler {
 
         validateResponseAgainstPendingRequest(response, originalRequest)
 
+        require(McpOAuthMetadata.validateAuthorizationIssuer(
+            response.additionalParameters["iss"],
+            expectedIssuer,
+            issuerRequired
+        )) {
+            "OAuth authorization-response issuer যাচাই ব্যর্থ; token exchange বন্ধ।"
+        }
+
         McpOAuthAuthorizationCallbackValidator.validate(
             expectedState = originalRequest.state,
             returnedState = response.state,
@@ -45,10 +55,14 @@ internal object McpOAuthAuthorizationCallbackHandler {
 
     fun createValidatedTokenRequest(
         callbackIntent: Intent?,
-        pendingRequest: AuthorizationRequest?
+        pendingRequest: AuthorizationRequest?,
+        expectedIssuer: String,
+        issuerRequired: Boolean
     ): Result<TokenRequest> = validateAuthorizationResponse(
         callbackIntent,
-        pendingRequest
+        pendingRequest,
+        expectedIssuer,
+        issuerRequired
     ).map { response ->
         // AppAuth carries the original PKCE verifier into this token exchange request.
         response.createTokenExchangeRequest()
