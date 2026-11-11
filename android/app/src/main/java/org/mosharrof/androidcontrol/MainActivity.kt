@@ -1053,6 +1053,16 @@ class MainActivity : Activity() {
                     return@exchange
                 }
 
+                // Do not proceed to MCP connection while the one-time PKCE
+                // request is still present in encrypted storage.
+                if (exchangeResult.getOrNull()?.pendingRequestCleared != true) {
+                    authorizationService.dispose()
+                    runOnUiThread {
+                        status.text = "OAuth token সংরক্ষিত, কিন্তু pending PKCE request মুছতে ব্যর্থ; নিরাপত্তার জন্য MCP সংযোগ বন্ধ। Local logout করে নতুন Login প্রস্তুত করুন।"
+                    }
+                    return@exchange
+                }
+
                 worker.execute {
                     runCatching {
                         val client = McpHttpClient(endpoint = endpoint, allowSynchronousRequests = false)
