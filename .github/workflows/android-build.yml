@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   assemble:
@@ -23,10 +23,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
-          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: actions/setup-java@v5
         with:
@@ -42,41 +38,28 @@ jobs:
         with:
           gradle-version: "8.14.6"
 
-      - name: Generate dependency locks and verification metadata
-        run: gradle -p android :app:testDebugUnitTest :app:cyclonedxDirectBom :app:assembleDebug --write-locks --write-verification-metadata sha256
-
-      # Bootstrap stage only: persist the exact files produced by the successful
-      # Gradle resolution so the following workflow run can enforce committed state.
-      - name: Commit generated Gradle lock and verification files
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        env:
-          TARGET_BRANCH: ${{ github.event.pull_request.head.ref }}
+      # Strict mode consumes the committed lock state and SHA-256 verification
+      # metadata. It must not rewrite or bootstrap dependency state in CI.
+      - name: Verify committed dependency locks and checksums
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add android/app/gradle.lockfile android/buildscript-gradle.lockfile android/gradle/verification-metadata.xml
-          if ! git diff --cached --quiet; then
-            git commit -m "build: persist generated Gradle dependency locks"
-            git push origin "HEAD:${TARGET_BRANCH}"
-          else
-            echo "Generated Gradle lock and verification files already match the branch."
-          fi
+          test -s android/app/gradle.lockfile
+          test -s android/buildscript-gradle.lockfile
+          test -s android/gradle/verification-metadata.xml
+          gradle -p android --dependency-verification=strict :app:testDebugUnitTest :app:cyclonedxDirectBom :app:assembleDebug
+          git diff --exit-code -- android/app/gradle.lockfile android/buildscript-gradle.lockfile android/gradle/verification-metadata.xml
 
       - name: Capture dependency paths for OSV triage
         run: |
           mkdir -p android/build/reports/dependency-triage
-          gradle -p android :app:dependencies > android/build/reports/dependency-triage/app-dependencies.txt
-          gradle -p android buildEnvironment > android/build/reports/dependency-triage/root-build-environment.txt
-          gradle -p android :app:buildEnvironment > android/build/reports/dependency-triage/app-build-environment.txt
-
-      - name: Run Android unit tests
-        run: gradle -p android :app:testDebugUnitTest
+          gradle -p android --dependency-verification=strict :app:dependencies > android/build/reports/dependency-triage/app-dependencies.txt
+          gradle -p android --dependency-verification=strict buildEnvironment > android/build/reports/dependency-triage/root-build-environment.txt
+          gradle -p android --dependency-verification=strict :app:buildEnvironment > android/build/reports/dependency-triage/app-build-environment.txt
 
       - name: Generate Android CycloneDX SBOM
-        run: gradle -p android :app:cyclonedxDirectBom
+        run: gradle -p android --dependency-verification=strict :app:cyclonedxDirectBom
 
       - name: Assemble debug APK
-        run: gradle -p android :app:assembleDebug
+        run: gradle -p android --dependency-verification=strict :app:assembleDebug
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
