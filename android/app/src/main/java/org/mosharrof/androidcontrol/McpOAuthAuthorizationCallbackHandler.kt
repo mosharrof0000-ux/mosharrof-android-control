@@ -72,6 +72,9 @@ internal object McpOAuthAuthorizationCallbackHandler {
         require(callbackRequest.responseType == pending.responseType) {
             "OAuth callback-এর response type মেলেনি।"
         }
+        require(callbackRequest.additionalParameters == pending.additionalParameters) {
+            "OAuth callback-এর resource parameter মূল অনুরোধের সঙ্গে মেলেনি।"
+        }
         require(callbackRequest.configuration.authorizationEndpoint ==
             pending.configuration.authorizationEndpoint
         ) {
