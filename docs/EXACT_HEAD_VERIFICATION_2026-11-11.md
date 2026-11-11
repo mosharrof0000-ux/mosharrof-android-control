@@ -195,3 +195,15 @@ This exact-head CI verifies JVM unit tests and build behavior, not live OAuth se
 - Binary notice audit covered 34/34 release-runtime components and inspected 34/34 collected AAR/JAR binaries, but extracted archive LICENSE/NOTICE text from 0/34. All 34 were classified `SBOM_DECLARED_LICENSE_ONLY`; do not describe this as 34 extracted notices. The APK contains the Apache-2.0 license text and generated component inventory, while upstream attribution obligations remain to be verified.
 - Gate 16 remains **Partial** pending authoritative upstream attribution/NOTICE review, final APK obligation validation and checksum/signature provenance review. OSV reported no findings for this scan; that is point-in-time SCA evidence, not legal or complete supply-chain clearance.
 - PR #7 remains open/unmerged. No live OAuth/MCP interoperability, Android Keystore/device verification, deployment, or APK installation is claimed.
+
+
+## Latest exact-head verification — 2026-11-12 (`2b85dd324fa53e21835f6f34e6399646d00a9123`)
+
+- PR #7 head: `2b85dd324fa53e21835f6f34e6399646d00a9123`; PR remains OPEN and UNMERGED.
+- Android CI [run 43077143591](https://github.com/mosharrof0000-ux/mosharrof-android-control/actions/runs/43077143591) (#569): **SUCCESS**. The `assemble` job passed strict Gradle lock/checksum verification, Android JVM unit tests, CycloneDX SBOM generation, binary-notice scanner tests, runtime license inventory/audit, Debug APK assembly, APK notice validation, and dependency-evidence upload. The OSV scan job completed successfully.
+- Worker CI [run 43077143541](https://github.com/mosharrof0000-ux/mosharrof-android-control/actions/runs/43077143541) (#525): **SUCCESS**. Locked npm installation, dependency audit, CycloneDX SBOM, typecheck/tests, evidence upload and OSV scan completed successfully.
+- Regression evidence from Android job `130719827070`: all four binary-notice scanner tests passed, including `test_scans_nested_jar_larger_than_text_limit`; the test suite reported `Ran 4 tests ... OK`.
+- The actual runtime evidence artifact `13883105708` was downloaded and inspected. It reports 34/34 runtime AAR/JAR binaries inspected and **0/34** with archive LICENSE/NOTICE text; all 34 remain `SBOM_DECLARED_LICENSE_ONLY`. The scanner regression is fixed and tested, but this real dependency set still supplies no archive notice text to extract. Do not represent the regression test as license clearance.
+- Debug APK artifact `13883320532` (2,586,034 bytes; GitHub artifact digest `sha256:aaf39f9f079df062d205fd996740357c0b5cbf6856df31b7c6355031270670ab`) is a CI artifact only. It has not been installed or physically tested.
+- Gate 16 remains **PARTIAL** pending authoritative upstream POM/source attribution and NOTICE obligation review, final distributed APK validation, and publisher provenance/signature assessment. CI/OSV success is not legal or complete supply-chain clearance.
+- PR #7 remains open/unmerged. No merge, deployment, live provider/MCP interoperability, physical Android QA or APK installation is claimed.
