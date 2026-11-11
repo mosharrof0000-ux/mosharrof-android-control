@@ -256,3 +256,47 @@ The official OSV-Scanner documentation lists Gradle lockfiles, Gradle verificati
 - The reports are added to the existing `android-gradle-dependency-evidence` artifact under `android/build/reports/dependency-triage/`; they do not alter app dependencies or install/run the APK.
 - Workflow change commit: `b9a4cda5b0e9b0994acaab47b6afb8a5694bdaa2`. PR #7 currently points to this head and remains open/unmerged. No Actions run is visible for this commit yet; therefore the diagnostic reports have **not** been generated or verified. Do not claim the path-triage step passed until a workflow run on this exact head completes.
 - The workflow instrumentation is a reporting-only change. No dependency upgrades, lockfile commits, merge, deployment, or APK installation were performed.
+
+
+## Exact-head dependency-path diagnostics and repeat OSV scan — 2026-11-11
+
+**Exact PR head:** `2c1cb6d1ab76f83aef305e5ba0aa4da9334c39d5`  
+**Android workflow run:** `43017644941` — SUCCESS  
+**Worker workflow run:** `43017645150` — SUCCESS
+
+### Android CI and artifacts
+
+- Android `assemble` job `130512602928` completed SUCCESS. The following steps all passed: dependency lock/verification bootstrap, all five dependency-path report commands, Android unit tests, CycloneDX SBOM generation, debug APK assembly, APK upload, and Gradle dependency evidence upload.
+- Android `dependency-scan / osv-scan` job `130514066558` completed SUCCESS. This means the scan executed and uploaded its report; it does **not** mean the findings are cleared.
+- Debug APK artifact ID: `13853378032` (archive size 2,468,593 bytes). CI artifact only; not installed or physically tested.
+- Dependency evidence artifact ID: `13853482457`, archive size 113,043 bytes, SHA-256 `26c3bb52b822fff3e6832fbc42b980a56ddf66aeb8e0a15174a8f279a4b820ea`.
+- Evidence artifact contains `app/gradle.lockfile`, `gradle/verification-metadata.xml`, Android CycloneDX 1.6 SBOM, and five diagnostic reports: the three internal unified test-platform dependency reports plus root and app `buildEnvironment` reports.
+- Android SARIF artifact ID: `13852764586`. Extracted `results.sarif` SHA-256: `a18acf5aed62f55ad0cb58fba008249162dc9f876662bdb0a19468845dc19bc3`. It contains **112 result records, 65 unique advisory IDs, and 19 unique package coordinates**. Locations: 45 records in `app/gradle.lockfile`, 67 in `gradle/verification-metadata.xml`. This corrects the earlier 18-coordinate count: the current SARIF includes both Guava 32.0.1-jre and Guava 33.7.1-jre as distinct coordinates.
+- As before, SARIF `level=warning` is a reporting level, not CVSS severity. Repeated records and multiple versions must not be equated with unique exploitable runtime vulnerabilities.
+
+### Dependency path attribution established by the new reports
+
+- The three requested internal configuration reports all resolved successfully:
+  - `_internal-unified-test-platform-android-test-plugin-host-emulator-control`
+  - `_internal-unified-test-platform-android-test-plugin-host-retention`
+  - `_internal-unified-test-platform-android-test-plugin-result-listener-gradle`
+- The reports show the flagged Netty 4.1.93.Final family entering through `io.grpc:grpc-netty:1.57.0` in the Android Test Unified Test Platform configuration graph. Guava 32.0.1-jre, protobuf-java 3.22.3 and commons-io 2.13.0 also appear in those internal test-platform graphs. These are Android test-platform/tooling configurations, not `debugRuntimeClasspath` or `releaseRuntimeClasspath` app runtime dependencies in the generated app lockfile.
+- `root-build-environment.txt` attributes verification-metadata-only findings to the root Gradle build/plugin classpath, including Commons Compress 1.21, Bouncy Castle bcpkix/bcprov 1.77, jose4j 0.9.5, JDOM2 2.0.6, Kotlin Gradle Plugin 2.0.21, trove4j 1.0.20200330, and Jackson Core/Databind 2.22.2. It also shows build-tool transitive dependencies such as Guava 33.7.1-jre. These are build/plugin dependency paths, not evidence that these components ship in the app.
+- `app-build-environment.txt` contains no matching flagged coordinates from this triage set.
+- `org.json:json:20240303` remains a unit-test-only dependency in the app lockfile, not an app runtime dependency.
+- This gives concrete dependency-path attribution for the previously ambiguous verification-metadata findings. It does **not** prove that every build-tool finding is harmless: Gradle/plugin execution is security-sensitive and still requires affected/fixed-version review. Nor does it replace complete release APK class/provenance analysis.
+
+### Worker exact-head scan
+
+- Worker run `43017645150`: typecheck/test/evidence job and OSV scan both completed SUCCESS.
+- Worker SARIF artifact ID: `13852883802`; extracted SARIF contains `results: []` (zero reported findings in this point-in-time scan).
+- This does not constitute a general vulnerability guarantee or license/provenance clearance.
+
+### Updated triage conclusion and remaining work
+
+- The Android findings are now better classified: Netty/Guava/Protobuf/Commons IO arise from internal Android test-platform configurations; Jackson, Commons Compress, Bouncy Castle, jose4j, JDOM2, Kotlin Gradle Plugin and trove4j are attributed to root build/plugin dependency paths; org.json is unit-test-only.
+- No evidence from these reports shows these flagged dependencies as direct app runtime dependencies. Keep them in the security backlog because build/test tooling can still be exploitable in CI or developer environments.
+- No dependency upgrade was made. Next remediation work is to map each unique OSV advisory to its affected/fixed ranges and choose compatible build/test-tool updates. Avoid blind changes to AGP, Gradle, Kotlin, UTP, Netty or cryptographic libraries.
+- Persistent committed lockfiles, independent checksum provenance, component-level license/notice review, and complete APK/release runtime provenance remain open.
+- Gate 16 remains **Partial**; the successful scan jobs and new path reports improve evidence quality but do not complete remediation or supply-chain enforcement.
+- PR #7 remains open and unmerged. No deployment, PR merge, APK installation, live OAuth/provider operation, or physical Android QA was performed.
