@@ -1,6 +1,6 @@
 # MCP OAuth Automatic Refresh Before Every Request
 
-Status: partial implementation — token provider and asynchronous HTTP request boundary added; full service/UI migration not yet complete.
+Status: partial implementation — per-request OAuth transport now covers asynchronous connection negotiation, paginated discovery, tool calls, and task lifecycle in the Android UI. Synchronous compatibility APIs remain for manual-token connectors; an explicit OAuth-mode guard and final call-site audit are still required before this can be marked complete.
 
 ## Current verified state
 
@@ -142,3 +142,12 @@ Remaining high-priority migration work:
 - Initial Android CI for the first async connection slice exposed a Kotlin callback-label compile error (`return@onSuccess` inside `Result.fold`). Corrected to `return@fold` in commit `171142e230424fd1f2c23610baf37538b4b31fc7`.
 - Exact-head Android workflow run `43001294295` is running unit tests; Worker Typecheck is still pending/completing separately. The prior failed run `43000636860` is not a passing verification and is retained as evidence of the compile issue that was fixed.
 - Current branch head after this note: documentation commit will be newer than the source fix; use the resulting PR head SHA and its own CI checks as the authoritative verification point.
+
+
+## Connection-slot ownership hardening — 2026-11-11
+
+- A code review found that a rejected duplicate `connectAsync` invocation could run its completion handler and remove the in-flight marker owned by the first invocation. That could admit a third concurrent negotiation for the same connector.
+- Fixed this with an invocation-local ownership flag: only the call that successfully acquires the connector slot can release it. Rejected duplicates cannot alter the active attempt's lock.
+- Added `asyncConnectDuplicateAttemptCannotReleaseActiveConnectionSlot`, which holds the first token callback, attempts two duplicate connections, verifies both are rejected without extra token resolution, releases the first attempt, and verifies a later reconnect succeeds.
+- Source commit: `519f0758a89c202331c664358f325a6e2f7d6186`; regression test commit: `4d5c7266dac0bed73b6b25148ca63269f13064f1`.
+- Exact-head CI for the test commit is required before this hardening is considered verified. No live OAuth or device testing was performed.
