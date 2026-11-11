@@ -268,6 +268,10 @@ class PluginDashboardPage(
                 if (enteredToken.isNotBlank()) {
                     PluginSecretStore.saveToken(activity, id, enteredToken).getOrThrow()
                 }
+                val encryptedOAuthState = McpOAuthAuthStateStore.read(activity, id).getOrThrow()
+                require(enteredToken.isNotBlank() || encryptedOAuthState == null) {
+                    "এই Connector-এর encrypted OAuth session আছে। পুরোনো static-token Connect path বন্ধ রাখা হয়েছে; async OAuth connection ও pagination migration সম্পূর্ণ না হওয়া পর্যন্ত stale token দিয়ে reconnect করা যাবে না।"
+                }
                 val token = if (enteredToken.isNotBlank()) {
                     enteredToken
                 } else {
