@@ -118,7 +118,7 @@ jobs:
       - name: Assemble debug APK
         run: gradle -p android --dependency-verification=strict :app:assembleDebug
 
-      - name: Verify APK packages generated license inventory and declared license text
+      - name: Verify APK packages generated license inventory and audit evidence
         run: |
           python3 - <<'PY'
           import zipfile
@@ -137,16 +137,23 @@ jobs:
               notices = archive.read("assets/THIRD_PARTY_NOTICES.md").decode("utf-8")
               upstream = archive.read("assets/UPSTREAM_THIRD_PARTY_NOTICES.txt").decode("utf-8")
               pom_attributions = archive.read("assets/POM_THIRD_PARTY_ATTRIBUTIONS.txt").decode("utf-8")
-              if "Version 2.0" not in license_text or "appauth" not in notices or not upstream.strip() or not pom_attributions.strip():
-                  raise SystemExit("APK license inventory/full-text content validation failed")
+              if ("Version 2.0" not in license_text or "appauth" not in notices
+                      or "UPSTREAM THIRD-PARTY LICENSE AND ATTRIBUTION EVIDENCE" not in upstream
+                      or not pom_attributions.strip()):
+                  raise SystemExit("APK license inventory/audit report packaging validation failed")
           import json
           audit = json.load(open("android/build/reports/license-review/binary-notice-audit.json", encoding="utf-8"))
           if audit["component_count"] == 0 or audit["binary_component_count"] != audit["component_count"] or audit["failures"]:
               raise SystemExit("Binary notice audit did not cover every SBOM component")
+          expected_manual_review = audit["component_count"] - audit["archive_notice_component_count"]
+          if audit.get("manual_review_component_count") != expected_manual_review or len(audit.get("manual_review_components", [])) != expected_manual_review:
+              raise SystemExit("Binary notice manual-review accounting is inconsistent")
           metadata = json.load(open("android/build/reports/license-review/maven-metadata-audit.json", encoding="utf-8"))
           if metadata["pom_component_count"] != metadata["component_count"] or metadata["license_match_count"] != metadata["component_count"] or metadata["failures"]:
               raise SystemExit("Maven POM license metadata audit did not verify every SBOM component")
           print("APK contains license inventory and POM metadata for " + str(metadata["pom_component_count"]) + " runtime components.")
+          print("Archive notice texts found for " + str(audit["archive_notice_component_count"]) + "/" + str(audit["component_count"]) + " runtime components.")
+          print("MANUAL NOTICE REVIEW REQUIRED for " + str(audit["manual_review_component_count"]) + " runtime components; see BINARY_NOTICE_AUDIT.md.")
           PY
 
       - name: Upload debug APK
