@@ -10,14 +10,31 @@ MAX_POM_BYTES = 4 * 1024 * 1024
 SAFE = re.compile(r"^[A-Za-z0-9_.+-]+$")
 
 def normalize_license(value: str) -> str:
-    value = value.strip().lower()
-    if "apache" in value or "apache.org/licenses/license-2.0" in value:
+    """Normalize common POM labels without collapsing distinct SPDX licenses."""
+    value = value.strip()
+    lowered = value.lower()
+    compact = re.sub(r"[ _]", "-", lowered)
+
+    if "apache" in lowered and ("2.0" in lowered or "license-2.0" in lowered):
         return "Apache-2.0"
-    if "mit license" in value or value == "mit":
+    if compact in {"mit", "mit-license"} or "mit license" in lowered:
         return "MIT"
-    if "bsd" in value:
+
+    # Preserve the BSD clause count: BSD-2-Clause and BSD-3-Clause are not
+    # interchangeable license identifiers.
+    if re.search(r"\\bbsd[- ]?4[- ]clause\\b|\\b4[- ]clause bsd\\b", lowered):
+        return "BSD-4-Clause"
+    if re.search(r"\\bbsd[- ]?3[- ]clause\\b|\\b3[- ]clause bsd\\b|modified bsd", lowered):
+        return "BSD-3-Clause"
+    if re.search(r"\\bbsd[- ]?2[- ]clause\\b|\\b2[- ]clause bsd\\b|simplified bsd", lowered):
+        return "BSD-2-Clause"
+    if "bsd" in lowered:
+        # Keep generic BSD declarations distinguishable from specific SPDX IDs.
         return "BSD"
-    return value
+
+    # Keep already-normalized SPDX IDs (including compound expressions)
+    # intact; unknown free-form labels remain visible for manual review.
+    return value.strip()
 
 def child_text(parent: ET.Element, name: str) -> str:
     node = parent.find(name)
