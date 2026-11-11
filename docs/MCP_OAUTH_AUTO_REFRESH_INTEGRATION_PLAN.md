@@ -1,6 +1,6 @@
 # MCP OAuth Automatic Refresh Before Every Request
 
-Status: partial implementation — per-request OAuth transport now covers asynchronous connection negotiation, paginated discovery, tool calls, and task lifecycle in the Android UI. Synchronous compatibility APIs remain for manual-token connectors; an explicit OAuth-mode guard and final call-site audit are still required before this can be marked complete.
+Status: implementation and mocked regression coverage are present for per-request OAuth transport across asynchronous connection negotiation, paginated discovery, tool calls, and task lifecycle. OAuth-created clients fail closed on synchronous/static-token transport. Manual-token compatibility remains intentionally available. Live authorization-server/MCP interoperability and physical-device verification remain incomplete.
 
 ## Current verified state
 
@@ -160,3 +160,14 @@ Remaining high-priority migration work:
 - Added regression coverage proving an OAuth-only client rejects the synchronous path without network access and succeeds through asynchronous token resolution with a Bearer header.
 - Related commits: `ae2fc2c57cc70f0a84499fd6d3806bf0026fac10`, `478e1cd880fc2012ad6cf644c14ff9a5693fa455`, `129b2be6ece15d4cbd8352f450b773164ab3c927`, `0826469f6dc7efd1210b3a6037555ecc0cad5ea2`, and `37d2da03ffd725edb534bf8a5613af6cf69913b4`.
 - The latest PR-head CI must pass before this hardening is considered verified. The synchronous service API remains available to manual-token clients only; live OAuth and real MCP server behavior remain untested.
+
+
+## Exact-head verification — OAuth async transport enforcement (2026-11-11)
+
+- Verified branch head: `5faf7827f3b227d531c78e75921eb4e493829dad`.
+- Android workflow run `43002371560`: PASS. Android unit tests, Debug APK assembly, and CI artifact upload all completed successfully.
+- Cloudflare Worker Typecheck run `43002371508`: PASS.
+- Regression coverage at this head includes per-request token resolution through asynchronous connection negotiation and paginated discovery, async tool/task transport, duplicate connection-slot ownership, and rejection of synchronous transport by OAuth-only clients while preserving async Bearer-token transport.
+- The successful CI build produced a CI artifact only. It was not installed on a device and does not establish physical Android acceptance.
+- This verification does not establish live OAuth authorization, real token refresh/rotation, remote revocation, real authorization-server or MCP-server interoperability, or deployed Worker behavior. No live credential flow or remote revocation was executed.
+- PR #7 remains open and unmerged. No merge, deployment, or APK installation was performed.
