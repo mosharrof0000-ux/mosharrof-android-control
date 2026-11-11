@@ -322,6 +322,48 @@ class McpConnectorServiceRegressionTest {
         return McpConnectorService(client, taskStore = taskStore)
     }
 
+    @Test
+    fun oauthDiscoveryRejectsUnknownConnectorBeforeNetworkAccess() {
+        val fetchAttempts = AtomicInteger(0)
+        val fetcher = McpOAuthMetadataFetcher {
+            fetchAttempts.incrementAndGet()
+            error("Network access must not occur for an unknown connector")
+        }
+        val client = McpHttpClient(
+            endpoint = "https://example.com/mcp",
+            connectionFactory = FakeServer()::connection
+        )
+        val service = McpConnectorService(client, oauthMetadataFetcher = fetcher)
+
+        assertTrue(service.discoverOAuthMetadata("missing.connector").isFailure)
+        assertEquals(0, fetchAttempts.get())
+    }
+
+    @Test
+    fun oauthDiscoveryRejectsNonMcpTransportBeforeNetworkAccess() {
+        ConnectorRegistry.registerConnector(
+            ConnectorRegistry.Connector(
+                id = "test.api",
+                name = "Test HTTPS API",
+                transport = ConnectorRegistry.Transport.HTTPS_API,
+                endpoint = "https://api.example.com/v1"
+            )
+        ).getOrThrow()
+        val fetchAttempts = AtomicInteger(0)
+        val fetcher = McpOAuthMetadataFetcher {
+            fetchAttempts.incrementAndGet()
+            error("Network access must not occur for a non-MCP connector")
+        }
+        val client = McpHttpClient(
+            endpoint = "https://example.com/mcp",
+            connectionFactory = FakeServer()::connection
+        )
+        val service = McpConnectorService(client, oauthMetadataFetcher = fetcher)
+
+        assertTrue(service.discoverOAuthMetadata("test.api").isFailure)
+        assertEquals(0, fetchAttempts.get())
+    }
+
     @After
     fun cleanup() {
         ConnectorRegistry.clearForTests()
