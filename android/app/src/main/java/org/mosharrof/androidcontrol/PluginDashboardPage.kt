@@ -170,7 +170,7 @@ class PluginDashboardPage(
                 }
             }.onFailure { error ->
                 activity.runOnUiThread {
-                    onStatus("MCP সংযোগ ব্যর্থ: ${error.message ?: "অজানা সমস্যা"}")
+                    onStatus("MCP সংযোগ ব্যর্থ: ${safeUiErrorMessage(error)}")
                 }
             }
         }
