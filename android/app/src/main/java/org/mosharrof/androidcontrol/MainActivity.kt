@@ -1061,7 +1061,9 @@ class MainActivity : Activity() {
                     if (tokenResult.isFailure) {
                         authorizationService.dispose()
                         runOnUiThread {
-                            status.text = "Encrypted OAuth state থেকে বৈধ Bearer token পাওয়া যায়নি।"
+                            val failure = tokenResult.exceptionOrNull()
+                            status.text = (failure as? McpOAuthRefreshException)?.reason?.userMessage
+                                ?: "OAuth refresh ব্যর্থ; credentials মুছে ফেলা হয়নি। পরে manual retry করুন।"
                         }
                         return@withFreshToken
                     }
