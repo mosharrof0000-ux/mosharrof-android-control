@@ -89,9 +89,8 @@ class PluginDashboardPage(
         }
         parent.addView(oauthClientMetadataUrlInput, matchParams())
         oauthScopesInput = EditText(activity).apply {
-            hint = "OAuth scopes (space-separated)"
+            hint = "OAuth scopes (space-separated; server-required)"
             setSingleLine(true)
-            setText("mcp")
         }
         parent.addView(oauthScopesInput, matchParams())
         button(parent, "Encrypted PKCE Request প্রস্তুত (Browser নয়)") {
