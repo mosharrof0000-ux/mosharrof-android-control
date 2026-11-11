@@ -40,6 +40,7 @@ class PluginDashboardPage(
     private lateinit var toolsContainer: LinearLayout
     private lateinit var resultView: TextView
     private lateinit var oauthMetadataView: TextView
+    private var oauthDiscoveryInProgress = false
 
     fun render(parent: LinearLayout) {
         val prefs = activity.getSharedPreferences("plugin_dashboard_v1", Activity.MODE_PRIVATE)
@@ -198,6 +199,11 @@ class PluginDashboardPage(
             onStatus("আগে MCP Connector সংযুক্ত করুন; OAuth discovery চালানো হয়নি।")
             return
         }
+        if (oauthDiscoveryInProgress) {
+            onStatus("OAuth metadata যাচাই ইতিমধ্যে চলছে।")
+            return
+        }
+        oauthDiscoveryInProgress = true
         oauthMetadataView.text = "OAuth metadata যাচাই চলছে…"
         worker.execute {
             service.discoverOAuthMetadata(connectorId)
@@ -208,6 +214,7 @@ class PluginDashboardPage(
                     val tokenEndpoint =
                         discovery.authorizationServerMetadata["token_endpoint"] as? String
                     activity.runOnUiThread {
+                        oauthDiscoveryInProgress = false
                         oauthMetadataView.text = buildString {
                             append("OAuth metadata যাচাইকৃত\n")
                             append("Authorization Server: ").append(issuer)
@@ -223,6 +230,7 @@ class PluginDashboardPage(
                 }
                 .onFailure { failure ->
                     activity.runOnUiThread {
+                        oauthDiscoveryInProgress = false
                         oauthMetadataView.text = "OAuth metadata যাচাই ব্যর্থ।"
                         onStatus("OAuth metadata যাচাই ব্যর্থ: " + safeUiErrorMessage(failure))
                     }
