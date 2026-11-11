@@ -136,4 +136,17 @@ class McpOAuthAuthorizationRequestFactoryTest {
         )
     }
 
+    @Test
+    fun rejectsAuthorizationServerNotAdvertisedByResource() {
+        assertFalse(
+            McpOAuthAuthorizationRequestFactory.validateInputs(
+                issuer, authorizationServerMetadata,
+                clientMetadataUrl, clientMetadata,
+                resourceUrl,
+                resourceMetadata + ("authorization_servers" to listOf("https://other.example")),
+                listOf("mcp:tools")
+            )
+        )
+    }
+
 }
