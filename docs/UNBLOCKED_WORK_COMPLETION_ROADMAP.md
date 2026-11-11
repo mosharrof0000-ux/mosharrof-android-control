@@ -74,7 +74,7 @@ Independent work may proceed concurrently, but shared contracts and UI integrati
 - [x] Connect exact-argument one-time approval grants to Android approval UI via `MainActivity.requestAiToolApproval`.
 - [x] Connect approved execution to the exact active `McpConnectorService` session.
 - [x] Add bounded serial execution, duplicate-call rejection, denial/error continuation and maximum call/round limits.
-- [ ] Add explicit cancellation and unknown-outcome recovery for provider/MCP requests.
+- [x] Add provider-request cancellation and a bounded, privacy-minimal unknown-outcome marker store with unit coverage for marker/timestamp persistence, review clearing, and rejection of invalid timestamps. This is a local review reminder only; it does not reconcile provider-side execution.
 - [ ] Add redacted audit events and verify no credential/argument leakage.
 - **Gate:** read-only, approval, denial, revocation, replay, mismatch, and failure tests pass.
 
@@ -162,3 +162,11 @@ Independent work may proceed concurrently, but shared contracts and UI integrati
 - Debug APK artifact `mosharrof-android-control-debug`, artifact ID `13789243666`, size 2,407,912 bytes, SHA-256 `abd961f495a2b78f5c3c2db34b2f5eb56c4a73867054e963f31f754ecf0f8352`. CI artifact only; not installed or device-tested.
 - The source adds task-handle validation/persistence, explicit task refresh and cancellation, revalidation of restored candidates, and user-confirmed task input submission. No automatic polling or implicit task input is performed.
 - PR #7 remains open and unmerged. Physical Android QA, live MCP interoperability, provider API round-trips and production deployment remain external gates.
+
+
+### AI request recovery marker implementation
+- Extracted `AiRequestRecoveryStore` and `SharedPreferencesAiRequestRecoveryPersistence` from `MainActivity` into a dedicated module.
+- The persistence contract stores only a pending boolean and observation timestamp. It has no API for prompts, API keys, tool arguments, request bodies, or provider responses.
+- Added JVM tests for store recreation against a retained persistence implementation, marker/timestamp clearing after review, the deliberately narrow persistence contract, and negative timestamp rejection.
+- These tests validate the store contract; Android SharedPreferences durability is provided by the platform adapter and still requires Android runtime/device verification.
+- Source commits: `0c833489f053b86c77cb0d8a8356db9fa1fde6cb`, `b9bb6cc7f3404c0249f8341fb5556285e45a5333`, `b4ac776ee7f7a5e3f374293122b3ab9d5da26861`.
