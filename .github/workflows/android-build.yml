@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   assemble:
@@ -23,6 +23,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: actions/setup-java@v5
         with:
@@ -41,11 +45,26 @@ jobs:
       - name: Generate dependency locks and verification metadata
         run: gradle -p android :app:testDebugUnitTest :app:cyclonedxDirectBom :app:assembleDebug --write-locks --write-verification-metadata sha256
 
+      # Bootstrap stage only: persist the exact files produced by the successful
+      # Gradle resolution so the following workflow run can enforce committed state.
+      - name: Commit generated Gradle lock and verification files
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          TARGET_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add android/app/gradle.lockfile android/buildscript-gradle.lockfile android/gradle/verification-metadata.xml
+          if ! git diff --cached --quiet; then
+            git commit -m "build: persist generated Gradle dependency locks"
+            git push origin "HEAD:${TARGET_BRANCH}"
+          else
+            echo "Generated Gradle lock and verification files already match the branch."
+          fi
+
       - name: Capture dependency paths for OSV triage
         run: |
           mkdir -p android/build/reports/dependency-triage
-          # Capture all app configurations instead of hard-coding AGP-internal
-          # configuration names that can disappear between AGP releases.
           gradle -p android :app:dependencies > android/build/reports/dependency-triage/app-dependencies.txt
           gradle -p android buildEnvironment > android/build/reports/dependency-triage/root-build-environment.txt
           gradle -p android :app:buildEnvironment > android/build/reports/dependency-triage/app-build-environment.txt
@@ -91,6 +110,4 @@ jobs:
         --lockfile=app/gradle.lockfile
         --lockfile=buildscript-gradle.lockfile
         --lockfile=gradle/verification-metadata.xml
-      # Inventory-only first pass: publish findings for review before making
-      # vulnerability presence a release-blocking policy.
       fail-on-vuln: false
