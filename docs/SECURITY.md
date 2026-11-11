@@ -75,3 +75,13 @@ The latest exact PR head at this update is `8f0d2bb4a7cd0fd318e70f01cd26eb359c85
 Exact-head CI: Android run `42972244593` PASS (unit tests, debug APK assembly, artifact upload); Worker run `42972244607` PASS. Artifact ID `13834056036`, SHA-256 `645aca2aca037d4ae7bbaae51433cfc346a27ed0a043589dd1e504148674e0cb`; CI artifact only, not installed.
 
 Dependency inventory is preliminary: Android direct dependencies are DocumentFile 1.0.1 and AppAuth 0.11.1, plus test-only JUnit 4.13.2 and org.json 20240303. Worker direct devDependencies are workers-types ^5.20261101.1, TypeScript ^5.9.3 and Wrangler ^4.45.0. No package lock/shrinkwrap or Gradle lock/verification metadata is present in the PR changed-file inventory; no complete transitive license/SBOM/vulnerability report is available. Locking and license review remain release blockers.
+
+
+## Latest exact-head verification — 2026-11-11 (`9ec21e6ad82d95f2f060da4481ab9b6de895968c`)
+
+- Android workflow run `42973156641` (run #332): Android unit tests PASS; Debug APK assembly PASS; artifact upload PASS. Job cleanup was still running when inspected; all three build/test/upload steps completed successfully.
+- Worker workflow run `42973156667` (run #288): PASS.
+- Artifact `mosharrof-android-control-debug`, ID `13833758820`, size `2,415,482` bytes, SHA-256 `2c2acc4fcfada40c741e85e8f5cb2cf5cb3a94145dcdd8531596fc40e951e59d`. CI artifact only; not installed or physically tested.
+- Added `cancellationDuringApprovalPreventsMcpExecutionAndContinuation`: cancellation from the approval callback causes cancellation failure, exactly one initial provider request, one approval callback, and zero MCP tool calls.
+- Added `rejectsMalformedProviderHistoryBeforeBuildingContinuation`: a malformed Responses API history item is rejected before continuation request construction.
+- Remaining release blockers are unchanged: UI transition/real-device coverage, OAuth/CIMD, live MCP/provider tests, deployed Worker verification, reproducible dependency locking, full transitive SBOM/license/vulnerability review, independent security review, and explicit merge/install authorization.
