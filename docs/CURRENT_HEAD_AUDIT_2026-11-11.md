@@ -287,3 +287,13 @@ Commits:
 - Verify deployed Worker behavior separately. PR #7 remains open/unmerged; no deployment or APK installation was performed. Merge, deployment and physical installation still require explicit user approval.
 
 This addendum supersedes earlier audit statements that OAuth/CIMD was validator-only or that dependency lock/SBOM workflows were absent. Historical entries remain as records of earlier commits.
+
+
+### Dependency/SBOM evidence review — exact source head `0bb1cf53b3c79b20292dc68fa1b03e55eaac9098`
+
+- Android OSV scan examined 167 app-lock packages, 192 buildscript-lock packages and 409 Gradle verification-metadata packages. The scanner log reports **No issues found**; the SARIF artifact contains 0 result records.
+- Worker OSV scan examined 93 locked packages. The scanner log reports **No issues found**; the SARIF artifact contains 0 result records. `npm audit` also reported **0 vulnerabilities** for the resolved Worker install (94 packages during audit; 43 packages in the subsequent clean `npm ci` install output).
+- Android release runtime license inventory: 34 components, 34 with source license metadata, 0 missing; all 34 are declared Apache-2.0. The report explicitly excludes buildscript, compile-only, unit-test and Android-test dependencies, so this is not a complete license review of every toolchain dependency or a legal determination. Apache-2.0 license text and third-party notice assets were verified inside the CI APK.
+- Android debug APK artifact ID `13870550597`, size `2,582,599` bytes, SHA-256 `5ba5bfe3a035481c3496742b5737737ed40e050d3267ff50b536aeeb3975b5eb`; CI artifact only, not installed. Android dependency evidence artifact ID `13869861290`; Worker dependency evidence artifact ID `13868858628`. SARIF artifacts: Android `13869253629`, Worker `13868579767`.
+- These are point-in-time advisory-database results for the scanned lockfiles, not a guarantee of absence of all vulnerabilities. The OSV and npm audit reports do not replace source-code review, runtime testing, legal license review, or future recurring scans.
+- Non-blocking toolchain warnings observed in Worker logs include Node deprecations (`punycode`, `url.parse`, `Buffer()`) and GitHub Actions Node 20 deprecation notices for v4 actions. Track for maintenance; no failing audit finding was associated with these warnings.
