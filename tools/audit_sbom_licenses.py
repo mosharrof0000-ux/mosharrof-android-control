@@ -121,6 +121,37 @@ def main() -> int:
     args.report.write_text("\n".join(report) + "\n", encoding="utf-8")
     if unresolved:
         raise SystemExit(f"Unresolved license metadata for {len(unresolved)} component(s)")
+    # Fail closed if a new runtime license lacks a packaged full-text mapping.
+    runtime_licenses = set(counts)
+    if runtime_licenses != {"Apache-2.0"}:
+        raise SystemExit(
+            "APK notice packaging currently supports Apache-2.0 only; "
+            f"review and add full license texts for: {sorted(runtime_licenses)}"
+        )
+    notices = [
+        "# Third-party software notices",
+        "",
+        "This application includes the following release-runtime dependencies.",
+        "All listed components declare Apache-2.0 in the generated releaseRuntimeClasspath SBOM.",
+        "A full copy of Apache License, Version 2.0, is packaged at "
+        "\`assets/licenses/Apache-2.0.txt\` in this APK.",
+        "",
+        "## Components",
+        "",
+        "| Group | Component | Version | License |",
+        "|---|---|---:|---|",
+    ]
+    for group, name, version, labels, _purl in sorted(rows):
+        safe = [v.replace("|", "\\|") for v in (group, name, version, labels)]
+        notices.append("| " + " | ".join(safe) + " |")
+    notices += [
+        "",
+        "Upstream copyright and attribution notices supplied by individual components "
+        "must be checked against the final release artifact and retained as required.",
+    ]
+    args.app_notices.parent.mkdir(parents=True, exist_ok=True)
+    args.app_notices.write_text("\\n".join(notices) + "\\n", encoding="utf-8")
+
     print(f"License inventory generated: {len(original_components)} components; {len(corrected)} explicit metadata correction(s); no unresolved entries.")
     return 0
 
