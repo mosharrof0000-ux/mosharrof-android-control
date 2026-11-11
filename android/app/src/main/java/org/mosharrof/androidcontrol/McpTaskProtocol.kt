@@ -67,6 +67,24 @@ object McpTaskProtocol {
         return Snapshot(taskId, status, ttl, pollInterval, message, requests, result, error)
     }
 
+    /** Accept only one object response for every validated server request key. */
+    fun validateInputResponses(
+        requests: Map<String, Any?>,
+        responses: Map<String, Any?>
+    ): Boolean {
+        if (!McpProtocol.validateInputRequests(requests) ||
+            responses.size != requests.size ||
+            responses.keys != requests.keys
+        ) return false
+        return responses.values.all { response ->
+            val payload = response as? Map<*, *> ?: return@all false
+            payload.isNotEmpty() &&
+                payload.keys.all { key ->
+                    key is String && key.isNotBlank() && key.length <= 128
+                }
+        }
+    }
+
     private fun safeTaskId(value: Any?): String? =
         (value as? String)?.takeIf {
             it.isNotBlank() && it.length <= MAX_TASK_ID_CHARS &&
