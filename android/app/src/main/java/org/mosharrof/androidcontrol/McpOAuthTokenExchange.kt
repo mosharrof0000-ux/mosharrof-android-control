@@ -45,6 +45,18 @@ internal object McpOAuthTokenExchange {
                 return
             }
 
+        val expectedResource = pendingRequest?.additionalParameters?.get("resource")
+        val tokenResource = tokenRequest.additionalParameters["resource"]
+        if (expectedResource.isNullOrBlank() ||
+            !McpHttpClient.isSafeEndpoint(expectedResource) ||
+            tokenResource != expectedResource
+        ) {
+            onComplete(Result.failure(IllegalStateException(
+                "OAuth token request-এর protected resource মূল অনুরোধের সঙ্গে মেলেনি।"
+            )))
+            return
+        }
+
         val authState = AuthState(response, null)
         val completed = AtomicBoolean(false)
 
