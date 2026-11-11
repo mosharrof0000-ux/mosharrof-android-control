@@ -22,8 +22,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Install dependencies and type-check
+      - name: Generate npm lockfile from declared dependencies
         working-directory: cloudflare/worker
-        run: |
-          npm install
-          npm run check
+        run: npm install --package-lock-only --ignore-scripts
+      - name: Install exact locked dependencies
+        working-directory: cloudflare/worker
+        run: npm ci
+      - name: Type-check and test
+        working-directory: cloudflare/worker
+        run: npm run check
+      - name: Upload generated lockfile for reviewed commit
+        uses: actions/upload-artifact@v4
+        with:
+          name: worker-package-lock-bootstrap
+          path: cloudflare/worker/package-lock.json
+          if-no-files-found: error
