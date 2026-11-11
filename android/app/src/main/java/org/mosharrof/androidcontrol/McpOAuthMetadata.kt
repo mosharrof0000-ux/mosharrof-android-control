@@ -65,6 +65,11 @@ internal object McpOAuthMetadata {
         if (metadata["issuer"] != expectedIssuer) return false
         if (!isHttpsUrl(metadata["authorization_endpoint"] as? String)) return false
         if (!isHttpsUrl(metadata["token_endpoint"] as? String)) return false
+        // Revocation is optional in RFC 8414 metadata. If advertised, reject
+        // unsafe endpoints now so a later RFC 7009 client cannot trust them.
+        if (metadata.containsKey("revocation_endpoint") &&
+            !isHttpsUrl(metadata["revocation_endpoint"] as? String)
+        ) return false
 
         val responses = metadata["response_types_supported"] as? List<*> ?: return false
         if (responses.isEmpty() || responses.size > 32 || responses.none { it == "code" }) return false
@@ -76,6 +81,9 @@ internal object McpOAuthMetadata {
         if (pkce.isEmpty() || pkce.size > 32 || pkce.none { it == "S256" }) return false
         return true
     }
+
+    fun validatedRevocationEndpoint(metadata: Map<String, Any?>): String? =
+        (metadata["revocation_endpoint"] as? String)?.takeIf(::isHttpsUrl)
 
     fun validateAuthorizationIssuer(responseIssuer: String?, expectedIssuer: String): Boolean =
         isHttpsIssuer(expectedIssuer) && !responseIssuer.isNullOrBlank() && responseIssuer == expectedIssuer
