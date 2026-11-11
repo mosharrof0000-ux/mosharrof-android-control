@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 
 
 ALLOWED_SCHEMES = {"http", "https", "ssh", "git"}
-SCP_LIKE = re.compile(r"^(?:[^@/:\\s]+@)?[A-Za-z0-9.-]+:[^\\s]+$")
+SCP_LIKE = re.compile(r"^(?:[^@/:\s]+@)?[A-Za-z0-9.-]+:[^\s]+$")
 
 
 def valid_scm_reference(value: str, *, allow_scp: bool = True) -> bool:
@@ -93,7 +93,7 @@ def main() -> int:
     report = audit(source)
     for path in (args.json_report, args.markdown_report):
         path.parent.mkdir(parents=True, exist_ok=True)
-    args.json_report.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\\n",
+    args.json_report.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n",
                                 encoding="utf-8")
     lines = [
         "# Maven POM SCM reference assessment", "",
@@ -114,9 +114,9 @@ def main() -> int:
                   scm.get("url", ""), scm.get("connection", ""),
                   "yes" if item["developer_metadata_present"] else "no",
                   "yes" if item["organization_metadata_present"] else "no"]
-        lines.append("| " + " | ".join(str(value).replace("|", "\\|").replace("\\n", " ")
+        lines.append("| " + " | ".join(str(value).replace("|", "\\|").replace("\n", " ")
                                        for value in values) + " |")
-    args.markdown_report.write_text("\\n".join(lines) + "\\n", encoding="utf-8")
+    args.markdown_report.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("POM SCM references (syntax only): " +
           json.dumps(report["assessment_counts"], sort_keys=True))
     print("Repository, release-tag and publisher verification: NOT PERFORMED")
