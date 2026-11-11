@@ -148,3 +148,11 @@ Commits:
 ### Latest CI for defense-in-depth source commit
 - Worker CI run `42970919190`: PASS.
 - Android CI run `42970919165`: still in progress at this note; unit tests currently running, APK assembly/upload pending.
+
+
+### Latest Android CI verification — 2026-11-11
+- Android CI run `42970919165` (run #316) for source commit `d162a314ac0520d5511dd06ad751b9ce163e3c3b`: PASS.
+- Android unit tests: PASS; debug APK assembly: PASS; artifact upload: PASS.
+- Cloudflare Worker CI run `42970919190` (run #272): PASS.
+- Debug artifact ID: `13832594882`; size: 2,415,618 bytes; SHA-256 digest: `30f9dfe103e9003f6a6af8bc50d40da20d7e368b36d582064666e45150e6a76d`.
+- This is a CI-produced debug artifact only; it has not been installed or exercised on a physical Android device.
