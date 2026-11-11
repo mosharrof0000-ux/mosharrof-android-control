@@ -244,6 +244,37 @@ class AiProviderRuntimeEndToEndTest {
         assertEquals(2, requests.size)
     }
 
+    @Test fun cancellationDuringApprovalPreventsMcpExecutionAndContinuation() {
+        val server = FakeMcpServer()
+        val service = connectedService(server)
+        val cancellation = AiProviderCancellation()
+        var requests = 0
+        var approvals = 0
+
+        val failure = runCatching {
+            AiProviderRuntime.runConversation(
+                profile = profile(),
+                prompt = "look this up",
+                service = service,
+                approve = {
+                    approvals++
+                    cancellation.cancel()
+                    true
+                },
+                cancellation = cancellation,
+                post = {
+                    requests++
+                    functionCall()
+                }
+            )
+        }.exceptionOrNull()
+
+        assertTrue(failure is java.util.concurrent.CancellationException)
+        assertEquals(1, requests)
+        assertEquals(1, approvals)
+        assertEquals(0, server.calls.get())
+    }
+
     @Test fun mcpExecutionFailureIsReturnedToProviderAndConversationContinues() {
         val server = FakeMcpServer().apply { failToolCall = true }
         val service = connectedService(server)
