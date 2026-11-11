@@ -3,11 +3,13 @@ from pathlib import Path
 from audit_binary_notices import audit
 
 class BinaryNoticeAuditTest(unittest.TestCase):
-    def fixture(self, root, outer_notice=True):
+    def fixture(self, root, outer_notice=True, nested_license=True):
         d = root / "artifacts/example/vendor/sample/1.2.3"
         d.mkdir(parents=True)
         nested = io.BytesIO()
-        with zipfile.ZipFile(nested, "w") as z: z.writestr("META-INF/LICENSE", "Nested license text.")
+        with zipfile.ZipFile(nested, "w") as z:
+            if nested_license:
+                z.writestr("META-INF/LICENSE", "Nested license text.")
         with zipfile.ZipFile(d / "sample-1.2.3.aar", "w") as z:
             z.writestr("classes.jar", nested.getvalue())
             if outer_notice: z.writestr("META-INF/NOTICE.txt", "Sample upstream notice.")
@@ -23,10 +25,12 @@ class BinaryNoticeAuditTest(unittest.TestCase):
             self.assertIn("Sample upstream notice.", text); self.assertIn("Nested license text.", text)
     def test_missing_archive_notice_is_not_fabricated(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root=Path(tmp); sbom, artifacts=self.fixture(root, False)
+            root=Path(tmp); sbom, artifacts=self.fixture(root, outer_notice=False, nested_license=False)
             result=audit(sbom, artifacts, root/"out/notices.txt")
             self.assertEqual(result["components"][0]["evidence_level"], "SBOM_DECLARED_LICENSE_ONLY")
-            self.assertNotIn("Sample upstream notice.", (root/"out/notices.txt").read_text())
+            notice_text=(root/"out/notices.txt").read_text()
+            self.assertNotIn("Sample upstream notice.", notice_text)
+            self.assertNotIn("Nested license text.", notice_text)
     def test_missing_binary_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp); sbom, artifacts=self.fixture(root)
