@@ -46,8 +46,7 @@ internal object McpOAuthTokenRefresher {
             connectorId
         ).getOrElse {
             finish(Result.failure(McpOAuthRefreshException(
-                McpOAuthRefreshFailure.ENCRYPTED_STATE_UNAVAILABLE,
-                it
+                McpOAuthRefreshFailure.ENCRYPTED_STATE_UNAVAILABLE
             )))
             return
         } ?: run {
