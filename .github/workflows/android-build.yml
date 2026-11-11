@@ -68,10 +68,18 @@ jobs:
         run: |
           python3 -m unittest discover -s tools -p 'test_audit_binary_notices.py' -v
           python3 -m unittest discover -s tools -p 'test_audit_maven_metadata.py' -v
+          python3 -m unittest discover -s tools -p 'test_audit_maven_source_metadata.py' -v
 
       - name: Audit upstream Maven POM license and source metadata
         run: |
           python3 tools/audit_maven_metadata.py --sbom android/app/build/reports/cyclonedx-direct/bom.json --json-report android/build/reports/license-review/maven-metadata-audit.json --markdown-report android/build/reports/license-review/MAVEN_METADATA_AUDIT.md --attributions android/app/src/main/assets/POM_THIRD_PARTY_ATTRIBUTIONS.txt
+
+      - name: Assess Maven POM SCM source references (syntax only)
+        run: |
+          python3 tools/audit_maven_source_metadata.py \
+            --input android/build/reports/license-review/maven-metadata-audit.json \
+            --json-report android/build/reports/license-review/maven-source-metadata-audit.json \
+            --markdown-report android/build/reports/license-review/MAVEN_SOURCE_METADATA_AUDIT.md
 
       - name: Build license inventory and enrich reviewed SBOM metadata
         run: |
