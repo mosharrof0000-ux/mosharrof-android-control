@@ -927,4 +927,86 @@ class McpConnectorServiceRegressionTest {
         assertEquals("Invalid arguments must never reach the server", 0, server.toolCalls.get())
     }
 
+    @Test
+    fun asyncToolCallUsesPerRequestOAuthResolverAndPreservesApproval() {
+        registerConnector()
+        val server = FakeServer()
+        val client = McpHttpClient(
+            endpoint = "https://example.com/mcp",
+            connectionFactory = server::connection
+        )
+        val connectorService = McpConnectorService(client)
+        connectorService.connect("test.mcp").getOrThrow()
+        val tool = ConnectorRegistry.toolsFor("test.mcp").single()
+        val arguments = mapOf("text" to "async oauth")
+        val grant = connectorService.issueApprovalGrant(tool.id, arguments).getOrThrow()
+            ?: error("Approval grant missing")
+
+        val resolver = object : McpAccessTokenResolver {
+            override fun resolve(
+                connectorId: String,
+                expectedEndpoint: String,
+                onComplete: (Result<McpOAuthTokenRefresher.FreshBearerToken>) -> Unit
+            ) {
+                assertEquals("test.mcp", connectorId)
+                assertEquals("https://example.com/mcp", expectedEndpoint)
+                onComplete(Result.success(McpOAuthTokenRefresher.FreshBearerToken("test-access-token")))
+            }
+        }
+        var callbackResult: Result<String>? = null
+
+        connectorService.callToolAsync(
+            toolId = tool.id,
+            arguments = arguments,
+            tokenProvider = resolver,
+            ioExecutor = java.util.concurrent.Executor { it.run() },
+            approvalGrant = grant,
+            onComplete = { callbackResult = it }
+        )
+
+        assertNotNull(callbackResult)
+        assertTrue(callbackResult!!.isSuccess)
+        assertTrue(callbackResult!!.getOrThrow().contains("ok"))
+        assertEquals(1, server.toolCalls.get())
+    }
+
+    @Test
+    fun asyncToolCallStopsBeforeTransportWhenOAuthResolutionFails() {
+        registerConnector()
+        val server = FakeServer()
+        val client = McpHttpClient(
+            endpoint = "https://example.com/mcp",
+            connectionFactory = server::connection
+        )
+        val connectorService = McpConnectorService(client)
+        connectorService.connect("test.mcp").getOrThrow()
+        val tool = ConnectorRegistry.toolsFor("test.mcp").single()
+        val arguments = mapOf("text" to "must not send")
+        val grant = connectorService.issueApprovalGrant(tool.id, arguments).getOrThrow()
+            ?: error("Approval grant missing")
+        val resolver = object : McpAccessTokenResolver {
+            override fun resolve(
+                connectorId: String,
+                expectedEndpoint: String,
+                onComplete: (Result<McpOAuthTokenRefresher.FreshBearerToken>) -> Unit
+            ) {
+                onComplete(Result.failure(IllegalStateException("safe test failure")))
+            }
+        }
+        var callbackResult: Result<String>? = null
+
+        connectorService.callToolAsync(
+            toolId = tool.id,
+            arguments = arguments,
+            tokenProvider = resolver,
+            ioExecutor = java.util.concurrent.Executor { it.run() },
+            approvalGrant = grant,
+            onComplete = { callbackResult = it }
+        )
+
+        assertNotNull(callbackResult)
+        assertTrue(callbackResult!!.isFailure)
+        assertEquals("OAuth failure must prevent remote tool execution", 0, server.toolCalls.get())
+    }
+
 }
