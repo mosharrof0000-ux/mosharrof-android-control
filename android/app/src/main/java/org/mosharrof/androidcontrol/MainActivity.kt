@@ -602,24 +602,21 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun unknownAiOutcomePrefs() =
-        getSharedPreferences("ai_request_recovery", MODE_PRIVATE)
+    private fun aiRequestRecoveryStore() = AiRequestRecoveryStore(
+        SharedPreferencesAiRequestRecoveryPersistence(
+            getSharedPreferences("ai_request_recovery", MODE_PRIVATE)
+        )
+    )
 
     private fun hasPendingUnknownAiOutcome(): Boolean =
-        unknownAiOutcomePrefs().getBoolean("pending_unknown_outcome", false)
+        aiRequestRecoveryStore().hasPendingUnknownOutcome()
 
     private fun savePendingUnknownAiOutcome() {
-        unknownAiOutcomePrefs().edit()
-            .putBoolean("pending_unknown_outcome", true)
-            .putLong("recorded_at_epoch_ms", System.currentTimeMillis())
-            .apply()
+        aiRequestRecoveryStore().recordUnknownOutcome(System.currentTimeMillis())
     }
 
     private fun clearPendingUnknownAiOutcome() {
-        unknownAiOutcomePrefs().edit()
-            .remove("pending_unknown_outcome")
-            .remove("recorded_at_epoch_ms")
-            .apply()
+        aiRequestRecoveryStore().markReviewed()
     }
 
     private fun runAi() {
