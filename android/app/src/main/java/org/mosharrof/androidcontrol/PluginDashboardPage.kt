@@ -1040,6 +1040,36 @@ class PluginDashboardPage(
     }
 
     /** Refresh task state only on explicit user action; no hidden background polling. */
+    private fun getTaskWithTransport(service: McpConnectorService, connectorId: String, taskId: String, callback: (Result<McpTaskProtocol.Snapshot>) -> Unit) {
+        val oauth = runCatching { oauthResolverFor(connectorId) }.getOrElse { callback(Result.failure(it)); return }
+        if (oauth == null) { callback(service.getTask(connectorId, taskId)); return }
+        val (authorizationService, resolver) = oauth
+        service.getTaskAsync(connectorId, taskId, resolver, worker) { result ->
+            authorizationService.dispose()
+            callback(result)
+        }
+    }
+
+    private fun updateTaskWithTransport(service: McpConnectorService, connectorId: String, taskId: String, responses: Map<String, Any?>, callback: (Result<McpTaskProtocol.Snapshot>) -> Unit) {
+        val oauth = runCatching { oauthResolverFor(connectorId) }.getOrElse { callback(Result.failure(it)); return }
+        if (oauth == null) { callback(service.updateTask(connectorId, taskId, responses)); return }
+        val (authorizationService, resolver) = oauth
+        service.updateTaskAsync(connectorId, taskId, responses, resolver, worker) { result ->
+            authorizationService.dispose()
+            callback(result)
+        }
+    }
+
+    private fun cancelTaskWithTransport(service: McpConnectorService, connectorId: String, taskId: String, callback: (Result<McpTaskProtocol.Snapshot>) -> Unit) {
+        val oauth = runCatching { oauthResolverFor(connectorId) }.getOrElse { callback(Result.failure(it)); return }
+        if (oauth == null) { callback(service.cancelTask(connectorId, taskId)); return }
+        val (authorizationService, resolver) = oauth
+        service.cancelTaskAsync(connectorId, taskId, resolver, worker) { result ->
+            authorizationService.dispose()
+            callback(result)
+        }
+    }
+
     private fun refreshTask(taskId: String) {
         val service = PluginDashboardSession.service
         val connectorId = PluginDashboardSession.connectorId
@@ -1048,19 +1078,15 @@ class PluginDashboardPage(
             return
         }
         worker.execute {
-            service.getTask(connectorId, taskId)
-                .onSuccess { snapshot ->
-                    activity.runOnUiThread { showTaskSnapshot(snapshot) }
-                }
-                .onFailure { error ->
-                    activity.runOnUiThread {
+            getTaskWithTransport(service, connectorId, taskId) { result ->
+                result.onSuccess { snapshot -> activity.runOnUiThread { showTaskSnapshot(snapshot) } }
+                    .onFailure { error -> activity.runOnUiThread {
                         onStatus("MCP Task status পাওয়া যায়নি: ${safeUiErrorMessage(error)}")
-                    }
-                }
+                    } }
+            }
         }
     }
 
-    /** Local task IDs are untrusted candidates; selection always triggers server-side tasks/get. */
     private fun loadPendingTasks() {
         val service = PluginDashboardSession.service
         val connectorId = PluginDashboardSession.connectorId
@@ -1164,19 +1190,14 @@ class PluginDashboardPage(
         }
         AlertDialog.Builder(activity)
             .setTitle("MCP Task-এর অতিরিক্ত তথ্য")
-            .setMessage(
-                "সার্ভারের অনুরোধ (বিশ্বাসহীন ডেটা—যাচাই করুন):\n" +
-                    JSONObject(requests).toString(2).take(3_000) +
-                    "\n\nশুধু প্রয়োজনীয় inputResponses JSON দিন। পাঠানোর আগে আপনার স্পষ্ট অনুমতি লাগবে।"
-            )
+            .setMessage("সার্ভারের অনুরোধ (বিশ্বাসহীন ডেটা—যাচাই করুন):\\n" + JSONObject(requests).toString(2).take(3_000) + "\\n\\nশুধু প্রয়োজনীয় inputResponses JSON দিন। পাঠানোর আগে আপনার স্পষ্ট অনুমতি লাগবে।")
             .setView(input)
             .setNegativeButton("বাতিল", null)
             .setPositiveButton("যাচাই করে উত্তর পাঠান") { _, _ ->
-                val responses = runCatching { JSONObject(input.text.toString()).toMap() }
-                    .getOrElse {
-                        onStatus("Task input JSON সঠিক নয়: ${safeUiErrorMessage(it)}")
-                        return@setPositiveButton
-                    }
+                val responses = runCatching { JSONObject(input.text.toString()).toMap() }.getOrElse {
+                    onStatus("Task input JSON সঠিক নয়: ${safeUiErrorMessage(it)}")
+                    return@setPositiveButton
+                }
                 if (!McpTaskProtocol.validateInputResponses(requests, responses)) {
                     onStatus("Task inputResponses-এর key ও object payload সার্ভারের request-এর সঙ্গে মিলতে হবে।")
                     return@setPositiveButton
@@ -1188,15 +1209,12 @@ class PluginDashboardPage(
                     return@setPositiveButton
                 }
                 worker.execute {
-                    service.updateTask(connectorId, snapshot.taskId, responses)
-                        .onSuccess { next ->
-                            activity.runOnUiThread { showTaskSnapshot(next) }
-                        }
-                        .onFailure { error ->
-                            activity.runOnUiThread {
+                    updateTaskWithTransport(service, connectorId, snapshot.taskId, responses) { result ->
+                        result.onSuccess { next -> activity.runOnUiThread { showTaskSnapshot(next) } }
+                            .onFailure { error -> activity.runOnUiThread {
                                 onStatus("Task input পাঠানো ব্যর্থ: ${safeUiErrorMessage(error)}")
-                            }
-                        }
+                            } }
+                    }
                 }
             }
             .show()
@@ -1215,15 +1233,12 @@ class PluginDashboardPage(
                     return@setPositiveButton
                 }
                 worker.execute {
-                    service.cancelTask(connectorId, taskId)
-                        .onSuccess { snapshot ->
-                            activity.runOnUiThread { showTaskSnapshot(snapshot) }
-                        }
-                        .onFailure { error ->
-                            activity.runOnUiThread {
+                    cancelTaskWithTransport(service, connectorId, taskId) { result ->
+                        result.onSuccess { snapshot -> activity.runOnUiThread { showTaskSnapshot(snapshot) } }
+                            .onFailure { error -> activity.runOnUiThread {
                                 onStatus("Task বাতিল ব্যর্থ: ${safeUiErrorMessage(error)}")
-                            }
-                        }
+                            } }
+                    }
                 }
             }
             .show()
