@@ -245,3 +245,17 @@ Commits:
 - Added service-layer validation requiring 1–16 request keys and a non-empty object payload per key, with bounded key names and per-payload property counts. UI validation still additionally requires exact equality with the server's validated request keys.
 - Added JVM coverage for valid, empty, scalar, empty-object, blank-key and over-count payloads. This remains structural validation; server-defined semantic rules and real MCP interoperability remain unverified.
 - Exact-head Android CI is pending; no build/test pass is claimed for this follow-up.
+
+## Latest OAuth implementation and exact-head CI — 2026-11-11
+
+**Source/test head:** `9331db923d0842f2b035519cb013a482f5c20424`.
+
+- Android workflow run `43004829257`: PASS — Android unit tests, Debug APK assembly and artifact upload completed successfully.
+- Worker workflow run `43004829311`: PASS — dependency install and typecheck completed successfully.
+- Added `McpOAuthTokenExchangeOutcomeTest` to assert that MCP connection readiness is true only when token exchange succeeded and the one-time encrypted pending PKCE request was cleared; failed exchange and failed cleanup both fail closed.
+- `MainActivity` now calls the shared readiness predicate before creating/connecting the OAuth MCP service.
+- OAuth implementation is present in source: bounded authorization-server/protected-resource metadata validation; CIMD metadata validation; AppAuth authorization-code + S256 PKCE request and callback checks; RFC 8707 resource-bound token exchange; encrypted AuthState and pending-request persistence; per-request async Bearer refresh; explicit RFC 7009 revocation. OAuth-created MCP clients reject synchronous/static-token transport.
+- The preceding exact-head CI run also passed on `11d9fb5ecb7f44358cb9d6b0c8e65fa1ef18b4ad` (Android run `43004301762`, Worker run `43004301859`); the newer `9331db9` run covers the outcome-predicate refactor and regression tests.
+- No live browser authorization, token exchange, refresh, revocation, real MCP server, physical Android device, or deployed Worker test was performed. AppAuth activity-result lifecycle, Android Keystore runtime behavior and server interoperability remain external verification gates.
+- Historical entries above describing OAuth/PKCE as unimplemented are snapshots from earlier source heads and must not be read as the current source state. Live verification remains pending.
+- Dependency lockfiles, Gradle verification metadata, transitive SBOM/license inventory and vulnerability review remain open; the preliminary inventory at lines 183–188 is still not a supply-chain clearance.
