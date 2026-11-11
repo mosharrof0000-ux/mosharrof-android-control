@@ -54,7 +54,7 @@ Independent work may proceed concurrently, but shared contracts and UI integrati
 - [x] Integrate active profile selection into AiEngine's first-turn text runtime.
 - [x] Add provider management UI for profile creation, selection, deletion and explicit legacy Gemini migration.
 - [x] Wire active profile requests into `AiProviderRuntime` and the Android AI prompt action.
-- [ ] Add model/capability display and credential replace/revoke UX.
+- [x] Add model/capability display and credential replace/revoke UX (adapter capability UNKNOWN remains explicitly unverified; hidden credential replacement and profile deletion are source-level UX).
 - [x] Verify metadata separation and resolved-profile secret redaction with repository tests.
 - [ ] Verify Android Keystore failure behavior on supported Android runtimes.
 - **Gate:** profile CRUD, encryption boundaries, migration, and no-secret-leak tests pass.
@@ -94,17 +94,17 @@ Independent work may proceed concurrently, but shared contracts and UI integrati
 
 ### Phase 6 — Android UX
 - [x] Provider profile add/select/delete UI.
-- [ ] Model and verified capability display.
-- [ ] Credential replace/revoke UX and explicit active-profile state.
+- [x] Model/API-version/adapter capability display (UNKNOWN is not treated as vendor-verified).
+- [x] Credential replacement and revoke via profile deletion; active-profile selection is retained. Physical Android UX verification remains pending.
 - [x] AI-generated tool approval and rejection dialog wired into the runtime.
 - [x] Basic AI request status and safe failure display.
 - [ ] UI state regression tests for provider/profile/approval/task transitions.
 - **Gate:** UI decisions match the underlying permission and profile state.
 
 ### Phase 7 — Security, integration, and release readiness
-- [ ] Credential, endpoint, redirect, response-size, JSON-depth and logging audit.
+- [ ] Complete whole-repository/history credential, endpoint, redirect, response-size, JSON-depth and logging audit. Changed Android production Kotlin files have a focused scan; full audit remains open.
 - [ ] AI + MCP + approval integration regression.
-- [ ] Android unit tests, debug APK build, Worker typecheck.
+- [x] Android unit tests, debug APK build, Worker typecheck — Android CI #42970919165 and Worker CI #42970919190 PASS on source commit `d162a314ac0520d5511dd06ad751b9ce163e3c3b`.
 - [ ] Dependency/license review and known-limitations register.
 - [ ] Update architecture and ToolHub handoff materials.
 - **Gate:** no unresolved critical/high findings; all automated checks pass.
@@ -170,3 +170,13 @@ Independent work may proceed concurrently, but shared contracts and UI integrati
 - Added JVM tests for store recreation against a retained persistence implementation, marker/timestamp clearing after review, the deliberately narrow persistence contract, and negative timestamp rejection.
 - These tests validate the store contract; Android SharedPreferences durability is provided by the platform adapter and still requires Android runtime/device verification.
 - Source commits: `0c833489f053b86c77cb0d8a8356db9fa1fde6cb`, `b9bb6cc7f3404c0249f8341fb5556285e45a5333`, `b4ac776ee7f7a5e3f374293122b3ab9d5da26861`.
+
+
+### 2026-11-11 current source and CI reconciliation
+- Latest source commit verified: `d162a314ac0520d5511dd06ad751b9ce163e3c3b`.
+- Android CI #316 / `42970919165`: PASS (unit tests, debug APK assembly, artifact upload).
+- Worker CI #272 / `42970919190`: PASS.
+- Artifact ID `13832594882`, SHA-256 `30f9dfe103e9003f6a6af8bc50d40da20d7e368b36d582064666e45150e6a76d`; CI output only, not installed.
+- Provider capability display and hidden credential replacement/removal are implemented in source; actual vendor capability discovery and Android-device UX remain unverified.
+- Security redaction now covers provider tool errors, Android UI status and Termux bridge exception text.
+- Still pending: OAuth/CIMD end-to-end implementation, interrupted/malformed continuation fixtures, UI transition regression coverage, redacted audit event design, full tracked-source/history and dependency/license audit, Android Keystore/device tests, live providers/MCP, deployed Worker verification and external release gates.
