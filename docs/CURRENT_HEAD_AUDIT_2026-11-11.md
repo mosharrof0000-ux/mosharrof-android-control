@@ -259,3 +259,31 @@ Commits:
 - No live browser authorization, token exchange, refresh, revocation, real MCP server, physical Android device, or deployed Worker test was performed. AppAuth activity-result lifecycle, Android Keystore runtime behavior and server interoperability remain external verification gates.
 - Historical entries above describing OAuth/PKCE as unimplemented are snapshots from earlier source heads and must not be read as the current source state. Live verification remains pending.
 - Dependency lockfiles, Gradle verification metadata, transitive SBOM/license inventory and vulnerability review remain open; the preliminary inventory at lines 183–188 is still not a supply-chain clearance.
+
+
+## Authoritative PR source-head update — 2026-11-11
+
+**Source head audited:** `0bb1cf53b3c79b20292dc68fa1b03e55eaac9098`  
+**Branch:** `fix/mcp-pagination-20261110`  
+**PR:** #7 — open, unmerged.
+
+### Exact-head automated verification
+
+- Android workflow run `43051676040`: SUCCESS. The job completed committed Gradle lock/checksum verification, `:app:testDebugUnitTest`, CycloneDX SBOM generation, license inventory generation, debug APK assembly, packaged license-notice validation, and dependency evidence upload. The OSV scanner job also completed successfully.
+- Worker workflow run `43051675862`: SUCCESS. The job completed `npm ci`, `npm audit --audit-level=high`, CycloneDX SBOM generation, `npm run check`, and dependency evidence upload. The OSV scanner job also completed successfully.
+- Scanner job completion is not, by itself, a legal license clearance, complete vulnerability assessment, or proof that no actionable findings require review. The generated dependency/SBOM/SARIF evidence must be inspected before declaring supply-chain clearance.
+
+### OAuth/CIMD source integration status
+
+- Source includes bounded HTTPS metadata fetch and validation for protected-resource and authorization-server metadata, CIMD fetch/validation, AppAuth native authorization-code + S256 PKCE, encrypted pending-request storage, callback/state/redirect/client/resource binding checks, RFC 8707 resource-bound token exchange, encrypted AuthState persistence, serialized refresh-token rotation, per-request asynchronous Bearer resolution, and RFC 7009 revocation.
+- OAuth-backed MCP connection negotiation, legacy initialize/initialized notification, paginated tools/list, tool calls and task lifecycle operations use the async token resolver. OAuth-only clients reject synchronous/static-token transport; manual-token connectors retain a separate compatibility path.
+- JVM/mock regression coverage and exact-head CI are present. This is source/CI evidence only; no real OAuth authorization-server, CIMD host, MCP server, token refresh/rotation, remote revocation, Android Keystore runtime, or physical-device/AppAuth callback test has been performed.
+
+### Release and follow-up gates
+
+- Review generated Android/Worker dependency evidence and scanner findings; do not infer zero vulnerabilities or legal approval from a successful workflow alone.
+- Perform a semantic whole-repository/history and runtime-data leakage review, plus independent security review.
+- Run live OAuth/CIMD and real MCP interoperability with test credentials on a physical Android device; verify browser callback, encrypted state, refresh rotation, revocation and fail-closed behavior. Never place credential values in logs or chat.
+- Verify deployed Worker behavior separately. PR #7 remains open/unmerged; no deployment or APK installation was performed. Merge, deployment and physical installation still require explicit user approval.
+
+This addendum supersedes earlier audit statements that OAuth/CIMD was validator-only or that dependency lock/SBOM workflows were absent. Historical entries remain as records of earlier commits.
