@@ -41,6 +41,15 @@ jobs:
       - name: Generate dependency locks and verification metadata
         run: gradle -p android :app:testDebugUnitTest :app:cyclonedxDirectBom :app:assembleDebug --write-locks --write-verification-metadata sha256
 
+      - name: Capture dependency paths for OSV triage
+        run: |
+          mkdir -p android/build/reports/dependency-triage
+          gradle -p android :app:dependencies --configuration _internal-unified-test-platform-android-test-plugin-host-emulator-control > android/build/reports/dependency-triage/emulator-control.txt
+          gradle -p android :app:dependencies --configuration _internal-unified-test-platform-android-test-plugin-host-retention > android/build/reports/dependency-triage/retention.txt
+          gradle -p android :app:dependencies --configuration _internal-unified-test-platform-android-test-plugin-result-listener-gradle > android/build/reports/dependency-triage/result-listener.txt
+          gradle -p android buildEnvironment > android/build/reports/dependency-triage/root-build-environment.txt
+          gradle -p android :app:buildEnvironment > android/build/reports/dependency-triage/app-build-environment.txt
+
       - name: Run Android unit tests
         run: gradle -p android :app:testDebugUnitTest
 
@@ -65,6 +74,7 @@ jobs:
             android/app/gradle.lockfile
             android/gradle/verification-metadata.xml
             android/app/build/reports/cyclonedx-direct/bom.json
+            android/build/reports/dependency-triage/**
           if-no-files-found: error
 
   dependency-scan:
