@@ -1,5 +1,6 @@
 import unittest
-from audit_maven_metadata import normalize_license, parse_pom, pom_urls
+from unittest.mock import patch
+from audit_maven_metadata import normalize_license, parse_pom, pom_urls, resolve_license_metadata
 
 class MavenMetadataAuditTest(unittest.TestCase):
     def test_normalizes_apache_license_name_and_url(self):
@@ -21,6 +22,38 @@ class MavenMetadataAuditTest(unittest.TestCase):
     def test_rejects_unsafe_coordinates(self):
         with self.assertRaises(ValueError):
             pom_urls("../bad", "thing", "1.0")
+
+    def test_inherits_license_from_exact_parent_pom(self):
+        child = b"""<project xmlns="http://maven.apache.org/POM/4.0.0"><parent><groupId>com.google.guava</groupId><artifactId>guava-parent</artifactId><version>26.0-android</version></parent><artifactId>listenablefuture</artifactId></project>"""
+        parent = b"""<project xmlns="http://maven.apache.org/POM/4.0.0"><licenses><license><name>Apache License, Version 2.0</name><url>https://www.apache.org/licenses/LICENSE-2.0</url></license></licenses></project>"""
+        with patch("audit_maven_metadata.fetch_pom", return_value=(parent, "https://repo.example/guava-parent.pom")):
+            result = resolve_license_metadata(child, "https://repo.example/listenablefuture.pom")
+        self.assertEqual(result["license_source"], "parent_pom")
+        self.assertEqual(result["inherited_licenses"][0]["normalized"], "Apache-2.0")
+        self.assertEqual(result["parent_pom_url"], "https://repo.example/guava-parent.pom")
+        self.assertEqual(len(result["parent_pom_sha256"]), 64)
+
+    def test_child_license_overrides_parent_and_does_not_fetch(self):
+        child = b"""<project><licenses><license><name>MIT</name></license></licenses><parent><groupId>x</groupId><artifactId>p</artifactId><version>1</version></parent></project>"""
+        with patch("audit_maven_metadata.fetch_pom") as fetch:
+            result = resolve_license_metadata(child, "https://repo.example/child.pom")
+        fetch.assert_not_called()
+        self.assertEqual(result["license_source"], "pom")
+        self.assertEqual(result["metadata"]["licenses"][0]["normalized"], "MIT")
+
+    def test_parent_without_license_fails_closed(self):
+        child = b"""<project><parent><groupId>x</groupId><artifactId>p</artifactId><version>1</version></parent></project>"""
+        parent = b"<project><artifactId>p</artifactId></project>"
+        with patch("audit_maven_metadata.fetch_pom", return_value=(parent, "https://repo.example/p.pom")):
+            result = resolve_license_metadata(child, "https://repo.example/child.pom")
+        self.assertEqual(result["license_source"], "missing")
+
+    def test_parent_cycle_fails_closed(self):
+        child = b"""<project><parent><groupId>x</groupId><artifactId>p</artifactId><version>1</version></parent></project>"""
+        parent = b"""<project><parent><groupId>x</groupId><artifactId>p</artifactId><version>1</version></parent></project>"""
+        with patch("audit_maven_metadata.fetch_pom", return_value=(parent, "https://repo.example/p.pom")):
+            with self.assertRaisesRegex(ValueError, "cycle"):
+                resolve_license_metadata(child, "https://repo.example/child.pom")
 
 if __name__ == "__main__":
     unittest.main()
