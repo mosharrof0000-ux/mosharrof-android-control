@@ -34,8 +34,16 @@
 ## Remaining threats and release gates
 - Verify the deployed Worker’s lease/retry, idempotency, rate-limit, and audit behavior end-to-end; source-level implementation alone is not deployment evidence.
 - Verify credential revocation and token invalidation behavior on a physical Android device.
-- MRTR `input_required` handling now uses a user-reviewed JSON response dialog, opaque `requestState` pass-through, request-key matching, and a 10-round cap. Native schema-driven form rendering and URL-mode browser handoff remain pending; the optional Tasks extension is not implemented.
-- Add OAuth/CIMD authorization for servers that do not support manually provisioned Bearer tokens.
+- MRTR input_required handling uses a user-reviewed JSON response dialog, opaque requestState pass-through, exact request-key matching, and a bounded continuation limit. Native schema-driven elicitation/tool argument forms and HTTPS URL-mode browser handoff are implemented for supported shapes. MCP Tasks task-handle persistence/revalidation and explicit user-triggered refresh/input/cancel UI are implemented in source; no background polling is enabled. Real-server interoperability remains pending.
+- OAuth/CIMD is not a complete authorization flow: metadata URL derivation/validation helpers exist, but live metadata/CIMD fetch, AppAuth PKCE authorization, issuer/resource-bound token exchange, encrypted token refresh/revocation and end-to-end tests remain pending.
 - Run a real HTTPS MCP server through connect, discovery, approval, tool execution, and disconnect.
-- Inspect logs and error surfaces for credential or private-data leakage.
+- Complete a whole-repository tracked-source and history audit of logs, exception/error surfaces, crash paths and generated artifacts for credential/private-data leakage. Earlier focused scans covered only a small security-sensitive subset and are not sufficient to close this gate.
+- Provider HTTP POST requests are not automatically retried. If cancellation occurs after dispatch but before an HTTP response, the app records an unknown-outcome marker; that marker stores only a boolean and timestamp and does not reconcile provider-side execution.
 Until these gates pass, describe remote relay and physical-device behavior as implemented in code but not end-to-end verified.
+## 2026-11-11 current-head security implementation notes
+
+- AI provider profiles are stored separately using Android Keystore AES-GCM with profile-ID authenticated additional data. Source-level implementation and JVM tests do not substitute for Android Keystore runtime/device verification.
+- AI tool execution is routed through the exact connected MCP service session. Unknown tools, malformed arguments, disconnected tools and unsupported result types fail closed; approval-required calls require a one-time, argument-bound grant after explicit user confirmation.
+- MCP task recovery persists bounded identifiers/status/timing metadata only. Restored pending records are untrusted candidates and are revalidated with the remote server before use. Task result, input request payloads, credentials and provider responses are not persisted by the task metadata store.
+- The AI request recovery marker persists only a pending flag and timestamp. It is a review reminder, not evidence of vendor execution or a provider reconciliation mechanism.
+- Exact-head source/CI findings are recorded in docs/CURRENT_HEAD_AUDIT_2026-11-11.md. No live provider, real MCP server, physical device, or deployed Worker security verification is claimed.
