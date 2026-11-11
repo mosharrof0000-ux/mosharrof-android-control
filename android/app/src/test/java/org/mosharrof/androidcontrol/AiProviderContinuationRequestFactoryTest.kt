@@ -135,6 +135,31 @@ class AiProviderContinuationRequestFactoryTest {
         assertEquals("custom-call", (messages[2] as Map<*, *>)["tool_call_id"])
     }
 
+    @Test fun rejectsMalformedProviderHistoryBeforeBuildingContinuation() {
+        val previous = mapOf<String, Any?>(
+            "output" to listOf(
+                "malformed-history-item",
+                mapOf(
+                    "type" to "function_call",
+                    "call_id" to "oa-call",
+                    "name" to "lookup",
+                    "arguments" to "{\\"query\\":\\"x\\"}"
+                )
+            )
+        )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            AiProviderContinuationRequestFactory.create(
+                config(AiProviderId.OPENAI),
+                "fake-key",
+                "find x",
+                previous,
+                result("oa-call"),
+                listOf(tool())
+            )
+        }
+    }
+
     @Test fun rejectsMissingOrMismatchedToolResultsBeforeBuildingRequest() {
         val previous = mapOf<String, Any?>(
             "output" to listOf(
