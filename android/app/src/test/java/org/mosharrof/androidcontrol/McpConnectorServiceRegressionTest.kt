@@ -34,6 +34,7 @@ class McpConnectorServiceRegressionTest {
         val toolCallMetadata = mutableListOf<Boolean>()
         val toolCallHeaders = mutableListOf<Map<String, String?>>()
         val authorizationHeaders = mutableListOf<String?>()
+        val requestAuthorizationHeaders = mutableListOf<String?>()
         val toolCallParams = mutableListOf<JSONObject>()
         val toolListCursors = mutableListOf<String?>()
 
@@ -58,6 +59,7 @@ class McpConnectorServiceRegressionTest {
                     )
                     val method = request.optString("method")
                     methods.add(method)
+                    requestAuthorizationHeaders.add(getRequestProperty("Authorization"))
 
                     if (method == "tools/list") {
                         val params = request.optJSONObject("params")
@@ -1271,6 +1273,6 @@ class McpConnectorServiceRegressionTest {
         assertNotNull(asyncResult)
         assertTrue(asyncResult!!.isSuccess)
         assertEquals(listOf("server/discover"), server.methods)
-        assertEquals("Bearer async-only-token", server.authorizationHeaders.lastOrNull())
+        assertEquals("Bearer async-only-token", server.requestAuthorizationHeaders.lastOrNull())
     }
 }
