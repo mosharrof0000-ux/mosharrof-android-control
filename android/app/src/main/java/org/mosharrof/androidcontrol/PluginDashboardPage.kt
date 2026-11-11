@@ -101,6 +101,9 @@ class PluginDashboardPage(
         button(parent, "প্রস্তুত OAuth Request দিয়ে Browser Login শুরু করুন") {
             startPreparedOAuthAuthorization()
         }
+        button(parent, "Remote OAuth Token Revocation (নিশ্চিতকরণসহ)") {
+            confirmOAuthTokenRevocation()
+        }
         button(parent, "সংরক্ষিত MCP Task পুনরুদ্ধার / যাচাই") {
             loadPendingTasks()
         }
@@ -153,6 +156,74 @@ class PluginDashboardPage(
         } else {
             note(parent, "সংযোগ বিচ্ছিন্ন। Endpoint দিয়ে Connect করুন।")
         }
+    }
+
+    /**
+     * RFC 7009 revocation is a remote network operation. It runs only after
+     * an explicit button tap and a second confirmation; local credentials are
+     * retained unless the server returns HTTP 200.
+     */
+    private fun confirmOAuthTokenRevocation() {
+        val connectorId = PluginDashboardSession.connectorId
+            ?: connectorIdFor(endpointInput.text.toString().trim())
+        if (connectorId == null) {
+            onStatus("OAuth revocation-এর জন্য সঠিক HTTPS MCP endpoint দিন।")
+            return
+        }
+        val discovery = lastOAuthDiscovery
+        if (discovery == null || lastOAuthConnectorId != connectorId) {
+            onStatus("আগে এই Connector-এর OAuth metadata পুনরায় যাচাই করুন।")
+            return
+        }
+        val revocationEndpoint = McpOAuthMetadata
+            .validatedRevocationEndpoint(discovery.authorizationServerMetadata)
+        if (revocationEndpoint == null) {
+            onStatus("Authorization Server নিরাপদ revocation_endpoint প্রকাশ করেনি; কোনো token বা local state পরিবর্তন করা হয়নি।")
+            return
+        }
+
+        AlertDialog.Builder(activity)
+            .setTitle("OAuth Token প্রত্যাহার করবেন?")
+            .setMessage("Authorization Server-এ HTTPS POST পাঠিয়ে OAuth token revoke করা হবে। HTTP 200 নিশ্চিত না হওয়া পর্যন্ত স্থানীয় OAuth credentials মুছবে না।")
+            .setNegativeButton("বাতিল", null)
+            .setPositiveButton("Remote Token Revocation করুন") { _, _ ->
+                worker.execute {
+                    runCatching {
+                        val authState = McpOAuthAuthStateStore
+                            .read(activity, connectorId).getOrThrow()
+                            ?: error("সংরক্ষিত OAuth session পাওয়া যায়নি।")
+                        val clientId = authState.lastAuthorizationResponse
+                            ?.request?.clientId
+                            ?.takeIf { it.isNotBlank() }
+                            ?: error("OAuth session থেকে validated public client ID পাওয়া যায়নি।")
+                        val refreshToken = authState.refreshToken
+                        val accessToken = authState.accessToken
+                        val token = refreshToken ?: accessToken
+                            ?: error("Revocation-এর জন্য কোনো OAuth token পাওয়া যায়নি।")
+                        val hint = if (refreshToken != null) "refresh_token" else "access_token"
+
+                        McpOAuthTokenRevocation.revoke(
+                            revocationEndpoint = revocationEndpoint,
+                            clientId = clientId,
+                            token = token,
+                            tokenTypeHint = hint
+                        ).getOrThrow()
+
+                        McpOAuthAuthStateStore.delete(activity, connectorId).getOrThrow()
+                        McpOAuthPendingRequestStore.delete(activity, connectorId).getOrThrow()
+                    }.onSuccess {
+                        activity.runOnUiThread {
+                            tokenInput.text.clear()
+                            onStatus("Authorization Server HTTP 200 দিয়ে OAuth token revocation নিশ্চিত করেছে; স্থানীয় OAuth state ও pending request মুছে ফেলা হয়েছে।")
+                        }
+                    }.onFailure { error ->
+                        activity.runOnUiThread {
+                            onStatus("OAuth revocation ব্যর্থ; স্থানীয় OAuth credentials অক্ষত রাখা হয়েছে: " + safeUiErrorMessage(error))
+                        }
+                    }
+                }
+            }
+            .show()
     }
 
     private fun connect() {
