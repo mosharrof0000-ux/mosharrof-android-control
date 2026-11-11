@@ -168,3 +168,36 @@ The source audit at 8713269590dc3a1b9621d1abf66bbe7a15ea8bd0 supersedes older da
 - Still not implemented end-to-end: OAuth/CIMD authorization, inbound MOSHARROF MCP server/bridge, Microsoft declarative-agent packaging, physical Android QA, live provider API round-trips and deployed Worker verification.
 
 Current-head exact CI: Android run 42966451646 and Worker run 42966451641 passed at the audited source head. Do not apply that evidence to later source changes; documentation-only commits do not alter the source but still need a current-head CI check for an up-to-date PR gate.
+
+
+## 2026-11-11 authoritative current implementation reconciliation
+This section supersedes older dated notes above wherever they describe current code as unwired or pending after the later implementation commits.
+
+### Outbound AI provider runtime
+- The active encrypted provider profile is selected through `AiEngine.askWithMcpApproval` and routed to `AiProviderRuntime`; legacy Gemini generateContent / generic OpenAI-compatible fallback remains available when no active profile is selected.
+- Registered provider adapters and request/response/continuation translation cover Gemini Interactions, OpenAI Responses, xAI Responses, Anthropic Messages and Custom OpenAI-compatible mode.
+- Provider tool calls are routed through bounded `AiToolCallOrchestrator` and the exact connected `McpConnectorService` session. Sensitive operations require the Android approval callback and one-time argument-bound grants. The runtime is sequential and bounded; it does not execute arbitrary provider-supplied code.
+- Mocked E2E tests exercise provider-shaped text → tool call → result → assistant continuation for Gemini, OpenAI, xAI and Anthropic. These are mock tests, not live vendor API verification.
+- Per-provider credential profiles, CRUD, active selection, hidden credential replacement/removal and model/API/adapter capability display exist in source. UNKNOWN capability values remain unverified; there is no live connection test or model discovery claim.
+- Cancellation disconnects active HTTP transport and records a minimal unknown-outcome marker when a dispatched request receives no HTTP response. The marker is not provider-side reconciliation; POST requests are not automatically retried.
+
+### MCP, task and security boundaries
+- MCP discovery pagination, schema/argument validation, exact-service-session scoping, approval grants, task metadata persistence/revalidation and explicit user-triggered task refresh/input/cancel flows exist in source with regression tests.
+- OAuth/CIMD remains metadata/URL validation helper work only; live metadata/CIMD fetch, AppAuth PKCE flow, resource/issuer-bound token exchange, encrypted token refresh/revocation and E2E verification are not implemented.
+- Inbound MCP server bridge remains a separate future workstream. The Android app's MCP client and Relay Worker do not by themselves make MOSHARROF an MCP server.
+- AI provider error results, Android UI status messages and Termux bridge exception paths now use fixed redacted error text. Regression tests assert raw simulated exception text and bearer-like values are not reflected.
+- Changed Android production Kotlin files have received a focused source-pattern scan; whole-repository/history, dependency/license, crash-report and runtime-log audits remain open.
+
+### Exact-source automated verification
+- Source commit `d162a314ac0520d5511dd06ad751b9ce163e3c3b`.
+- Android CI run `42970919165` (run #316): PASS — Android unit tests, debug APK assembly and artifact upload.
+- Worker CI run `42970919190` (run #272): PASS.
+- Debug artifact ID `13832594882`, size 2,415,618 bytes, SHA-256 `30f9dfe103e9003f6a6af8bc50d40da20d7e368b36d582064666e45150e6a76d`. CI artifact only; not installed or device-tested.
+- No live provider/MCP tests, deployed Worker verification, Android Keystore instrumentation, physical-device QA, APK installation or PR merge are claimed.
+
+### Remaining implementation order
+1. Add malformed and interrupted-continuation regression fixtures; add Android UI transition regression tests.
+2. Design privacy-minimal, redacted audit events without storing prompts, credentials or tool arguments.
+3. Complete whole-repository and Git-history source/error/log scan, then dependency/version/license review.
+4. Complete OAuth/CIMD as a separately gated security feature; do not imply OAuth readiness from AppAuth dependency or metadata helpers.
+5. Reconcile inbound MCP server/bridge architecture only after its threat model and authentication/authorization model are reviewed.
