@@ -76,4 +76,4 @@ After the source audit above, the branch added:
 - Profile-manager UI for hidden credential replacement, and a per-profile model/API-version/adapter-version capability view. Capability values remain UNKNOWN unless the adapter explicitly reports otherwise; this is not live model discovery or a vendor API test.
 - Regression tests for successful replacement, metadata/active-profile preservation, and rejection of missing profiles/invalid credentials.
 
-Verification for source commit `fad2354c48d96f0f2a2c2e82eb6842a19e328814`: Worker CI run `42968929491` PASS; Android CI run `42968929411` IN PROGRESS at the time this note was written. Unit tests were running; debug APK assembly and artifact upload had not started. No device test or installation.
+Verification for source commit `fad2354c48d96f0f2a2c2e82eb6842a19e328814`: Android CI run `42968929411` PASS (unit tests, debug APK assembly and artifact upload); Worker CI run `42968929491` PASS. Artifact `mosharrof-android-control-debug`, ID `13832821191`, size `2,415,440` bytes, SHA-256 `035720631ab1cfd2fc8ce73141e10f07f53f41bc818fb06e8ff811561d8251c0`. CI artifact only; no physical install/device QA.
