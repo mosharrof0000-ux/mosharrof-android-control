@@ -77,7 +77,7 @@ class PluginDashboardPage(
             } else {
                 PluginSecretStore.deleteToken(activity, id)
                     .onSuccess { onStatus("সংরক্ষিত Token মুছে ফেলা হয়েছে।") }
-                    .onFailure { onStatus("Token মোছা যায়নি: ${it.message}") }
+                    .onFailure { onStatus("Token মোছা যায়নি: ${safeUiErrorMessage(it)}") }
             }
         }
 
@@ -195,7 +195,7 @@ class PluginDashboardPage(
                 }
                 .onFailure { error ->
                     activity.runOnUiThread {
-                        onStatus("Disconnect ব্যর্থ: ${error.message}")
+                        onStatus("Disconnect ব্যর্থ: ${safeUiErrorMessage(error)}")
                     }
                 }
         }
@@ -303,7 +303,7 @@ class PluginDashboardPage(
                 val enumIndices = enumInputs.mapValues { it.value.selectedItemPosition }
                 val args = McpSchemaForm.parse(fields, textValues, boolValues, enumIndices)
                     .getOrElse {
-                        onStatus("Form input সঠিক নয়: ${it.message}")
+                        onStatus("Form input সঠিক নয়: ${safeUiErrorMessage(it)}")
                         return@setPositiveButton
                     }
                 if (!McpArgumentsValidator.validate(schema, args, requiredFields)) {
@@ -327,7 +327,7 @@ class PluginDashboardPage(
         }
         worker.execute {
             val grant = service.issueApprovalGrant(toolId, args).getOrElse { error ->
-                activity.runOnUiThread { onStatus("অনুমোদন তৈরি হয়নি: ${error.message}") }
+                activity.runOnUiThread { onStatus("অনুমোদন তৈরি হয়নি: ${safeUiErrorMessage(error)}") }
                 return@execute
             }
             service.callTool(toolId, args, approvalGrant = grant).onSuccess { output ->
@@ -335,7 +335,7 @@ class PluginDashboardPage(
                     handleToolOutput(toolId, toolName, args, output, 0)
                 }
             }.onFailure { error ->
-                activity.runOnUiThread { onStatus("Tool call ব্যর্থ: ${error.message}") }
+                activity.runOnUiThread { onStatus("Tool call ব্যর্থ: ${safeUiErrorMessage(error)}") }
             }
         }
     }
@@ -360,7 +360,7 @@ class PluginDashboardPage(
                 val args = runCatching {
                     JSONObject(input.text.toString()).toMap()
                 }.getOrElse {
-                    onStatus("Input JSON সঠিক নয়: ${it.message}")
+                    onStatus("Input JSON সঠিক নয়: ${safeUiErrorMessage(it)}")
                     return@setPositiveButton
                 }
 
@@ -376,7 +376,7 @@ class PluginDashboardPage(
                         arguments = args
                     ).getOrElse { error ->
                         activity.runOnUiThread {
-                            onStatus("অনুমোদন তৈরি হয়নি: ${error.message}")
+                            onStatus("অনুমোদন তৈরি হয়নি: ${safeUiErrorMessage(error)}")
                         }
                         return@execute
                     }
@@ -397,7 +397,7 @@ class PluginDashboardPage(
                         }
                     }.onFailure { error ->
                         activity.runOnUiThread {
-                            onStatus("Tool call ব্যর্থ: ${error.message}")
+                            onStatus("Tool call ব্যর্থ: ${safeUiErrorMessage(error)}")
                         }
                     }
                 }
@@ -523,7 +523,7 @@ class PluginDashboardPage(
                 val responses = runCatching {
                     JSONObject(responseInput.text.toString()).toMap()
                 }.getOrElse {
-                    onStatus("inputResponses JSON সঠিক নয়: ${it.message}")
+                    onStatus("inputResponses JSON সঠিক নয়: ${safeUiErrorMessage(it)}")
                     return@setPositiveButton
                 }
                 val expectedKeys = buildSet {
@@ -543,7 +543,7 @@ class PluginDashboardPage(
                 worker.execute {
                     val grant = service.issueApprovalGrant(toolId, arguments).getOrElse { error ->
                         activity.runOnUiThread {
-                            onStatus("MRTR retry অনুমোদন তৈরি হয়নি: ${error.message}")
+                            onStatus("MRTR retry অনুমোদন তৈরি হয়নি: ${safeUiErrorMessage(error)}")
                         }
                         return@execute
                     }
@@ -565,7 +565,7 @@ class PluginDashboardPage(
                         }
                     }.onFailure { error ->
                         activity.runOnUiThread {
-                            onStatus("MCP MRTR retry ব্যর্থ: ${error.message}")
+                            onStatus("MCP MRTR retry ব্যর্থ: ${safeUiErrorMessage(error)}")
                         }
                     }
                 }
@@ -582,7 +582,7 @@ class PluginDashboardPage(
                     }.onSuccess {
                         onStatus("URL mode লিংক বাইরের ব্রাউজারে খোলা হয়েছে; ফিরে এসে উত্তর যাচাই করুন।")
                     }.onFailure {
-                        onStatus("ব্রাউজার খোলা যায়নি: ${it.message}")
+                        onStatus("ব্রাউজার খোলা যায়নি: ${safeUiErrorMessage(it)}")
                     }
                 }
             }
@@ -670,7 +670,7 @@ class PluginDashboardPage(
                         booleanInputs.mapValues { it.value.isChecked },
                         enumInputs.mapValues { it.value.selectedItemPosition }
                     ).getOrElse {
-                        onStatus("Elicitation form input সঠিক নয়: ${it.message}")
+                        onStatus("Elicitation form input সঠিক নয়: ${safeUiErrorMessage(it)}")
                         return@setPositiveButton
                     }
                     val required = (schema["required"] as? List<*>)?.filterIsInstance<String>().orEmpty()
@@ -690,7 +690,7 @@ class PluginDashboardPage(
                 worker.execute {
                     val grant = service.issueApprovalGrant(toolId, arguments).getOrElse { error ->
                         activity.runOnUiThread {
-                            onStatus("MRTR retry অনুমোদন তৈরি হয়নি: ${error.message}")
+                            onStatus("MRTR retry অনুমোদন তৈরি হয়নি: ${safeUiErrorMessage(error)}")
                         }
                         return@execute
                     }
@@ -706,7 +706,7 @@ class PluginDashboardPage(
                         }
                     }.onFailure { error ->
                         activity.runOnUiThread {
-                            onStatus("MCP MRTR retry ব্যর্থ: ${error.message}")
+                            onStatus("MCP MRTR retry ব্যর্থ: ${safeUiErrorMessage(error)}")
                         }
                     }
                 }
@@ -729,7 +729,7 @@ class PluginDashboardPage(
                 }
                 .onFailure { error ->
                     activity.runOnUiThread {
-                        onStatus("MCP Task status পাওয়া যায়নি: ${error.message}")
+                        onStatus("MCP Task status পাওয়া যায়নি: ${safeUiErrorMessage(error)}")
                     }
                 }
         }
@@ -767,7 +767,7 @@ class PluginDashboardPage(
                 }
                 .onFailure { error ->
                     activity.runOnUiThread {
-                        onStatus("Task recovery তালিকা পাওয়া যায়নি: ${error.message}")
+                        onStatus("Task recovery তালিকা পাওয়া যায়নি: ${safeUiErrorMessage(error)}")
                     }
                 }
         }
@@ -849,7 +849,7 @@ class PluginDashboardPage(
             .setPositiveButton("যাচাই করে উত্তর পাঠান") { _, _ ->
                 val responses = runCatching { JSONObject(input.text.toString()).toMap() }
                     .getOrElse {
-                        onStatus("Task input JSON সঠিক নয়: ${it.message}")
+                        onStatus("Task input JSON সঠিক নয়: ${safeUiErrorMessage(it)}")
                         return@setPositiveButton
                     }
                 if (responses.keys != requests.keys) {
@@ -869,7 +869,7 @@ class PluginDashboardPage(
                         }
                         .onFailure { error ->
                             activity.runOnUiThread {
-                                onStatus("Task input পাঠানো ব্যর্থ: ${error.message}")
+                                onStatus("Task input পাঠানো ব্যর্থ: ${safeUiErrorMessage(error)}")
                             }
                         }
                 }
@@ -896,7 +896,7 @@ class PluginDashboardPage(
                         }
                         .onFailure { error ->
                             activity.runOnUiThread {
-                                onStatus("Task বাতিল ব্যর্থ: ${error.message}")
+                                onStatus("Task বাতিল ব্যর্থ: ${safeUiErrorMessage(error)}")
                             }
                         }
                 }
