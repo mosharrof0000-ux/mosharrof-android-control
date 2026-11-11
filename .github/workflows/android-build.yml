@@ -60,6 +60,10 @@ jobs:
       - name: Generate Android CycloneDX SBOM
         run: gradle -p android --dependency-verification=strict :app:cyclonedxDirectBom
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Build license inventory and enrich reviewed SBOM metadata
         run: |
           python3 tools/audit_sbom_licenses.py \
