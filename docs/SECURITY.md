@@ -93,3 +93,5 @@ Dependency inventory is preliminary: Android direct dependencies are DocumentFil
 - This remains a validator-only safeguard; OAuth/CIMD discovery and the PKCE/token lifecycle are not implemented or verified.
 
 - The authorization-response issuer equality helper independently applies the same issuer validation before accepting an exact match.
+
+- Regression tests also reject issuer identifiers containing fragments, in addition to query components.
