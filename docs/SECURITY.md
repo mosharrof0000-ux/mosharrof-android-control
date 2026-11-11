@@ -37,7 +37,8 @@
 - MRTR input_required handling uses a user-reviewed JSON response dialog, opaque requestState pass-through, exact request-key matching, and a bounded continuation limit. Native schema-driven elicitation/tool argument forms and HTTPS URL-mode browser handoff are implemented for supported shapes. MCP Tasks task-handle persistence/revalidation and explicit user-triggered refresh/input/cancel UI are implemented in source; no background polling is enabled. Real-server interoperability remains pending.
 - OAuth/CIMD is not a complete authorization flow: metadata URL derivation/validation helpers exist, but live metadata/CIMD fetch, AppAuth PKCE authorization, issuer/resource-bound token exchange, encrypted token refresh/revocation and end-to-end tests remain pending.
 - Run a real HTTPS MCP server through connect, discovery, approval, tool execution, and disconnect.
-- Complete a whole-repository tracked-source and history audit of logs, exception/error surfaces, crash paths and generated artifacts for credential/private-data leakage. Earlier focused scans covered only a small security-sensitive subset and are not sufficient to close this gate.
+- Complete a whole-repository tracked-source and history audit of logs, exception/error surfaces, crash paths and generated artifacts for credential/private-data leakage. The 2026-11-11 pass scanned all 22 changed Android production Kotlin files for direct exception-message rendering, logging/stack traces, raw response-body forwarding and obvious authorization concatenation; this is still not a whole-repository/history audit.
+- Complete dependency/version/license and software-supply-chain review. The Cloudflare Worker package currently uses semver ranges for devDependencies and no package-lock.json/npm-shrinkwrap was found at the audited PR head; exact transitive dependency reproducibility and license inventory are therefore not yet established.
 - Provider HTTP POST requests are not automatically retried. If cancellation occurs after dispatch but before an HTTP response, the app records an unknown-outcome marker; that marker stores only a boolean and timestamp and does not reconcile provider-side execution.
 Until these gates pass, describe remote relay and physical-device behavior as implemented in code but not end-to-end verified.
 ## 2026-11-11 current-head security implementation notes
@@ -47,3 +48,12 @@ Until these gates pass, describe remote relay and physical-device behavior as im
 - MCP task recovery persists bounded identifiers/status/timing metadata only. Restored pending records are untrusted candidates and are revalidated with the remote server before use. Task result, input request payloads, credentials and provider responses are not persisted by the task metadata store.
 - The AI request recovery marker persists only a pending flag and timestamp. It is a review reminder, not evidence of vendor execution or a provider reconciliation mechanism.
 - Exact-head source/CI findings are recorded in docs/CURRENT_HEAD_AUDIT_2026-11-11.md. No live provider, real MCP server, physical device, or deployed Worker security verification is claimed.
+
+
+## 2026-11-11 redaction and CI follow-up
+- AI tool execution errors returned to providers use a fixed redacted message rather than arbitrary MCP/server/library exception text.
+- MainActivity and PluginDashboardPage status surfaces use a fixed UI-safe error message. The Termux bridge no longer concatenates raw SecurityException or IllegalStateException messages into operation errors.
+- Regression tests assert raw simulated MCP exception text and bearer-like values are not reflected in redacted output.
+- Exact source commit `d162a314ac0520d5511dd06ad751b9ce163e3c3b`: Android CI `42970919165` PASS (unit tests, debug APK assembly and upload); Worker CI `42970919190` PASS.
+- Artifact `13832594882`, SHA-256 `30f9dfe103e9003f6a6af8bc50d40da20d7e368b36d582064666e45150e6a76d`; CI artifact only, not installed.
+- These checks do not close live provider/MCP, physical Android, deployed Worker, OAuth/CIMD, full repository/history, dependency/license, or independent security-review gates.
