@@ -89,3 +89,28 @@ The provider-neutral capability model distinguishes `SUPPORTED`, `UNSUPPORTED`, 
 Mock adapter/contract tests verify translation behavior, not vendor/model capability. No live capability discovery or credentialed provider round-trip was performed. Accordingly, Gate 9 remains **PARTIAL** until provider/model/API-version-specific capability evidence is obtained through official documented verification and authorized live tests where required.
 
 PR #7 remains open and unmerged. No deployment, APK installation, live provider test, or merge is claimed.
+
+
+## Latest exact-head verification — 2026-11-11 (`96d22594ed467bd1cf9e48fd0faebd9147864725`)
+
+- Branch: `fix/mcp-pagination-20261110`
+- Exact source head: `96d22594ed467bd1cf9e48fd0faebd9147864725`
+- Android workflow: [42982088214](https://github.com/mosharrof0000-ux/mosharrof-android-control/actions/runs/42982088214) — PASS; unit tests, Debug APK assembly, and artifact upload all succeeded.
+- Worker workflow: [42982088285](https://github.com/mosharrof0000-ux/mosharrof-android-control/actions/runs/42982088285) — PASS; Worker typecheck succeeded.
+
+### Exact-head CI artifact
+
+- Name: `mosharrof-android-control-debug`
+- Artifact ID: `13837594028`
+- Size: `2,422,195` bytes
+- GitHub artifact digest: `sha256:e606ae59e43d1586c9f8a1487b319edfdbef4c53716cb79d3d9bc6a9f95261c5`
+- Expires: 2027-02-09
+- GitHub workflow metadata confirms branch `fix/mcp-pagination-20261110` and exact head `96d22594ed467bd1cf9e48fd0faebd9147864725`.
+
+### Gate 10 — OAuth protected-resource / authorization-server metadata discovery
+
+Added an HTTPS-only, bounded metadata fetcher with redirects disabled, finite connect/read timeouts, JSON content-type and structure limits, protected-resource metadata validation, authorization-server issuer binding, and CIMD metadata validation. The connector service exposes an explicit discovery operation and rejects unknown connectors and non-MCP transports before any network access. Regression tests cover successful metadata discovery, redirects, oversized bodies, invalid content type, CIMD validation, and the two service-level fail-closed cases.
+
+This implements metadata retrieval and validation only. It does **not** implement OAuth authorization, PKCE, token exchange, token storage, refresh, revocation, or live OAuth interoperability. Gate 10 remains **PARTIAL** pending a complete user-initiated application flow and further protocol/security validation; Gate 17 remains incomplete.
+
+This artifact is CI-produced only and has not been installed or launched on a physical Android device. PR #7 remains open and unmerged. No live provider credentials, live MCP servers, deployment, or merge were used/performed.
