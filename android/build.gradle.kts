@@ -20,10 +20,6 @@ buildscript {
                 requested.name in setOf("protobuf-java", "protobuf-kotlin", "protobuf-javalite", "protobuf-kotlin-lite", "protobuf-java-util")) {
                 useVersion("3.25.5")
             }
-            if (requested.group == "com.google.protobuf" &&
-                requested.name in setOf("protobuf-java", "protobuf-kotlin", "protobuf-javalite", "protobuf-kotlin-lite", "protobuf-java-util")) {
-                useVersion("3.25.5")
-            }
         }
     }
 }
@@ -42,10 +38,9 @@ subprojects {
         lockAllConfigurations()
     }
 
-    // Keep Netty modules aligned on the maintained 4.1 security release across
-    // Android test-platform configurations that currently resolve older lines.
-    // Root plugin/buildscript classpaths are audited separately and are not
-    // changed by this subproject-only rule.
+    // Align security-sensitive transitive dependencies across all Android
+    // subproject configurations, including internal test-platform configurations.
+    // Root plugin/buildscript classpaths are audited separately above.
     configurations.configureEach {
         resolutionStrategy.eachDependency {
             if (requested.group == "io.netty" &&
@@ -61,6 +56,10 @@ subprojects {
                 // jackson-annotations uses the 2.22 line without a patch suffix;
                 // the other Jackson 2.22 modules use patch versions such as 2.22.4.
                 useVersion(if (requested.name == "jackson-annotations") "2.22" else "2.22.4")
+            }
+            if (requested.group == "com.google.protobuf" &&
+                requested.name in setOf("protobuf-java", "protobuf-kotlin", "protobuf-javalite", "protobuf-kotlin-lite", "protobuf-java-util")) {
+                useVersion("3.25.5")
             }
         }
     }
