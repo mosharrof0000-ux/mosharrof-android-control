@@ -190,3 +190,12 @@ Added the official Google OSV-Scanner reusable workflow at the versioned ref `v2
 Workflow commits: Android `1e87a2f07805571fc16b6539ec2e2964c2521b80`; Worker `aa97faad5d812006d8d99827c39f886cc9961666` (current branch head). Exact-head Android run `43014456037` and Worker run `43014455447` were in progress at the time of this note; no OSV scan result is claimed yet.
 
 The official OSV-Scanner documentation lists Gradle lockfiles, Gradle verification metadata, and npm package-lock as supported inputs, and documents the reusable workflow's artifact-download and scan-args inputs. This scanner complements (does not replace) `npm audit`, SBOM/license review, checksum provenance review, or a full security audit.
+
+
+### First OSV-Scanner result — Worker exact-head run
+
+- Worker workflow run `43014471661` completed SUCCESS on commit `aa97faad5d812006d8d99827c39f886cc9961666`; both `typecheck` and `dependency-scan / osv-scan` jobs completed successfully.
+- OSV-Scanner `2.7.1` downloaded the `worker-dependency-evidence` artifact, scanned the npm lockfile, and uploaded SARIF artifact ID `13851593092`.
+- Re-downloaded SARIF contains `results: []` (zero reported findings in this scan); SARIF SHA-256 `324155acc400d19582284fdcbc2494c9071e21dc99d47056f6f8ed802c4ba8c0`.
+- This is a point-in-time OSV database result for the scanned Worker lockfile only. It is not a guarantee of no vulnerabilities, does not cover unlisted/platform-only dependencies, and does not replace license/provenance or runtime review.
+- Android OSV scan is still pending because its prerequisite dependency generation/build job has not completed.
