@@ -594,7 +594,9 @@ class McpConnectorService(
             val remainingMs = maxWaitMs - elapsedMs
             if (remainingMs <= 0L) break
             if (shouldCancel()) throw CancellationException("MCP Task polling বাতিল করা হয়েছে।")
-            val delayMs = minOf(snapshot.pollIntervalMs, remainingMs, 30_000L)
+            // Never poll earlier than the server-requested interval. If the remaining
+// caller budget is shorter, wait only that budget and stop without another request.
+val delayMs = minOf(snapshot.pollIntervalMs, remainingMs)
             sleeper(delayMs)
             if (shouldCancel()) throw CancellationException("MCP Task polling বাতিল করা হয়েছে।")
             if ((System.nanoTime() - startedAt) / 1_000_000L >= maxWaitMs) break
