@@ -37,6 +37,9 @@ internal object McpOAuthAuthorizationRequestFactory {
                 resourceUrl, resourceMetadata
             )
         ) return false
+        if ((resourceMetadata["authorization_servers"] as? List<*>)?.contains(issuer) != true) {
+            return false
+        }
         if (scopes.isEmpty() || scopes.size > 32 || scopes.size != scopes.toSet().size) {
             return false
         }
