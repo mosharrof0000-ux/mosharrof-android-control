@@ -32,9 +32,8 @@ internal enum class McpOAuthRefreshFailure(val userMessage: String) {
 }
 
 internal class McpOAuthRefreshException(
-    val reason: McpOAuthRefreshFailure,
-    cause: Throwable? = null
-) : IllegalStateException(reason.userMessage, cause)
+    val reason: McpOAuthRefreshFailure
+) : IllegalStateException(reason.userMessage)
 
 /**
  * Pure commit gate for refresh results. A Bearer token is released to callers
@@ -49,8 +48,7 @@ internal object McpOAuthRefreshCommit {
     ): Result<String> = runCatching {
         if (authorizationError != null || accessToken.isNullOrBlank()) {
             throw McpOAuthRefreshException(
-                McpOAuthRefreshFailure.REFRESH_REJECTED,
-                authorizationError
+                McpOAuthRefreshFailure.REFRESH_REJECTED
             )
         }
         if (!tokenType.equals("Bearer", ignoreCase = true)) {
@@ -61,8 +59,7 @@ internal object McpOAuthRefreshCommit {
         val persistence = runCatching { persistState() }.getOrElse { Result.failure(it) }
         persistence.getOrElse {
             throw McpOAuthRefreshException(
-                McpOAuthRefreshFailure.ENCRYPTED_STATE_SAVE_FAILED,
-                it
+                McpOAuthRefreshFailure.ENCRYPTED_STATE_SAVE_FAILED
             )
         }
         accessToken
