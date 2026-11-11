@@ -1,12 +1,12 @@
 # MCP OAuth Automatic Refresh Before Every Request
 
-Status: design/audit only — implementation not yet complete.
+Status: partial implementation — token provider and asynchronous HTTP request boundary added; full service/UI migration not yet complete.
 
 ## Current verified state
 
 - `McpOAuthTokenRefresher.withFreshToken(...)` is callback-based and persists refreshed AppAuth state through the encrypted `McpOAuthAuthStateStore` before exposing an in-memory Bearer token.
 - Refresh attempts are serialized per connector; duplicate in-flight attempts fail safely.
-- `McpHttpClient` currently owns a constructor-supplied, static `bearerToken` and its synchronous `post(...)` method uses that value for the Authorization header.
+- `McpOAuthAccessTokenProvider` now verifies the registered MCP connector, exact endpoint, encrypted AppAuth state, and exact RFC 8707 resource binding before requesting a fresh token. It rejects invocation from the Android main thread.\n- `McpHttpClient.postAsync(...)` now resolves a token per request on an IO executor and only then sends the HTTP request; it does not retain the OAuth token on the client. The legacy `post(...)` path remains for static/manual-token connectors. Per-request Bearer values are checked for header injection.
 - `McpConnectorService` is synchronous and calls `client.post(...)` from connection negotiation, paginated `tools/list`, tool calls, and task get/update/cancel operations.
 - UI entry points currently dispatch service work to the supplied worker `Executor`. This avoids main-thread network I/O but does not make token refresh happen before each request.
 - MainActivity performs one refresh after OAuth token exchange and uses that token to create the initial MCP client. This is not a per-request refresh guarantee.
@@ -26,7 +26,7 @@ The request boundary is centralized in `McpHttpClient.post(...)`, but the servic
 | `McpConnectorService.cancelTask` | task cancellation | Every tasks/cancel |
 | `McpConnectorService.disconnect` | session teardown | Audit whether the transport sends a network request; local-only teardown must not be mistaken for one |
 
-The UI currently supplies a single-thread `Executors.newSingleThreadExecutor()` from `MainActivity`; `PluginDashboardPage` dispatches its service operations to that worker. OAuth callback handling is separate and returns to the UI thread. This is a useful starting point for a callback-based pipeline, but it is not sufficient evidence that every possible caller is off-main-thread. Add explicit thread assertions at the OAuth transport boundary and migrate all call sites before enabling OAuth transport mode.
+The UI currently supplies a single-thread `Executors.newSingleThreadExecutor()` from `MainActivity`; `PluginDashboardPage` dispatches its service operations to that worker. OAuth callback handling is separate and returns to the UI thread. This is a useful starting point for a callback-based pipeline, but it is not sufficient evidence that every possible caller is off-main-thread. The token provider now asserts that resolution starts off the main thread. Migrate all service call sites before enabling OAuth transport mode.
 
 The current OAuth handoff in `MainActivity.startMcpOAuthAuthorization` performs one refresh after code exchange, then constructs `McpHttpClient(endpoint, bearerToken = freshToken.value)`. That creates a static-token client, so later requests can use an expired token. The initial refresh must be removed from the long-lived-client design once the per-request provider is wired; code exchange should persist state, then the authenticated transport should resolve a token for each request.
 
@@ -43,7 +43,7 @@ The current OAuth handoff in `MainActivity.startMcpOAuthAuthorization` performs 
 
 ## Required architectural change
 
-The current synchronous `McpConnectorService` / `McpHttpClient.post` call graph cannot safely consume the callback-based refresher without blocking. Introduce an asynchronous request pipeline and migrate all network-bearing service operations to continuation/callback-based APIs.
+The transport boundary now has a callback-based `postAsync(...)` path, but the current synchronous `McpConnectorService` call graph still uses `post(...)`. The next required step is to migrate every network-bearing service operation to continuation/callback-based APIs and route each request through `postAsync(...)` without blocking.
 
 Suggested separation:
 
@@ -64,10 +64,10 @@ Do not implement a partial wrapper that refreshes only connect or tool calls. Th
 - Different connectors: refreshes remain independent.
 - Resource mismatch, missing resource, unsafe endpoint, and non-Bearer token: request is rejected before transport.
 - Request ordering: initialization, initialized notification, every tools/list page, tools/call, tasks/get, tasks/update, and tasks/cancel each pass through the resolver.
-- Main-thread guard: no network or waiting occurs on the UI thread.
+- Main-thread guard: token resolution rejects main-thread entry; full service migration must preserve this invariant for every request.
 - Regression: manual/static Bearer token clients retain existing behavior.
 - Redaction: access/refresh tokens never appear in logs, exceptions, status strings, or test output.
 
 ## Release status
 
-This work is required before marking automatic OAuth refresh complete. Until implementation and exact-head CI tests pass, automatic refresh before every MCP request remains **incomplete**. No live OAuth login, token refresh, or remote revocation has been run as part of this audit.
+This work is required before marking automatic OAuth refresh complete. Until all service and UI call sites are migrated and exact-head CI tests pass, automatic refresh before every MCP request remains **incomplete**. No live OAuth login, token refresh, or remote revocation has been run as part of this audit.
