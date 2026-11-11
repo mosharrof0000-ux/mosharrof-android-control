@@ -71,34 +71,17 @@ internal object McpOAuthTokenRefresher {
                 authorizationService,
                 mapOf("resource" to resource)
             ) { accessToken, _, authException ->
-                val result = runCatching {
-                    if (authException != null || accessToken.isNullOrBlank()) {
-                        throw McpOAuthRefreshException(
-                            McpOAuthRefreshFailure.REFRESH_REJECTED,
-                            authException
-                        )
-                    }
-
-                    val tokenType = state.lastTokenResponse?.tokenType
-                    if (!tokenType.equals("Bearer", ignoreCase = true)) {
-                        throw McpOAuthRefreshException(
-                            McpOAuthRefreshFailure.BEARER_TOKEN_REQUIRED
-                        )
-                    }
-
+                val result = McpOAuthRefreshCommit.persistBeforeRelease(
+                    accessToken = accessToken,
+                    tokenType = state.lastTokenResponse?.tokenType,
+                    authorizationError = authException
+                ) {
                     McpOAuthAuthStateStore.save(
                         context.applicationContext,
                         connectorId,
                         state
-                    ).getOrElse {
-                        throw McpOAuthRefreshException(
-                            McpOAuthRefreshFailure.ENCRYPTED_STATE_SAVE_FAILED,
-                            it
-                        )
-                    }
-
-                    FreshBearerToken(accessToken)
-                }
+                    )
+                }.map(::FreshBearerToken)
                 finish(result)
             }
         } catch (_: Exception) {
