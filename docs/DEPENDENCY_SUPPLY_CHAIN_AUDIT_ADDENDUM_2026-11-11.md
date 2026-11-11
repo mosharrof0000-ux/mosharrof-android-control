@@ -31,3 +31,14 @@
 - Android workflow commit `3022cac97ac64949f6a53d394e7b4de41bc2a1b6` adds a one-time, same-repository PR bootstrap step to commit the exact Gradle-generated app lockfile, root buildscript lockfile and verification metadata after successful dependency resolution.
 - This is a temporary bootstrap stage only. The subsequent exact-head workflow must remove `--write-locks` and `--write-verification-metadata`, run Gradle with dependency verification enabled, and prove that the committed files are enforced rather than regenerated.
 - No lockfile persistence or enforcement is claimed until the bootstrap commit and the follow-up strict CI run are both observed successful.
+
+
+## Lockfile persistence confirmed; strict enforcement workflow — 2026-11-11
+
+- Bootstrap Android CI run `43043437295` completed successfully: assemble and OSV dependency-scan jobs both PASS.
+- The assemble log confirms the generated `android/app/gradle.lockfile` and `android/gradle/verification-metadata.xml` were committed and pushed by the workflow to the PR branch as commit `e68e6dabf41f86444b19f47b2bdf6fee0a6d1cba`.
+- The committed app lockfile is 47,874 bytes (Git blob `4987ea043b97009991902757066471d909c30daa`); verification metadata is 192,715 bytes (Git blob `006a4b98179f9fa35f61a82ebb426d9ca80ba886`). The root lockfile remains tracked.
+- The bootstrap-only workflow has now been replaced: write flags and the workflow's contents-write permission / self-push step are removed. CI explicitly invokes Gradle with `--dependency-verification=strict`, asserts all three committed state files exist, and checks that Gradle did not modify them.
+- Workflow change commit: `0457f065e7bb7c6cfc3ca2d8437f003144bf05ab`; build configuration documentation commit: `5dbab2cdd41aafbd25052101b033f55b0dbd8607`.
+- Exact-head strict CI is required before claiming lock enforcement. The new workflow deliberately has no mechanism to generate or commit replacement dependency state.
+- Gate 16 remains Partial pending strict exact-head CI, independent checksum/signature provenance assessment, license/notice review, and final APK provenance. PR #7 remains open/unmerged; no APK install, deployment, live OAuth/provider operation, or physical Android QA.
