@@ -1226,4 +1226,51 @@ class McpConnectorServiceRegressionTest {
         assertNotNull(afterCompletion)
         assertTrue("Connection slot should be released by its owner", afterCompletion!!.isSuccess)
     }
+
+    @Test
+    fun oauthOnlyClientRejectsSynchronousStaticTransportButAllowsAsyncResolution() {
+        registerConnector()
+        val server = FakeServer()
+        val client = McpHttpClient(
+            endpoint = "https://example.com/mcp",
+            connectionFactory = server::connection,
+            allowSynchronousRequests = false
+        )
+        val syncResult = runCatching {
+            client.post(McpProtocol.modernDiscoveryRequest(
+                id = "sync-attempt",
+                clientName = "Test",
+                clientVersion = "1"
+            ))
+        }
+        assertTrue("OAuth-only client must reject the legacy synchronous path", syncResult.isFailure)
+        assertTrue("Rejected synchronous call must not open a connection", server.methods.isEmpty())
+
+        val resolver = object : McpAccessTokenResolver {
+            override fun resolve(
+                connectorId: String,
+                expectedEndpoint: String,
+                onComplete: (Result<McpOAuthTokenRefresher.FreshBearerToken>) -> Unit
+            ) {
+                onComplete(Result.success(
+                    McpOAuthTokenRefresher.FreshBearerToken("async-only-token")
+                ))
+            }
+        }
+        var asyncResult: Result<JSONObject>? = null
+        client.postAsync(
+            connectorId = "test.mcp",
+            tokenProvider = resolver,
+            ioExecutor = java.util.concurrent.Executor { it.run() },
+            request = McpProtocol.modernDiscoveryRequest(
+                id = "async-attempt",
+                clientName = "Test",
+                clientVersion = "1"
+            )
+        ) { asyncResult = it }
+        assertNotNull(asyncResult)
+        assertTrue(asyncResult!!.isSuccess)
+        assertEquals(listOf("server/discover"), server.methods)
+        assertEquals("Bearer async-only-token", server.authorizationHeaders.lastOrNull())
+    }
 }
