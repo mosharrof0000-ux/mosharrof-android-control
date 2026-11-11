@@ -156,3 +156,15 @@ Commits:
 - Cloudflare Worker CI run `42970919190` (run #272): PASS.
 - Debug artifact ID: `13832594882`; size: 2,415,618 bytes; SHA-256 digest: `30f9dfe103e9003f6a6af8bc50d40da20d7e368b36d582064666e45150e6a76d`.
 - This is a CI-produced debug artifact only; it has not been installed or exercised on a physical Android device.
+
+
+## 2026-11-11 expanded tracked Android source audit — follow-up
+- Retrieved the complete tracked repository tree at source commit `d162a314ac0520d5511dd06ad751b9ce163e3c3b`: 92 tracked files, including 35 Android production Kotlin files and 29 Android JVM test files.
+- Expanded the error/log/credential-pattern scan from the 22 changed Android production files to the remaining 13 Android production Kotlin files.
+- Found additional raw exception-message surfaces in `AndroidKeystoreDiagnostic.kt`, `EngineSelfTest.kt`, `PermissionCenter.kt` and `core/module/ModuleManager.kt`. These were outside the earlier PR-changed-file scan.
+- Replaced those diagnostic/UI/module-status exception strings with the shared fixed `safeUiErrorMessage` redaction helper.
+- Updated module lifecycle regression tests to assert the fixed redacted failure detail instead of the raw exception message.
+- Source commits: `14c460e97b439ceb420bd2611c5f2f4a7611c7db`, `c76254451b91cf17c18146d33c96fb31a3990ddf`, `6222ebaa78efabb2a62a728709dc4e075af33242`, `99ce8ec7309bc417b4fa05f4948bceffc1eb5205`; regression test commit `b465c948d47129b6d3df1d77f6b548ad0353e7fc`.
+- Re-scanned these previously unmodified production files after redaction; no remaining direct exception-message, logging, stack-trace, raw response-body or obvious authorization-concatenation matches were found by the selected patterns.
+- This is now a pattern scan across all 35 tracked Android production Kotlin files, not a semantic audit of every call path. Whole-repository non-Kotlin source, full Git history, dependencies/licenses, runtime logs, crash reports, Android Keystore behavior and deployed services remain open.
+- Latest Android and Worker CI for the new source/test commits: pending at the time of this note. Check commit `b465c948d47129b6d3df1d77f6b548ad0353e7fc` before treating these additional changes as verified.
