@@ -80,3 +80,12 @@ This work is required before marking automatic OAuth refresh complete. Until all
 - Added the missing internal resolver contract beside `McpOAuthAccessTokenProvider` in commit `a350bf68a91ba28e85a5d4add1deb232c5e5791d`. This is a compile-contract repair only; it does not complete service migration.
 - Exact-head Android verification for the repair is running as workflow `42997172705`; do not treat it as passing until the job completes successfully.
 - The synchronous `McpConnectorService` call sites and the OAuth callback's static-token client construction remain outstanding. No OAuth network login or refresh has been executed during this work.
+
+
+## Follow-up transport slice — 2026-11-11
+
+- Android run `42997172705` confirmed the resolver interface repair compiled, then failed one regression test: the test used literal backslash-r/backslash-n instead of actual CR/LF characters. Corrected the test input in commit `154907dc15c91e592624267adb1c75881712c9a1`.
+- Worker Typecheck for `154907dc...` passed (run `42997519827`). Its Android run `42997519747` was still running at the time of this update; no result is inferred from the earlier failed run.
+- Added `McpConnectorService.callToolAsync(...)` in commit `250f5f88035e7c71ba5e67793ce3e6a68cbf6d8a`. It repeats the existing connector/session, argument-schema and single-use approval checks before invoking `McpHttpClient.postAsync`; it processes complete, input-required and task responses and persists task metadata. The token resolver and IO executor are supplied by the caller; no token is stored in the service.
+- Exact-head Android run `42997652420` and Worker Typecheck `42997652353` were in progress at documentation time. Their results must be checked before marking this slice verified.
+- Remaining migration: wire the Android UI to provide an OAuth token resolver and use `callToolAsync`; migrate connect/protocol negotiation/tools-list pagination and task get/update/cancel to callback-based transport. Existing synchronous service entry points remain for manual-token compatibility and are not OAuth-refresh-safe.
