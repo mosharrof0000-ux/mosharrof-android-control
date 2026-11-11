@@ -355,3 +355,15 @@ The official OSV-Scanner documentation lists Gradle lockfiles, Gradle verificati
 - At the time of this audit update, `fetch_commit_workflow_runs` and combined commit status returned no workflow runs/status for this commit. **CI has not yet been observed**, so this upgrade is not verified and no vulnerability remediation is claimed from it.
 - Required next verification: confirm Android CI executes on this exact commit; inspect all five dependency-path reports and the new SARIF; verify build, unit tests, SBOM and APK artifact upload. If no run appears, diagnose the workflow trigger/PR association rather than claiming a pass.
 - PR #7 remains open/unmerged. No APK installation, deployment, merge, live OAuth/provider operation or physical Android QA was performed.
+
+
+
+## org.json test dependency remediation — exact PR head pending Android CI
+
+- The Android unit-test-only dependency was changed from `org.json:json:20240303` to the Maven Central-published fixed release `org.json:json:20260719` in commit `79e535b39a1ec0b90a2fda88da9b18999bbb8a69`.
+- An initial attempted coordinate `20260719.0.0` was invalid for this artifact's date-based version scheme and caused Android CI run `43024873056` to fail during the initial Gradle dependency-lock/verification command, before unit tests, SBOM, APK assembly or OSV scan. That incorrect coordinate was corrected in the subsequent commit; do not count the failed attempt as remediation evidence.
+- Maven Central's artifact page lists `org.json:json:20260719` as a published version and gives the exact Gradle/Maven coordinate: https://central.sonatype.com/artifact/org.json/json/20260719.
+- Exact-head Android run `43025438626` at commit `79e535b39a1ec0b90a2fda88da9b18999bbb8a69` was observed in progress; its `Generate dependency locks and verification metadata` step had not yet completed at the time of this note. Therefore dependency resolution, unit tests, SBOM, APK assembly and Android OSV results remain **pending**, and CVE-2026-59171 is not yet declared cleared.
+- Exact-head Worker run `43025438569` completed SUCCESS: dependency installation, npm audit, CycloneDX SBOM, typecheck/tests, evidence upload and OSV scan all completed successfully. The Worker SARIF scan completed, but this does not validate the Android dependency change.
+- The org.json dependency remains test-only; it is not an app runtime dependency in the earlier verified Gradle lockfile. Recheck the regenerated lockfile and SARIF from the exact current Android run before closing this advisory item.
+- PR #7 remains open/unmerged. No deployment, merge, APK installation, live OAuth/provider operation or physical Android QA was performed.
