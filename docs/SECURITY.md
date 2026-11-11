@@ -95,3 +95,8 @@ Dependency inventory is preliminary: Android direct dependencies are DocumentFil
 - The authorization-response issuer equality helper independently applies the same issuer validation before accepting an exact match.
 
 - Regression tests also reject issuer identifiers containing fragments, in addition to query components.
+
+
+### OAuth issuer hardening CI evidence
+- Source commit `ccdff5cd4859bb0107bd318f91984b9e44e81b47`: Android CI #339 passed unit tests, debug APK assembly and artifact upload; Worker CI #295 passed. Artifact ID `13833924281` (2,415,687 bytes; SHA-256 `7206fc24f538e7e5fecbf312edcd787aa55a57ba34c828dcd14e4dbc2f06b30a`) is CI-only and was not installed.
+- The later test-only fragment coverage commit is pending its own exact-head verification.
