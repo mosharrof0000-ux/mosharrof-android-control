@@ -95,3 +95,15 @@
 - APK validation proves that the expected notice assets and Apache-2.0 text are present and that all 34 runtime binaries were inspected. It does **not** prove that every upstream copyright/NOTICE obligation has been independently identified or satisfied. The 0 archive-notice finding must not be described as 34/34 extracted upstream notices.
 - Gate 16 remains **Partial**. Remaining work: determine authoritative upstream attribution/NOTICE requirements for all 34 runtime components; verify applicable texts/attributions in the final APK; retain evidence and review checksum/signature provenance. The clean OSV scan is point-in-time evidence only, not legal or supply-chain clearance.
 - Android Debug APK artifact `13881210413` and dependency evidence artifact `13879962092` are CI artifacts only; no APK was installed. PR #7 remains open/unmerged; no deployment or physical-device QA was performed.
+
+
+## 2026-11-12 scanner regression fix and latest runtime evidence
+
+- Exact source/test head: `2b85dd324fa53e21835f6f34e6399646d00a9123`.
+- Android CI [run 43077143591](https://github.com/mosharrof0000-ux/mosharrof-android-control/actions/runs/43077143591) (#569) passed. The binary-notice test suite reported four passing tests, including `test_scans_nested_jar_larger_than_text_limit`, which covers a nested JAR larger than the 2 MiB ordinary-text limit.
+- Scanner correction: nested `.jar`/`.zip` entries are now evaluated against the 64 MiB nested-archive bound before recursion; the 2 MiB text bound applies to extracted notice text rather than prematurely excluding a larger nested archive. This fixes the scanner's prior false-negative path for large nested archives.
+- The exact-head runtime evidence artifact `13883105708` was downloaded and inspected. It contains the 34-component `releaseRuntimeClasspath` SBOM, 34 collected AAR/JAR binaries, the generated license inventory, binary audit JSON/Markdown, dependency lock/verification files and packaged notice asset.
+- Actual audit result remains **34/34 binaries inspected, 0/34 archive LICENSE/NOTICE/COPYING/COPYRIGHT text files found**; 34/34 are classified `SBOM_DECLARED_LICENSE_ONLY`. Therefore the scanner fix is regression-tested, but it did not change the result for this particular dependency set. No archive notice text was fabricated.
+- The inventory declares Apache-2.0 for all 34 components based on available SBOM metadata; zero explicit POM metadata corrections were needed. This is metadata evidence, not an independently completed upstream attribution review or legal approval.
+- Gate 16 remains **PARTIAL**. Next action: review authoritative POM/source/release metadata for all 34 components, determine any copyright/NOTICE obligations, and reconcile required attribution with the packaged APK assets. Continue publisher signature/provenance review separately. Do not claim 34 extracted notices or license clearance.
+- Android CI Debug APK artifact `13883320532` is CI-only and has not been installed. PR #7 remains open/unmerged; no deployment or physical-device QA was performed.
