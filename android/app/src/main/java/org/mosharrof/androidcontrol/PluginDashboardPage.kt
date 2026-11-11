@@ -81,15 +81,26 @@ class PluginDashboardPage(
         button(parent, "সংরক্ষিত MCP Task পুনরুদ্ধার / যাচাই") {
             loadPendingTasks()
         }
-        button(parent, "সংরক্ষিত Token মুছুন") {
+        button(parent, "স্থানীয় Token ও OAuth Session মুছুন") {
             val id = PluginDashboardSession.connectorId
                 ?: connectorIdFor(endpointInput.text.toString().trim())
             if (id == null) {
                 onStatus("সঠিক HTTPS endpoint দিন।")
             } else {
-                PluginSecretStore.deleteToken(activity, id)
-                    .onSuccess { onStatus("সংরক্ষিত Token মুছে ফেলা হয়েছে।") }
-                    .onFailure { onStatus("Token মোছা যায়নি: ${safeUiErrorMessage(it)}") }
+                // Local logout only: remove every locally encrypted credential/request.
+                // Remote refresh-token revocation is a separate network operation.
+                val results = listOf(
+                    PluginSecretStore.deleteToken(activity, id),
+                    McpOAuthAuthStateStore.delete(activity, id),
+                    McpOAuthPendingRequestStore.delete(activity, id)
+                )
+                val failure = results.firstOrNull { it.isFailure }?.exceptionOrNull()
+                if (failure == null) {
+                    tokenInput.text.clear()
+                    onStatus("স্থানীয় Token, OAuth state ও pending PKCE request মুছে ফেলা হয়েছে। Remote revocation করা হয়নি।")
+                } else {
+                    onStatus("সব স্থানীয় credential মুছে ফেলা নিশ্চিত করা যায়নি: ${safeUiErrorMessage(failure)}")
+                }
             }
         }
 
