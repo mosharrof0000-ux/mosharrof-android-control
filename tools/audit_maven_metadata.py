@@ -103,6 +103,11 @@ def resolve_license_metadata(data: bytes, source_url: str, depth: int = 0,
             "inherited_licenses": resolved.get("inherited_licenses", resolved["metadata"]["licenses"])}
 
 
+def licenses_match(sbom: list[str], pom: list[str]) -> bool:
+    """Require every normalized POM declaration to be represented in the SBOM."""
+    return bool(sbom and pom and set(pom).issubset(set(sbom)))
+
+
 def sbom_licenses(component: dict[str, Any]) -> list[str]:
     values = set()
     for entry in component.get("licenses") or []:
@@ -130,10 +135,10 @@ def audit(sbom_path: Path) -> dict[str, Any]:
             license_entries = metadata["licenses"] or resolved.get("inherited_licenses", [])
             pom_licenses = sorted({x["normalized"] for x in license_entries if x["normalized"]})
             declared = sbom_licenses(component)
-            mismatch = bool(declared and pom_licenses and not set(declared).intersection(pom_licenses))
+            mismatch = bool(declared and pom_licenses and not licenses_match(declared, pom_licenses))
             if resolved["license_source"] == "missing":
                 failures.append(coordinate + ": POM and bounded parent chain have no license declaration")
-            if mismatch: failures.append(coordinate + ": POM/parent license declaration does not match SBOM")
+            if mismatch: failures.append(coordinate + ": SBOM omits one or more POM/parent-declared license identifiers")
             results.append({"coordinate": coordinate, "pom_url": source_url,
                             "pom_sha256": hashlib.sha256(data).hexdigest(),
                             "license_source": resolved["license_source"],
