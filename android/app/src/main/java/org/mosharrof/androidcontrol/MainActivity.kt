@@ -535,6 +535,41 @@ class MainActivity : Activity() {
             }
     }
 
+    private fun replaceProviderCredential(profile: AiProviderProfileSummary) {
+        val replacement = EditText(this).apply {
+            hint = "নতুন API Key (গোপন)"
+            setSingleLine(true)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Credential বদলান — ${profile.id}")
+            .setMessage("বর্তমান key দেখানো হবে না। নতুন key এনক্রিপ্ট করে সংরক্ষণ হবে; Provider/Model/Endpoint ও Active নির্বাচন অপরিবর্তিত থাকবে।")
+            .setView(replacement)
+            .setNegativeButton("বাতিল", null)
+            .setPositiveButton("নতুন Key সংরক্ষণ", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                runCatching {
+                    AiEngine.replaceProviderCredential(
+                        this,
+                        profile.id,
+                        replacement.text.toString()
+                    )
+                }.onSuccess {
+                    replacement.text.clear()
+                    dialog.dismiss()
+                    status.text = "Provider credential নিরাপদে বদলানো হয়েছে।"
+                    report.text = providerProfilesReport()
+                }.onFailure {
+                    status.text = "Credential বদলানো যায়নি: ${it.message}"
+                }
+            }
+        }
+        dialog.show()
+    }
+
     private fun providerProfilesReport(): String {
         val profiles = AiEngine.providerProfiles(this)
         val activeId = runCatching { AiProviderProfileStore.active(this)?.summary?.id }.getOrNull()
