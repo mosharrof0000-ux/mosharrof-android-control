@@ -145,6 +145,18 @@ class McpOAuthMetadataTest {
     }
 
     @Test
+    fun rejectsAuthorizationServerIssuerWithQueryComponent() {
+        val queryIssuer = issuer + "?tenant=unexpected"
+        assertNull(McpOAuthMetadata.authorizationServerMetadataUrl(queryIssuer))
+        assertFalse(
+            McpOAuthMetadata.validateAuthorizationServerMetadata(
+                queryIssuer,
+                serverMetadata() + ("issuer" to queryIssuer)
+            )
+        )
+    }
+
+    @Test
     fun rejectsOversizedAuthorizationServerCapabilityLists() {
         assertFalse(
             McpOAuthMetadata.validateAuthorizationServerMetadata(
