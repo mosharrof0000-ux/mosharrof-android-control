@@ -39,7 +39,7 @@ jobs:
           gradle-version: "8.14.6"
 
       - name: Generate dependency locks and verification metadata
-        run: gradle -p android :app:testDebugUnitTest :app:assembleDebug --write-locks --write-verification-metadata sha256
+        run: gradle -p android :app:testDebugUnitTest :app:cyclonedxDirectBom :app:assembleDebug --write-locks --write-verification-metadata sha256
 
       - name: Run Android unit tests
         run: gradle -p android :app:testDebugUnitTest
