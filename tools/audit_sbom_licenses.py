@@ -98,7 +98,8 @@ def main() -> int:
         "|---|---:|",
     ]
     for label, count in sorted(counts.items()):
-        report.append(f"| {label.replace('|', '\\|')} | {count} |")
+        escaped_label = label.replace("|", "\\|")
+        report.append(f"| {escaped_label} | {count} |")
 
     report += ["", "## Component inventory", "", "| Group | Component | Version | Declared license(s) | Package URL |", "|---|---|---:|---|---|"]
     for group, name, version, labels, purl in sorted(rows):
