@@ -237,3 +237,11 @@ Commits:
 - Task `input_required` UI now validates that submitted response keys exactly match the server's validated request keys and that each response is a non-empty object with bounded nonblank string keys.
 - Added JVM tests for a valid response, mismatched keys, scalar payload rejection and empty object rejection. This guards the client-side envelope before `tasks/update`; server-side semantic validation and real-server interoperability remain required.
 - Native Android dialog interaction/process recreation is not covered by these JVM tests. Exact-head CI is pending for this follow-up.
+
+
+## 2026-11-11 MCP Task service-boundary validation follow-up
+
+- A second-layer review found that the UI enforced exact server request-key matching, but the public connector-service `updateTask` entry point only checked response count. Direct callers could bypass the UI's object-envelope validation.
+- Added service-layer validation requiring 1–16 request keys and a non-empty object payload per key, with bounded key names and per-payload property counts. UI validation still additionally requires exact equality with the server's validated request keys.
+- Added JVM coverage for valid, empty, scalar, empty-object, blank-key and over-count payloads. This remains structural validation; server-defined semantic rules and real MCP interoperability remain unverified.
+- Exact-head Android CI is pending; no build/test pass is claimed for this follow-up.
