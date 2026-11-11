@@ -98,3 +98,13 @@ This work is required before marking automatic OAuth refresh complete. Until all
 - Added service regression coverage for async tool-call approval preservation, bearer-header delivery, resolver-failure fail-closed behavior, and the three task operations. Test additions are in commits `06e120fef10bece689551871dbff9a0b0273b774`, `d90358b979b3556e76d18f0b88e63690c95fe52b`, and `d93e28bab0dcb8717621a3541f31fde4fe3053da`.
 - The latest source head at this update is `d93e28bab0dcb8717621a3541f31fde4fe3053da`. Do not treat tests as passing until its Android CI finishes.
 - These new service APIs are not yet wired into `PluginDashboardPage` or `MainActivity`. Existing UI flows still use synchronous service methods, including connect and pagination; OAuth-safe operation is therefore not end-to-end until UI construction, authorization callback, connection negotiation, pagination and all tool/task actions are migrated.
+
+
+## Dashboard transport integration — 2026-11-11
+
+- `PluginDashboardPage` now detects an encrypted OAuth AuthState for the active connector and creates a short-lived `AuthorizationService` plus `McpOAuthAccessTokenProvider` for each user-triggered operation.
+- Schema-form and JSON-form tool calls, including MRTR retries and elicitation form responses, now route through `McpConnectorService.callToolAsync` when OAuth state exists. The single-use approval grant is still issued before transport and consumed by the service preflight.
+- Task refresh, task input submission, and task cancellation now route through `getTaskAsync`, `updateTaskAsync`, and `cancelTaskAsync` for OAuth-backed connectors. Each call resolves a token immediately before the HTTP request. The AppAuth service is disposed after the asynchronous result callback.
+- Connectors without encrypted OAuth state retain the existing static/manual-token synchronous path. If encrypted OAuth state exists but cannot be read, the UI fails closed instead of falling back to a potentially stale static token.
+- This slice does **not** migrate connection negotiation, legacy initialize/initialized notification, `tools/list` pagination, or the OAuth callback's initial static-token connection. Those remain outstanding and prevent an end-to-end per-request guarantee for all MCP HTTP operations.
+- The latest source head for this slice is `12c2355e75e54bbbb7e0742fe16bf69594621141`. Exact-head Android and Worker CI must complete before this change is considered verified. No live OAuth authorization or token refresh was executed.
