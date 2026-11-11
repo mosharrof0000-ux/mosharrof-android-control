@@ -1,3 +1,20 @@
+buildscript {
+    // Align transitive dependencies on the root plugin/buildscript classpath.
+    // This configuration is separate from the Android subproject configurations.
+    configurations.classpath {
+        resolutionStrategy.eachDependency {
+            if (requested.group == "io.netty" &&
+                requested.name.startsWith("netty-") &&
+                !requested.name.startsWith("netty-tcnative")) {
+                useVersion("4.1.140.Final")
+            }
+            if (requested.group == "com.google.guava" && requested.name == "guava") {
+                useVersion("33.8.0-jre")
+            }
+        }
+    }
+}
+
 plugins {
     id("com.android.application") version "8.13.2" apply false
     id("org.jetbrains.kotlin.android") version "2.4.21" apply false
