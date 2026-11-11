@@ -7,6 +7,11 @@ import org.junit.Test
 class McpOAuthAuthorizationRequestFactoryTest {
     private val issuer = "https://auth.example.com"
     private val clientMetadataUrl = "https://client.example.com/oauth-client.json"
+    private val resourceUrl = "https://mcp.example.com/mcp"
+    private val resourceMetadata = mapOf<String, Any?>(
+        "resource" to resourceUrl,
+        "authorization_servers" to listOf(issuer)
+    )
 
     private val authorizationServerMetadata = mapOf<String, Any?>(
         "issuer" to issuer,
@@ -33,7 +38,7 @@ class McpOAuthAuthorizationRequestFactoryTest {
         assertTrue(
             McpOAuthAuthorizationRequestFactory.validateInputs(
                 issuer, authorizationServerMetadata,
-                clientMetadataUrl, clientMetadata, listOf("mcp:tools")
+                clientMetadataUrl, clientMetadata, resourceUrl, resourceMetadata, listOf("mcp:tools")
             )
         )
     }
@@ -44,7 +49,7 @@ class McpOAuthAuthorizationRequestFactoryTest {
             McpOAuthAuthorizationRequestFactory.validateInputs(
                 issuer,
                 authorizationServerMetadata + ("code_challenge_methods_supported" to listOf("plain")),
-                clientMetadataUrl, clientMetadata, listOf("mcp:tools")
+                clientMetadataUrl, clientMetadata, resourceUrl, resourceMetadata, listOf("mcp:tools")
             )
         )
     }
@@ -55,14 +60,14 @@ class McpOAuthAuthorizationRequestFactoryTest {
             McpOAuthAuthorizationRequestFactory.validateInputs(
                 issuer, authorizationServerMetadata, clientMetadataUrl,
                 clientMetadata + ("client_secret" to "must-not-exist"),
-                listOf("mcp:tools")
+                resourceUrl, resourceMetadata, listOf("mcp:tools")
             )
         )
         assertFalse(
             McpOAuthAuthorizationRequestFactory.validateInputs(
                 issuer, authorizationServerMetadata, clientMetadataUrl,
                 clientMetadata + ("redirect_uris" to listOf("org.attacker:/redirect")),
-                listOf("mcp:tools")
+                resourceUrl, resourceMetadata, listOf("mcp:tools")
             )
         )
     }
@@ -101,8 +106,34 @@ class McpOAuthAuthorizationRequestFactoryTest {
             McpOAuthAuthorizationRequestFactory.validateInputs(
                 issuer, authorizationServerMetadata, clientMetadataUrl,
                 clientMetadata + ("client_id" to "https://other.example/client"),
+                resourceUrl, resourceMetadata, listOf("mcp:tools")
+            )
+        )
+    }
+    @Test
+    fun rejectsProtectedResourceMetadataForDifferentEndpoint() {
+        assertFalse(
+            McpOAuthAuthorizationRequestFactory.validateInputs(
+                issuer, authorizationServerMetadata,
+                clientMetadataUrl, clientMetadata,
+                resourceUrl,
+                resourceMetadata + ("resource" to "https://attacker.example/mcp"),
                 listOf("mcp:tools")
             )
         )
     }
+
+    @Test
+    fun rejectsProtectedResourceMetadataWithUntrustedIssuer() {
+        assertFalse(
+            McpOAuthAuthorizationRequestFactory.validateInputs(
+                issuer, authorizationServerMetadata,
+                clientMetadataUrl, clientMetadata,
+                resourceUrl,
+                resourceMetadata + ("authorization_servers" to listOf("http://auth.example.com")),
+                listOf("mcp:tools")
+            )
+        )
+    }
+
 }
