@@ -151,3 +151,12 @@ Remaining high-priority migration work:
 - Added `asyncConnectDuplicateAttemptCannotReleaseActiveConnectionSlot`, which holds the first token callback, attempts two duplicate connections, verifies both are rejected without extra token resolution, releases the first attempt, and verifies a later reconnect succeeds.
 - Source commit: `519f0758a89c202331c664358f325a6e2f7d6186`; regression test commit: `4d5c7266dac0bed73b6b25148ca63269f13064f1`.
 - Exact-head CI for the test commit is required before this hardening is considered verified. No live OAuth or device testing was performed.
+
+
+## OAuth-only transport enforcement — 2026-11-11
+
+- A final call-site audit confirmed that the dashboard intentionally retains synchronous calls only in the no-encrypted-OAuth-state/manual-token branch. To prevent future regressions or accidental direct service calls, `McpHttpClient` now supports `allowSynchronousRequests=false`.
+- OAuth-created clients in both `PluginDashboardPage` and the AppAuth callback path in `MainActivity` set this flag to false. Their `post(...)` calls now fail before opening a connection; `postAsync(...)` remains available and resolves a token per request.
+- Added regression coverage proving an OAuth-only client rejects the synchronous path without network access and succeeds through asynchronous token resolution with a Bearer header.
+- Related commits: `ae2fc2c57cc70f0a84499fd6d3806bf0026fac10`, `478e1cd880fc2012ad6cf644c14ff9a5693fa455`, `129b2be6ece15d4cbd8352f450b773164ab3c927`, `0826469f6dc7efd1210b3a6037555ecc0cad5ea2`, and `37d2da03ffd725edb534bf8a5613af6cf69913b4`.
+- The latest PR-head CI must pass before this hardening is considered verified. The synchronous service API remains available to manual-token clients only; live OAuth and real MCP server behavior remain untested.
