@@ -201,3 +201,10 @@ This section supersedes older dated notes above wherever they describe current c
 3. Complete whole-repository and Git-history source/error/log scan, then dependency/version/license review.
 4. Complete OAuth/CIMD as a separately gated security feature; do not imply OAuth readiness from AppAuth dependency or metadata helpers.
 5. Reconcile inbound MCP server/bridge architecture only after its threat model and authentication/authorization model are reviewed.
+
+
+## 2026-11-11 latest exact-head reconciliation
+
+The current implementation status above supersedes older historical entries that describe provider runtime integration, profile credential management, capability display, task recovery/UI or error redaction as pending. At PR head `8f0d2bb4a7cd0fd318e70f01cd26eb359c859afd`, Android CI run `42972244593` and Worker CI run `42972244607` both passed. Android artifact ID `13834056036`, size 2,415,480 bytes, SHA-256 `645aca2aca037d4ae7bbaae51433cfc346a27ed0a043589dd1e504148674e0cb`; CI only, not installed.
+
+The remaining implementation/release sequence is: (1) interrupted/malformed continuation fixtures and UI transition tests; (2) privacy-minimal redacted audit events; (3) reproducible npm/Gradle dependency locking, SBOM and complete license/vulnerability review; (4) OAuth/CIMD as a separately threat-modeled feature; (5) physical Android, live provider/MCP and deployed Worker tests under their respective explicit authorization gates. PR merge and APK installation remain explicit-approval gates.
