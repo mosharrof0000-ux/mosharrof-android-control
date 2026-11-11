@@ -6,11 +6,13 @@ on:
     paths:
       - "android/**"
       - ".github/workflows/android-build.yml"
+      - "tools/**"
 
   pull_request:
     paths:
       - "android/**"
       - ".github/workflows/android-build.yml"
+      - "tools/**"
 
   workflow_dispatch:
 
@@ -58,6 +60,13 @@ jobs:
       - name: Generate Android CycloneDX SBOM
         run: gradle -p android --dependency-verification=strict :app:cyclonedxDirectBom
 
+      - name: Build license inventory and enrich reviewed SBOM metadata
+        run: |
+          python3 tools/audit_sbom_licenses.py \
+            --sbom android/app/build/reports/cyclonedx-direct/bom.json \
+            --reviewed-sbom android/build/reports/license-review/bom-reviewed.json \
+            --report android/build/reports/license-review/THIRD_PARTY_LICENSE_REVIEW.md
+
       - name: Assemble debug APK
         run: gradle -p android --dependency-verification=strict :app:assembleDebug
 
@@ -77,6 +86,7 @@ jobs:
             android/buildscript-gradle.lockfile
             android/gradle/verification-metadata.xml
             android/app/build/reports/cyclonedx-direct/bom.json
+            android/build/reports/license-review/**
             android/build/reports/dependency-triage/**
           if-no-files-found: error
 
