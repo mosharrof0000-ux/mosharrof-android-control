@@ -143,7 +143,7 @@ class AiProviderContinuationRequestFactoryTest {
                     "type" to "function_call",
                     "call_id" to "oa-call",
                     "name" to "lookup",
-                    "arguments" to "{\\"query\\":\\"x\\"}"
+                    "arguments" to "{\"query\":\"x\"}"
                 )
             )
         )
