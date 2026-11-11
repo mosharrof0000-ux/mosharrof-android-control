@@ -72,6 +72,7 @@ jobs:
           name: android-gradle-dependency-evidence
           path: |
             android/app/gradle.lockfile
+            android/buildscript-gradle.lockfile
             android/gradle/verification-metadata.xml
             android/app/build/reports/cyclonedx-direct/bom.json
             android/build/reports/dependency-triage/**
