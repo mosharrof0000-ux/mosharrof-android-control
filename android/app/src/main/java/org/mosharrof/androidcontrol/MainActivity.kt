@@ -995,7 +995,7 @@ class MainActivity : Activity() {
         val authorizationService = AuthorizationService(this)
         worker.execute {
             val pending = McpOAuthPendingRequestStore
-                .read(this@MainActivity, connectorId)
+                .readBound(this@MainActivity, connectorId)
                 .getOrElse {
                     runOnUiThread {
                         authorizationService.dispose()
@@ -1042,7 +1042,9 @@ class MainActivity : Activity() {
                 context = this@MainActivity,
                 connectorId = connectorId,
                 callbackIntent = data,
-                pendingRequest = pending,
+                pendingRequest = pending.request,
+                expectedIssuer = pending.expectedIssuer,
+                issuerRequired = pending.issuerRequired,
                 authorizationService = authorizationService
             ) { exchangeResult ->
                 if (exchangeResult.isFailure) {
