@@ -701,6 +701,101 @@ class McpConnectorService(
         parseTaskResponse(connectorId, response, taskId)
     }
 
+    /** OAuth-aware task operations; each request resolves a fresh bearer token. */
+    @Synchronized
+    internal fun getTaskAsync(
+        connectorId: String,
+        taskId: String,
+        tokenProvider: McpAccessTokenResolver,
+        ioExecutor: Executor,
+        onComplete: (Result<McpTaskProtocol.Snapshot>) -> Unit
+    ) {
+        val request = runCatching {
+            requireModernTaskConnection(connectorId)
+            McpProtocol.modernTasksGetRequest(
+                id = UUID.randomUUID().toString(),
+                taskId = taskId,
+                clientName = clientName,
+                clientVersion = clientVersion
+            )
+        }.getOrElse {
+            onComplete(Result.failure(it))
+            return
+        }
+        postTaskRequestAsync(connectorId, taskId, request, tokenProvider, ioExecutor, onComplete)
+    }
+
+    @Synchronized
+    internal fun updateTaskAsync(
+        connectorId: String,
+        taskId: String,
+        inputResponses: Map<String, Any?>,
+        tokenProvider: McpAccessTokenResolver,
+        ioExecutor: Executor,
+        onComplete: (Result<McpTaskProtocol.Snapshot>) -> Unit
+    ) {
+        val request = runCatching {
+            requireModernTaskConnection(connectorId)
+            require(McpTaskProtocol.validateInputResponsePayloads(inputResponses)) {
+                "Task inputResponses-এর প্রতিটি request key-এর জন্য non-empty object payload প্রয়োজন।"
+            }
+            McpProtocol.modernTasksUpdateRequest(
+                id = UUID.randomUUID().toString(),
+                taskId = taskId,
+                inputResponses = inputResponses,
+                clientName = clientName,
+                clientVersion = clientVersion
+            )
+        }.getOrElse {
+            onComplete(Result.failure(it))
+            return
+        }
+        postTaskRequestAsync(connectorId, taskId, request, tokenProvider, ioExecutor, onComplete)
+    }
+
+    @Synchronized
+    internal fun cancelTaskAsync(
+        connectorId: String,
+        taskId: String,
+        tokenProvider: McpAccessTokenResolver,
+        ioExecutor: Executor,
+        onComplete: (Result<McpTaskProtocol.Snapshot>) -> Unit
+    ) {
+        val request = runCatching {
+            requireModernTaskConnection(connectorId)
+            McpProtocol.modernTasksCancelRequest(
+                id = UUID.randomUUID().toString(),
+                taskId = taskId,
+                clientName = clientName,
+                clientVersion = clientVersion
+            )
+        }.getOrElse {
+            onComplete(Result.failure(it))
+            return
+        }
+        postTaskRequestAsync(connectorId, taskId, request, tokenProvider, ioExecutor, onComplete)
+    }
+
+    private fun postTaskRequestAsync(
+        connectorId: String,
+        taskId: String,
+        request: McpProtocol.Request,
+        tokenProvider: McpAccessTokenResolver,
+        ioExecutor: Executor,
+        onComplete: (Result<McpTaskProtocol.Snapshot>) -> Unit
+    ) {
+        client.postAsync(
+            connectorId = connectorId,
+            tokenProvider = tokenProvider,
+            ioExecutor = ioExecutor,
+            request = request
+        ) { responseResult ->
+            onComplete(responseResult.mapCatching { response ->
+                parseTaskResponse(connectorId, response, taskId)
+            })
+        }
+    }
+
     /** Pending task identifiers restored from durable local metadata after process restart. */
     @Synchronized
     fun pendingTasks(connectorId: String): Result<List<McpTaskRecord>> = runCatching {
