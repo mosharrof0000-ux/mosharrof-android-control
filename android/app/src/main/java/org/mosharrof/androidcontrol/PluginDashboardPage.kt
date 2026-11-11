@@ -193,10 +193,10 @@ class PluginDashboardPage(
      * GET requests; it never opens a browser or starts authorization/token flows.
      */
     private fun discoverOAuthMetadata() {
-        val connectorId = PluginDashboardSession.connectorId
-        val service = PluginDashboardSession.service
-        if (connectorId == null || service == null) {
-            onStatus("আগে MCP Connector সংযুক্ত করুন; OAuth discovery চালানো হয়নি।")
+        val endpoint = endpointInput.text.toString().trim()
+        val connectorId = connectorIdFor(endpoint)
+        if (connectorId == null) {
+            onStatus("OAuth discovery-এর জন্য সঠিক HTTPS MCP endpoint দিন।")
             return
         }
         if (oauthDiscoveryInProgress) {
@@ -205,36 +205,57 @@ class PluginDashboardPage(
         }
         oauthDiscoveryInProgress = true
         oauthMetadataView.text = "OAuth metadata যাচাই চলছে…"
+        val existingService = PluginDashboardSession.service
         worker.execute {
-            service.discoverOAuthMetadata(connectorId)
-                .onSuccess { discovery ->
-                    val issuer = discovery.authorizationServerIssuer
-                    val authorizationEndpoint =
-                        discovery.authorizationServerMetadata["authorization_endpoint"] as? String
-                    val tokenEndpoint =
-                        discovery.authorizationServerMetadata["token_endpoint"] as? String
-                    activity.runOnUiThread {
-                        oauthDiscoveryInProgress = false
-                        oauthMetadataView.text = buildString {
-                            append("OAuth metadata যাচাইকৃত\n")
-                            append("Authorization Server: ").append(issuer)
-                            append("\nAuthorization endpoint: ")
-                                .append(authorizationEndpoint ?: "অনুপস্থিত")
-                            append("\nToken endpoint: ")
-                                .append(tokenEndpoint ?: "অনুপস্থিত")
-                            append("\n\nএটি শুধু metadata discovery। কোনো login, browser redirect, ")
-                            append("PKCE, token exchange বা credential সংরক্ষণ করা হয়নি।")
-                        }
-                        onStatus("OAuth metadata যাচাই সফল; authorization শুরু হয়নি।")
+            runCatching {
+                val existing = ConnectorRegistry.connectorSnapshot().firstOrNull { it.id == connectorId }
+                if (existing == null) {
+                    ConnectorRegistry.registerConnector(
+                        ConnectorRegistry.Connector(
+                            id = connectorId,
+                            name = "MCP Connector",
+                            transport = ConnectorRegistry.Transport.MCP_STREAMABLE_HTTP,
+                            endpoint = endpoint,
+                            state = ConnectorRegistry.ConnectionState.CONFIGURED
+                        )
+                    ).getOrThrow()
+                } else {
+                    require(existing.endpoint == endpoint &&
+                        existing.transport == ConnectorRegistry.Transport.MCP_STREAMABLE_HTTP) {
+                        "নিবন্ধিত Connector endpoint বা transport মিলছে না।"
                     }
                 }
-                .onFailure { failure ->
-                    activity.runOnUiThread {
-                        oauthDiscoveryInProgress = false
-                        oauthMetadataView.text = "OAuth metadata যাচাই ব্যর্থ।"
-                        onStatus("OAuth metadata যাচাই ব্যর্থ: " + safeUiErrorMessage(failure))
+                val discoveryService = existingService ?: McpConnectorService(
+                    client = McpHttpClient(endpoint = endpoint)
+                )
+                discoveryService.discoverOAuthMetadata(connectorId).getOrThrow()
+            }.onSuccess { discovery ->
+                val issuer = discovery.authorizationServerIssuer
+                val authorizationEndpoint =
+                    discovery.authorizationServerMetadata["authorization_endpoint"] as? String
+                val tokenEndpoint =
+                    discovery.authorizationServerMetadata["token_endpoint"] as? String
+                activity.runOnUiThread {
+                    oauthDiscoveryInProgress = false
+                    oauthMetadataView.text = buildString {
+                        append("OAuth metadata যাচাইকৃত\n")
+                        append("Authorization Server: ").append(issuer)
+                        append("\nAuthorization endpoint: ")
+                            .append(authorizationEndpoint ?: "অনুপস্থিত")
+                        append("\nToken endpoint: ")
+                            .append(tokenEndpoint ?: "অনুপস্থিত")
+                        append("\n\nএটি শুধু metadata discovery। কোনো login, browser redirect, ")
+                        append("PKCE, token exchange বা credential সংরক্ষণ করা হয়নি।")
                     }
+                    onStatus("OAuth metadata যাচাই সফল; authorization শুরু হয়নি।")
                 }
+            }.onFailure { failure ->
+                activity.runOnUiThread {
+                    oauthDiscoveryInProgress = false
+                    oauthMetadataView.text = "OAuth metadata যাচাই ব্যর্থ।"
+                    onStatus("OAuth metadata যাচাই ব্যর্থ: " + safeUiErrorMessage(failure))
+                }
+            }
         }
     }
     private fun disconnect() {
