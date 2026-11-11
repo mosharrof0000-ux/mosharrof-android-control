@@ -13,7 +13,8 @@ class McpConnectorService(
     private val client: McpHttpClient,
     private val clientName: String = "MOSHARROF Android Control",
     private val clientVersion: String = "1.0",
-    private val taskStore: McpTaskStore = InMemoryMcpTaskStore()
+    private val taskStore: McpTaskStore = InMemoryMcpTaskStore(),
+    private val oauthMetadataFetcher: McpOAuthMetadataFetcher = McpOAuthMetadataFetcher()
 ) {
     data class ConnectionInfo(
         val connectorId: String,
@@ -32,6 +33,22 @@ class McpConnectorService(
     /** Connector IDs whose MCP sessions are owned by this service instance. */
     @Synchronized
     fun connectedConnectorIds(): Set<String> = connected.toSet()
+
+    /**
+     * Discovers and validates OAuth protected-resource and authorization-server
+     * metadata for a registered MCP endpoint. This is metadata-only: it does not
+     * start authorization, attach credentials, or change connector state.
+     */
+    fun discoverOAuthMetadata(connectorId: String): Result<McpOAuthMetadataDiscovery> = runCatching {
+        val connector = ConnectorRegistry.connectorSnapshot()
+            .firstOrNull { it.id == connectorId }
+            ?: error("নিবন্ধিত Connector পাওয়া যায়নি।")
+        require(connector.transport == ConnectorRegistry.Transport.MCP_STREAMABLE_HTTP) {
+            "এই Connector MCP Streamable HTTP নয়।"
+        }
+        oauthMetadataFetcher.discover(connector.endpoint)
+            ?: error("OAuth metadata যাচাই করা যায়নি।")
+    }
 
     private companion object {
         const val MAX_TOOL_LIST_PAGES = 100
