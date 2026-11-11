@@ -120,6 +120,24 @@ def main() -> int:
     print("POM SCM references (syntax only): " +
           json.dumps(report["assessment_counts"], sort_keys=True))
     print("Repository, release-tag and publisher verification: NOT PERFORMED")
+    print("Sanitized SCM references for follow-up verification:")
+    for item in report["components"]:
+        scm_value = item["scm"].get("url") or item["scm"].get("connection") or item["scm"].get("developerConnection") or ""
+        if scm_value.startswith("scm:"):
+            scm_value = scm_value.split(":", 2)[-1]
+        if scm_value.startswith("git+"):
+            scm_value = scm_value[4:]
+        try:
+            parsed = urlsplit(scm_value)
+            if parsed.scheme and parsed.hostname:
+                safe_ref = f"{parsed.scheme}://{parsed.hostname}{parsed.path}"
+            else:
+                safe_ref = scm_value.split("?", 1)[0].split("#", 1)[0]
+                if "@" in safe_ref and ":" in safe_ref:
+                    safe_ref = safe_ref.split("@", 1)[-1]
+        except ValueError:
+            safe_ref = "[unparseable SCM reference]"
+        print(f"SCM_REF {item['coordinate']} | {item['assessment']} | {safe_ref}")
     return 0
 
 
