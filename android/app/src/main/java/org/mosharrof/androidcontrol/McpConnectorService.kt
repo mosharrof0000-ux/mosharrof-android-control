@@ -30,6 +30,7 @@ class McpConnectorService(
     )
 
     private val connected = linkedSetOf<String>()
+    private val connecting = mutableSetOf<String>()
 
     /** Connector IDs whose MCP sessions are owned by this service instance. */
     @Synchronized
@@ -215,7 +216,10 @@ class McpConnectorService(
     ) {
         val completed = java.util.concurrent.atomic.AtomicBoolean(false)
         fun finish(result: Result<ConnectionInfo>) {
-            if (completed.compareAndSet(false, true)) onComplete(result)
+            if (completed.compareAndSet(false, true)) {
+                synchronized(this) { connecting.remove(connectorId) }
+                onComplete(result)
+            }
         }
 
         val connector = ConnectorRegistry.connectorSnapshot()
@@ -229,8 +233,15 @@ class McpConnectorService(
             return
         }
 
+        val alreadyConnecting = synchronized(this) {
+            !connecting.add(connectorId)
+        }
+        if (alreadyConnecting) {
+            finish(Result.failure(IllegalStateException("এই Connector-এর connection negotiation ইতিমধ্যে চলছে।")))
+            return
+        }
         synchronized(this) {
-            if (connectorId in connected) connected.remove(connectorId)
+            connected.remove(connectorId)
             ToolApprovalGrants.revokeConnector(connectorId)
             ConnectorRegistry.unregisterToolsForConnector(connectorId)
         }
@@ -361,8 +372,9 @@ class McpConnectorService(
                             if (nextCursor == null) {
                                 completeConnection()
                             } else {
-                                require(nextCursor.isNotBlank() && seenCursors.add(nextCursor)) {
-                                    "MCP tools/list cursor ফাঁকা অথবা পুনরাবৃত্ত; pagination থামানো হয়েছে।"
+                                require(nextCursor.isNotBlank() && nextCursor.length <= 4096 &&
+                                    seenCursors.add(nextCursor)) {
+                                    "MCP tools/list cursor ফাঁকা, অতিরিক্ত বড় অথবা পুনরাবৃত্ত; pagination থামানো হয়েছে।"
                                 }
                                 require(pageCount < MAX_TOOL_LIST_PAGES) {
                                     "MCP tools/list পৃষ্ঠা সীমা অতিক্রম করেছে।"
