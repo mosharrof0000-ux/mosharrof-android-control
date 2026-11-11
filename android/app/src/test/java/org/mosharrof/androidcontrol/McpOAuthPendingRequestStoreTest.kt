@@ -21,6 +21,18 @@ class McpOAuthPendingRequestStoreTest {
     }
 
     @Test
+    fun issuerBindingStorageIdIsHashedAndSeparatedFromPkceRequest() {
+        val connectorId = "trusted-mcp-connector"
+        val first = McpOAuthPendingRequestStore.issuerStorageId(connectorId)
+        val second = McpOAuthPendingRequestStore.issuerStorageId(connectorId)
+
+        assertEquals(first, second)
+        assertFalse(first.contains(connectorId))
+        assertTrue(first.matches(Regex("oauth\\.pending\\.issuer\\.[0-9a-f]{64}")))
+        assertNotEquals(McpOAuthPendingRequestStore.storageId(connectorId), first)
+    }
+
+    @Test
     fun differentConnectorsUseDifferentStorageIds() {
         assertNotEquals(
             McpOAuthPendingRequestStore.storageId("connector-alpha"),
