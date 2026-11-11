@@ -133,3 +133,12 @@ Remaining high-priority migration work:
 - Added regression coverage for per-request resolver count across modern discovery + two-page pagination, legacy discovery + initialize + initialized notification + tools/list, and rollback when a later page contains an invalid tool.
 - Source changes are currently on branch `fix/mcp-pagination-20261110`; exact latest head at this note: `57026a9d2928d6b999190c60a182ea49a64302fa`. Worker Typecheck passed at run `43000892511`; Android unit/build job `43000892481` was still in progress when this note was written. Do not mark this migration verified until Android completes successfully.
 - No live OAuth browser login, token refresh, real MCP server connection, remote revocation, device QA, APK install, merge, or deployment was performed.
+
+
+### Latest async-connection hardening and CI correction
+
+- Added a per-connector in-flight connection guard so two concurrent OAuth connect attempts cannot race session negotiation; duplicate attempts fail safely.
+- Added a 4,096-character maximum to opaque pagination cursors, alongside duplicate/blank-cursor rejection.
+- Initial Android CI for the first async connection slice exposed a Kotlin callback-label compile error (`return@onSuccess` inside `Result.fold`). Corrected to `return@fold` in commit `171142e230424fd1f2c23610baf37538b4b31fc7`.
+- Exact-head Android workflow run `43001294295` is running unit tests; Worker Typecheck is still pending/completing separately. The prior failed run `43000636860` is not a passing verification and is retained as evidence of the compile issue that was fixed.
+- Current branch head after this note: documentation commit will be newer than the source fix; use the resulting PR head SHA and its own CI checks as the authoritative verification point.
