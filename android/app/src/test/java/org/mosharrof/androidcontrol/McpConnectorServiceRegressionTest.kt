@@ -25,6 +25,7 @@ class McpConnectorServiceRegressionTest {
         private val repeatCursor: Boolean = false,
         private val toolResultType: String = "complete",
         private val taskGetStatuses: List<String> = listOf("working", "completed"),
+        private val taskPollIntervalMs: Long = 10L,
         private val unsupportedSchema: Boolean = false
     ) {
         val toolCalls = AtomicInteger(0)
@@ -246,7 +247,7 @@ class McpConnectorServiceRegressionTest {
                         .put("taskId", "task-1")
                         .put("status", status)
                         .put("ttlMs", 60_000)
-                        .put("pollIntervalMs", 10)
+                        .put("pollIntervalMs", taskPollIntervalMs)
                     if (status == "completed") {
                         task.put("result", JSONObject().put("content", JSONArray()))
                     }
@@ -580,6 +581,30 @@ class McpConnectorServiceRegressionTest {
         assertEquals(McpTaskProtocol.Status.COMPLETED, snapshot.status)
         assertEquals(listOf(10L), delays)
         assertEquals(2, server.taskGetCalls.get())
+    }
+
+    @Test
+    fun taskPollingDoesNotPollBeforeServerIntervalWhenBudgetIsShorter() {
+        registerConnector()
+        val server = FakeServer(
+            taskGetStatuses = listOf("working", "completed"),
+            taskPollIntervalMs = 60_000L
+        )
+        val connectorService = service(server)
+        connectorService.connect("test.mcp").getOrThrow()
+        val delays = mutableListOf<Long>()
+
+        val snapshot = connectorService.pollTask(
+            connectorId = "test.mcp",
+            taskId = "task-1",
+            maxWaitMs = 45_000L,
+            maxPolls = 5,
+            sleeper = { delays.add(it) }
+        ).getOrThrow()
+
+        assertEquals(McpTaskProtocol.Status.WORKING, snapshot.status)
+        assertEquals(listOf(45_000L), delays)
+        assertEquals("No second request before the server poll interval", 1, server.taskGetCalls.get())
     }
 
     @Test
