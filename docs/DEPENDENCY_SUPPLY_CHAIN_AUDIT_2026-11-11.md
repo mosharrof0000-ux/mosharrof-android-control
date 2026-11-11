@@ -248,3 +248,11 @@ The official OSV-Scanner documentation lists Gradle lockfiles, Gradle verificati
 - No dependency upgrade was made. Next safe remediation stage: query Gradle dependency insight for the relevant internal test-platform configurations and plugin classpaths; identify whether each verification-only artifact is actually resolved and used; map each OSV ID to OSV affected/fixed ranges; then update the relevant build/test tooling in a controlled set and rerun the full CI/SBOM/OSV scan. Keep runtime findings separate from build-tool findings.
 - Artifact digest for the Android SARIF archive: `sha256:e036d8cdbf8a9c3d3358731359755edc919da3a80a0878c6f64c5e9d308c6bd9`. The Worker SARIF archive digest is `sha256:d8ed2d97bc98ffc5f865d9e5ba5b3647b3c5d1a975bef73c921b17598b8cc024`.
 - Gate 16 remains **Partial**. These exact-head CI runs establish repeatable scan execution and a point-in-time dependency inventory; they do not complete vulnerability remediation, committed lockfile enforcement, trusted checksum provenance, license/runtime distribution review, or release policy.
+
+
+### Dependency-path diagnostics workflow added — execution pending
+
+- Android CI now has a dedicated `Capture dependency paths for OSV triage` step. It captures Gradle dependency reports for the three internal unified test-platform configurations that contain the flagged Netty/Guava/Protobuf/Commons IO coordinates, plus root and app `buildEnvironment` reports for plugin/buildscript attribution.
+- The reports are added to the existing `android-gradle-dependency-evidence` artifact under `android/build/reports/dependency-triage/`; they do not alter app dependencies or install/run the APK.
+- Workflow change commit: `b9a4cda5b0e9b0994acaab47b6afb8a5694bdaa2`. PR #7 currently points to this head and remains open/unmerged. No Actions run is visible for this commit yet; therefore the diagnostic reports have **not** been generated or verified. Do not claim the path-triage step passed until a workflow run on this exact head completes.
+- The workflow instrumentation is a reporting-only change. No dependency upgrades, lockfile commits, merge, deployment, or APK installation were performed.
