@@ -476,7 +476,7 @@ class McpConnectorService(
                                 .firstOrNull { it in supported }
                                 ?: error("MCP server-এর supported তালিকায় পরিচিত protocol version নেই।")
                             beginLegacy(legacy)
-                            return@onSuccess
+                            return@fold
                         }
                         require(result.optJSONObject("capabilities") != null) {
                             "Modern MCP discovery-এ capabilities অনুপস্থিত।"
