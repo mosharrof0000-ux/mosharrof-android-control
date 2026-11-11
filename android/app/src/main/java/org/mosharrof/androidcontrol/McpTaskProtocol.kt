@@ -6,6 +6,10 @@ import java.math.BigDecimal
 object McpTaskProtocol {
     private const val MAX_TASK_ID_CHARS = 256
     private const val MAX_POLL_INTERVAL_MS = 300_000L
+    private const val MAX_INPUT_RESPONSE_DEPTH = 16
+    private const val MAX_INPUT_RESPONSE_NODES = 1_024
+    private const val MAX_INPUT_RESPONSE_COLLECTION_SIZE = 128
+    private const val MAX_INPUT_RESPONSE_STRING_CHARS = 8_192
 
     enum class Status {
         WORKING, INPUT_REQUIRED, COMPLETED, CANCELLED, FAILED
@@ -67,16 +71,50 @@ object McpTaskProtocol {
         return Snapshot(taskId, status, ttl, pollInterval, message, requests, result, error)
     }
 
-    /** Validate the bounded object envelopes before any tasks/update request is sent. */
+    /** Validate bounded JSON object envelopes before any tasks/update request is sent. */
     fun validateInputResponsePayloads(responses: Map<String, Any?>): Boolean {
         if (responses.isEmpty() || responses.size > 16) return false
+        val nodeCount = intArrayOf(0)
         return responses.all { (requestKey, response) ->
             if (requestKey.isBlank() || requestKey.length > 128) return@all false
             val payload = response as? Map<*, *> ?: return@all false
-            payload.isNotEmpty() && payload.size <= 128 &&
-                payload.keys.all { key ->
-                    key is String && key.isNotBlank() && key.length <= 128
-                }
+            payload.isNotEmpty() &&
+                validateInputResponseObject(payload, depth = 0, nodeCount = nodeCount)
+        }
+    }
+
+    private fun validateInputResponseObject(
+        value: Map<*, *>,
+        depth: Int,
+        nodeCount: IntArray
+    ): Boolean {
+        if (depth > MAX_INPUT_RESPONSE_DEPTH || value.size > MAX_INPUT_RESPONSE_COLLECTION_SIZE) {
+            return false
+        }
+        return value.all { (key, nestedValue) ->
+            key is String && key.isNotBlank() && key.length <= 128 &&
+                validateInputResponseValue(nestedValue, depth + 1, nodeCount)
+        }
+    }
+
+    private fun validateInputResponseValue(
+        value: Any?,
+        depth: Int,
+        nodeCount: IntArray
+    ): Boolean {
+        nodeCount[0]++
+        if (nodeCount[0] > MAX_INPUT_RESPONSE_NODES || depth > MAX_INPUT_RESPONSE_DEPTH) {
+            return false
+        }
+        return when (value) {
+            null, is Boolean -> true
+            is String -> value.length <= MAX_INPUT_RESPONSE_STRING_CHARS
+            is Number -> value.toString().length <= 128 &&
+                runCatching { BigDecimal(value.toString()) }.isSuccess
+            is Map<*, *> -> validateInputResponseObject(value, depth, nodeCount)
+            is List<*> -> value.size <= MAX_INPUT_RESPONSE_COLLECTION_SIZE &&
+                value.all { validateInputResponseValue(it, depth + 1, nodeCount) }
+            else -> false
         }
     }
 

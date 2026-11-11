@@ -187,6 +187,49 @@ class McpTaskProtocolTest {
     }
 
     @Test
+    fun taskInputResponsePayloadsBoundNestedJsonDepthSizeAndTypes() {
+        assertTrue(
+            McpTaskProtocol.validateInputResponsePayloads(
+                mapOf("confirm" to mapOf("content" to listOf("ok", 1, true, null)))
+            )
+        )
+
+        var deeplyNested: Any? = "leaf"
+        repeat(17) { deeplyNested = mapOf("nested" to deeplyNested) }
+        assertFalse(
+            McpTaskProtocol.validateInputResponsePayloads(
+                mapOf("confirm" to mapOf("content" to deeplyNested))
+            )
+        )
+
+        assertFalse(
+            McpTaskProtocol.validateInputResponsePayloads(
+                mapOf("confirm" to mapOf("content" to "x".repeat(8_193)))
+            )
+        )
+        assertFalse(
+            McpTaskProtocol.validateInputResponsePayloads(
+                mapOf("confirm" to mapOf("content" to List(129) { it }))
+            )
+        )
+        assertFalse(
+            McpTaskProtocol.validateInputResponsePayloads(
+                mapOf("confirm" to mapOf("content" to List(1_025) { it }))
+            )
+        )
+        assertFalse(
+            McpTaskProtocol.validateInputResponsePayloads(
+                mapOf("confirm" to mapOf("content" to Double.NaN))
+            )
+        )
+        assertFalse(
+            McpTaskProtocol.validateInputResponsePayloads(
+                mapOf("confirm" to mapOf("content" to Any()))
+            )
+        )
+    }
+
+    @Test
     fun taskRequestBuildersBindTaskIdsAndValidateUpdateAnswers() {
         val get = McpProtocol.modernTasksGetRequest(
             "rpc-1", "task-1", "MOSHARROF", "1"
