@@ -22,11 +22,11 @@ def normalize_license(value: str) -> str:
 
     # Preserve the BSD clause count: BSD-2-Clause and BSD-3-Clause are not
     # interchangeable license identifiers.
-    if re.search(r"\\bbsd[- ]?4[- ]clause\\b|\\b4[- ]clause bsd\\b", lowered):
+    if re.search(r"\bbsd[- ]?4[- ]clause\b|\b4[- ]clause bsd\b", lowered):
         return "BSD-4-Clause"
-    if re.search(r"\\bbsd[- ]?3[- ]clause\\b|\\b3[- ]clause bsd\\b|modified bsd", lowered):
+    if re.search(r"\bbsd[- ]?3[- ]clause\b|\b3[- ]clause bsd\b|modified bsd", lowered):
         return "BSD-3-Clause"
-    if re.search(r"\\bbsd[- ]?2[- ]clause\\b|\\b2[- ]clause bsd\\b|simplified bsd", lowered):
+    if re.search(r"\bbsd[- ]?2[- ]clause\b|\b2[- ]clause bsd\b|simplified bsd", lowered):
         return "BSD-2-Clause"
     if "bsd" in lowered:
         # Keep generic BSD declarations distinguishable from specific SPDX IDs.
