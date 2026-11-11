@@ -1053,51 +1053,45 @@ class MainActivity : Activity() {
                     return@exchange
                 }
 
-                McpOAuthTokenRefresher.withFreshToken(
-                    context = this@MainActivity,
-                    connectorId = connectorId,
-                    authorizationService = authorizationService
-                ) { tokenResult ->
-                    if (tokenResult.isFailure) {
+                worker.execute {
+                    runCatching {
+                        val client = McpHttpClient(endpoint = endpoint)
+                        val taskPreferences = getSharedPreferences(
+                            "mosharrof_mcp_tasks",
+                            MODE_PRIVATE
+                        )
+                        McpConnectorService(
+                            client = client,
+                            taskStore = SharedPreferencesMcpTaskStore(taskPreferences)
+                        )
+                    }.onSuccess { connectorService ->
+                        val resolver = McpOAuthAccessTokenProvider(
+                            this@MainActivity,
+                            authorizationService
+                        )
+                        connectorService.connectAsync(
+                            connectorId = connectorId,
+                            tokenProvider = resolver,
+                            ioExecutor = worker
+                        ) { connectResult ->
+                            authorizationService.dispose()
+                            connectResult.onSuccess { info ->
+                                PluginDashboardSession.connectorId = connectorId
+                                PluginDashboardSession.service = connectorService
+                                runOnUiThread {
+                                    status.text = "OAuth সংযোগ সফল। আবিষ্কৃত Tool: ${info.discoveredTools}"
+                                    showMcpPage()
+                                }
+                            }.onFailure {
+                                runOnUiThread {
+                                    status.text = "OAuth token সংরক্ষিত; MCP server connection ব্যর্থ।"
+                                }
+                            }
+                        }
+                    }.onFailure {
                         authorizationService.dispose()
                         runOnUiThread {
-                            val failure = tokenResult.exceptionOrNull()
-                            status.text = (failure as? McpOAuthRefreshException)?.reason?.userMessage
-                                ?: "OAuth refresh ব্যর্থ; credentials মুছে ফেলা হয়নি। পরে manual retry করুন।"
-                        }
-                        return@withFreshToken
-                    }
-
-                    val freshToken = tokenResult.getOrThrow()
-                    worker.execute {
-                        runCatching {
-                            val client = McpHttpClient(
-                                endpoint = endpoint,
-                                bearerToken = freshToken.value
-                            )
-                            val taskPreferences = getSharedPreferences(
-                                "mosharrof_mcp_tasks",
-                                MODE_PRIVATE
-                            )
-                            val connectorService = McpConnectorService(
-                                client = client,
-                                taskStore = SharedPreferencesMcpTaskStore(taskPreferences)
-                            )
-                            val info = connectorService.connect(connectorId).getOrThrow()
-                            PluginDashboardSession.connectorId = connectorId
-                            PluginDashboardSession.service = connectorService
-                            info
-                        }.onSuccess { info ->
-                            authorizationService.dispose()
-                            runOnUiThread {
-                                status.text = "OAuth সংযোগ সফল। আবিষ্কৃত Tool: ${info.discoveredTools}"
-                                showMcpPage()
-                            }
-                        }.onFailure {
-                            authorizationService.dispose()
-                            runOnUiThread {
-                                status.text = "OAuth token সংরক্ষিত; MCP server connection ব্যর্থ।"
-                            }
+                            status.text = "OAuth MCP connection প্রস্তুত করা যায়নি।"
                         }
                     }
                 }
