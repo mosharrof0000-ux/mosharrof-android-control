@@ -35,3 +35,37 @@ internal class McpOAuthRefreshException(
     val reason: McpOAuthRefreshFailure,
     cause: Throwable? = null
 ) : IllegalStateException(reason.userMessage, cause)
+
+/**
+ * Pure commit gate for refresh results. A Bearer token is released to callers
+ * only after the updated AppAuth state has been durably encrypted.
+ */
+internal object McpOAuthRefreshCommit {
+    fun persistBeforeRelease(
+        accessToken: String?,
+        tokenType: String?,
+        authorizationError: Throwable?,
+        persistState: () -> Result<Unit>
+    ): Result<String> = runCatching {
+        if (authorizationError != null || accessToken.isNullOrBlank()) {
+            throw McpOAuthRefreshException(
+                McpOAuthRefreshFailure.REFRESH_REJECTED,
+                authorizationError
+            )
+        }
+        if (!tokenType.equals("Bearer", ignoreCase = true)) {
+            throw McpOAuthRefreshException(
+                McpOAuthRefreshFailure.BEARER_TOKEN_REQUIRED
+            )
+        }
+        val persistence = runCatching { persistState() }.getOrElse { Result.failure(it) }
+        persistence.getOrElse {
+            throw McpOAuthRefreshException(
+                McpOAuthRefreshFailure.ENCRYPTED_STATE_SAVE_FAILED,
+                it
+            )
+        }
+        accessToken
+    }
+}
+
