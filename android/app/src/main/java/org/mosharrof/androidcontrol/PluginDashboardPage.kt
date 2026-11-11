@@ -205,7 +205,9 @@ class PluginDashboardPage(
         }
         oauthDiscoveryInProgress = true
         oauthMetadataView.text = "OAuth metadata যাচাই চলছে…"
-        val existingService = PluginDashboardSession.service
+        val existingService = PluginDashboardSession.service.takeIf {
+            PluginDashboardSession.connectorId == connectorId
+        }
         worker.execute {
             runCatching {
                 val existing = ConnectorRegistry.connectorSnapshot().firstOrNull { it.id == connectorId }
