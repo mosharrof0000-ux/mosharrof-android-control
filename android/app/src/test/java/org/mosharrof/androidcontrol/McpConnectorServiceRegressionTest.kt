@@ -167,7 +167,7 @@ class McpConnectorServiceRegressionTest {
                             val tools = JSONArray()
                             if (paginatedTools) {
                                 if (cursor == null) tools.put(tool("echo", false))
-                                else tools.put(tool("second", false))
+                                else tools.put(tool("second", invalidSecondTool))
                             } else {
                                 tools.put(tool("echo", false))
                                 if (invalidSecondTool) tools.put(tool("invalid", true))
