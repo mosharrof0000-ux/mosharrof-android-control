@@ -336,6 +336,8 @@ class PluginDashboardPage(
                     authorizationServerMetadata = discovery.authorizationServerMetadata,
                     clientMetadataUrl = clientMetadataUrl,
                     clientMetadata = clientMetadata,
+                    resourceUrl = endpoint.trim(),
+                    resourceMetadata = discovery.resourceMetadata,
                     scopes = scopes
                 )
                 McpOAuthPendingRequestStore.save(activity, connectorId, request).getOrThrow()
