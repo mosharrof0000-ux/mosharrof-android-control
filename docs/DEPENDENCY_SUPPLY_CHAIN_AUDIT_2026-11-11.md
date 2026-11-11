@@ -454,3 +454,14 @@ The official OSV-Scanner documentation lists Gradle lockfiles, Gradle verificati
 - Source commits: Protobuf subproject alignment `709813a6ad13ec2aaa0a73d13f24ba0d27f13ea9`; Bouncy Castle alignment `e00da6045bc6ad709e58a9435e3d401f561fa233`; JDOM2/jose4j/Commons Compress alignment `4005205eb9410a65943be5f84441e724eb9a3264`.
 - Gate 16 remains **Partial**: generated `app/gradle.lockfile` and verification metadata are CI artifacts and are not yet committed as reviewed source lock state; root buildscript dependency locking, checksum provenance review, license/notice review, complete applicability analysis and final APK provenance gates remain open.
 - PR #7 remains open/unmerged. No merge, deployment, APK installation, live OAuth/provider operation or physical Android QA was performed.
+
+
+### Root buildscript lockfile tracking and complete scan scope — 2026-11-11
+
+- Root buildscript classpath dependency locking is now activated with `configurations.classpath { resolutionStrategy.activateDependencyLocking() }`.
+- Generated root classpath lockfile was committed at `android/buildscript-gradle.lockfile` in commit `4ae2f2b311917100b1b718aab1bfb4ec0c3b3350`; exact lockfile blob SHA `7fe1e1cf6b3aa4de4e966d5742e275027306a14f`.
+- The committed root lockfile contains the verified resolved versions for Bouncy Castle 1.86, JDOM2 2.0.6.1, jose4j 0.9.6, Commons Compress 1.28.0, Protobuf 3.25.5, Jackson 2.22/2.22.4 and Netty 4.1.140.Final.
+- Android workflow now explicitly passes both `app/gradle.lockfile` and `buildscript-gradle.lockfile` to OSV Scanner, in addition to the generated Gradle verification metadata. Workflow change commit: `3d152ab7a9df6a2b5e3c15cea0c10293fae06a08`.
+- Android CI run `43041276362` for exact workflow head `3d152ab7a9df6a2b5e3c15cea0c10293fae06a08` is still in progress at dependency lock/verification generation; root-lock scan result is therefore pending. A prior run `43041255283` for the root-lock commit is also in progress.
+- Important scope correction: the earlier zero-result SARIF from run `43040179854` did not include the root buildscript lockfile in the OSV scan arguments. It must not be treated as a complete app-plus-buildscript dependency scan. Re-scan with the corrected workflow is required before asserting zero findings across both lockfiles.
+- Gate 16 remains **Partial** until app lockfile and verification metadata are committed and reviewed, root/app lock enforcement is demonstrated on a clean CI run, checksum/signature provenance and license/notice reviews are completed, and final APK provenance is recorded.
