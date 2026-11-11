@@ -77,3 +77,10 @@ After the source audit above, the branch added:
 - Regression tests for successful replacement, metadata/active-profile preservation, and rejection of missing profiles/invalid credentials.
 
 Verification for source commit `fad2354c48d96f0f2a2c2e82eb6842a19e328814`: Android CI run `42968929411` PASS (unit tests, debug APK assembly and artifact upload); Worker CI run `42968929491` PASS. Artifact `mosharrof-android-control-debug`, ID `13832821191`, size `2,415,440` bytes, SHA-256 `035720631ab1cfd2fc8ce73141e10f07f53f41bc818fb06e8ff811561d8251c0`. CI artifact only; no physical install/device QA.
+
+## Partial static logging/error-surface scan
+
+- Reviewed 24 of the 65 files changed in PR #7 at the provider profile UX source head. Pattern checks covered Android Log calls, println/printStackTrace, direct HTTP error-body-to-exception patterns, and obvious credential interpolation.
+- No direct Android Log/println/printStackTrace calls or obvious credential interpolation were found in those 24 inspected files.
+- Two UI status paths surface exception messages (credential replacement and MCP token deletion). The visible messages do not interpolate credential values, but their exception-source safety still belongs in the full error-surface review.
+- This is a limited changed-file scan only. It does not cover every tracked file, commit history, dependencies, generated files, runtime logs, crash reports, or every exception path; the whole-repository/history audit remains OPEN.
