@@ -60,6 +60,29 @@ class McpOAuthMetadataTest {
     }
 
     @Test
+    fun rejectsAuthorizationServerListEntriesWithQueryOrFragment() {
+        val resource = "https://mcp.example.com/api"
+        val metadata = mapOf<String, Any?>(
+            "resource" to resource,
+            "authorization_servers" to listOf(issuer)
+        )
+
+        assertTrue(McpOAuthMetadata.validateProtectedResourceMetadata(resource, metadata))
+        assertFalse(
+            McpOAuthMetadata.validateProtectedResourceMetadata(
+                resource,
+                metadata + ("authorization_servers" to listOf(issuer + "?tenant=unexpected"))
+            )
+        )
+        assertFalse(
+            McpOAuthMetadata.validateProtectedResourceMetadata(
+                resource,
+                metadata + ("authorization_servers" to listOf(issuer + "#tenant"))
+            )
+        )
+    }
+
+    @Test
     fun acceptsPublicNativeCimdClientMetadata() {
         assertTrue(
             McpOAuthMetadata.validateClientMetadata(
