@@ -40,3 +40,8 @@ dependencies {
     // Use the fixed org.json release for local JVM tests (CVE-2026-59171).
     testImplementation("org.json:json:20260719")
 }
+
+// The distributable APK's dependency boundary: exclude build tooling and test-only graphs.
+tasks.cyclonedxDirectBom {
+    includeConfigs = listOf("releaseRuntimeClasspath")
+}
