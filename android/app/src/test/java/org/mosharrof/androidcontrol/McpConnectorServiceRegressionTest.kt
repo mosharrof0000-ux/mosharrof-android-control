@@ -593,13 +593,18 @@ class McpConnectorServiceRegressionTest {
         val connectorService = service(server)
         connectorService.connect("test.mcp").getOrThrow()
         val delays = mutableListOf<Long>()
+        var elapsedNanos = 0L
 
         val snapshot = connectorService.pollTask(
             connectorId = "test.mcp",
             taskId = "task-1",
             maxWaitMs = 45_000L,
             maxPolls = 5,
-            sleeper = { delays.add(it) }
+            sleeper = { delay ->
+                delays.add(delay)
+                elapsedNanos += delay * 1_000_000L
+            },
+            clockNanos = { elapsedNanos }
         ).getOrThrow()
 
         assertEquals(McpTaskProtocol.Status.WORKING, snapshot.status)
