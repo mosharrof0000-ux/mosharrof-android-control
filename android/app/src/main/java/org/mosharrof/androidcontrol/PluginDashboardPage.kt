@@ -16,6 +16,7 @@ import android.widget.Spinner
 import android.widget.TextView
 import org.json.JSONArray
 import org.json.JSONObject
+import net.openid.appauth.AuthorizationService
 import java.security.MessageDigest
 import java.util.concurrent.Executor
 
@@ -608,13 +609,22 @@ class PluginDashboardPage(
             .show()
     }
 
+    /** Creates a short-lived AppAuth resolver only for connectors with encrypted OAuth state. */
+    private fun oauthResolverFor(connectorId: String): Pair<AuthorizationService, McpAccessTokenResolver>? {
+        val state = McpOAuthAuthStateStore.read(activity, connectorId).getOrThrow() ?: return null
+        require(state.accessToken != null || state.refreshToken != null) { "OAuth session has no usable token state." }
+        val authorizationService = AuthorizationService(activity)
+        return authorizationService to McpOAuthAccessTokenProvider(activity, authorizationService)
+    }
+
     private fun executeApprovedToolCall(
         toolId: String,
         toolName: String,
         args: Map<String, Any?>
     ) {
         val service = PluginDashboardSession.service
-        if (service == null) {
+        val connectorId = PluginDashboardSession.connectorId
+        if (service == null || connectorId == null) {
             onStatus("Connector session সক্রিয় নেই।")
             return
         }
@@ -623,12 +633,34 @@ class PluginDashboardPage(
                 activity.runOnUiThread { onStatus("অনুমোদন তৈরি হয়নি: ${safeUiErrorMessage(error)}") }
                 return@execute
             }
-            service.callTool(toolId, args, approvalGrant = grant).onSuccess { output ->
-                activity.runOnUiThread {
+            val oauth = runCatching { oauthResolverFor(connectorId) }.getOrElse {
+                activity.runOnUiThread { onStatus("Encrypted OAuth state যাচাই ব্যর্থ; Tool call বন্ধ রাখা হয়েছে।") }
+                return@execute
+            }
+            if (oauth == null) {
+                service.callTool(toolId, args, approvalGrant = grant)
+                    .onSuccess { output -> activity.runOnUiThread {
+                        handleToolOutput(toolId, toolName, args, output, 0)
+                    } }
+                    .onFailure { error -> activity.runOnUiThread {
+                        onStatus("Tool call ব্যর্থ: ${safeUiErrorMessage(error)}")
+                    } }
+                return@execute
+            }
+            val (authorizationService, tokenResolver) = oauth
+            service.callToolAsync(
+                toolId = toolId,
+                arguments = args,
+                approvalGrant = grant,
+                tokenProvider = tokenResolver,
+                ioExecutor = worker
+            ) { result ->
+                authorizationService.dispose()
+                result.onSuccess { output -> activity.runOnUiThread {
                     handleToolOutput(toolId, toolName, args, output, 0)
-                }
-            }.onFailure { error ->
-                activity.runOnUiThread { onStatus("Tool call ব্যর্থ: ${safeUiErrorMessage(error)}") }
+                } }.onFailure { error -> activity.runOnUiThread {
+                    onStatus("OAuth-সুরক্ষিত Tool call ব্যর্থ: ${safeUiErrorMessage(error)}")
+                } }
             }
         }
     }
