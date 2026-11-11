@@ -367,3 +367,22 @@ The official OSV-Scanner documentation lists Gradle lockfiles, Gradle verificati
 - Exact-head Worker run `43025438569` completed SUCCESS: dependency installation, npm audit, CycloneDX SBOM, typecheck/tests, evidence upload and OSV scan all completed successfully. The Worker SARIF scan completed, but this does not validate the Android dependency change.
 - The org.json dependency remains test-only; it is not an app runtime dependency in the earlier verified Gradle lockfile. Recheck the regenerated lockfile and SARIF from the exact current Android run before closing this advisory item.
 - PR #7 remains open/unmerged. No deployment, merge, APK installation, live OAuth/provider operation or physical Android QA was performed.
+
+
+## org.json remediation and exact current-head CI — 2026-11-11
+
+**Exact branch head:** `83027855a8eb7f883e4cf4e85f8a0cd5dd7a9f8d`
+
+- Android run `43025828122`: **SUCCESS** on the exact branch head. Assemble job `130540168155` passed dependency lock/verification generation, all five dependency-path reports, Android unit tests, CycloneDX SBOM, debug APK assembly and artifact uploads. OSV job `130541501715` also completed SUCCESS.
+- Worker run `43025828148`: **SUCCESS** on the same exact branch head. Worker dependency evidence and OSV SARIF artifacts uploaded.
+- Android dependency evidence artifact ID `13857182501`, archive SHA-256 `b6b70d6e2b22a622679e34239037e7bbbd88253b542b1f8f686457830d0de9c4`.
+- Android debug APK artifact ID `13857162587`, archive SHA-256 `b0a5034d8a4a5c7c84cd147df5283ce6b626a23036952d6eb607cfc838d817bc`. CI artifact only; not installed or physically tested.
+- Android OSV SARIF artifact ID `13857012541`, archive SHA-256 `e3e048dc26b70c6561bb8957fb63f4a5497485e2fe47f8378f4770f612efcdd0`. Extracted `results.sarif`: 181 result records, 56 unique advisory IDs; SHA-256 `7826bbbfa92c47ce123f75b3f6c89591aa29042d806600744f1598e3c12c2bf1`. Repeated records and multiple package versions are not unique vulnerable runtime dependencies.
+- The regenerated `app/gradle.lockfile` resolves `org.json:json:20260719` only in `debugUnitTestCompileClasspath`, `debugUnitTestRuntimeClasspath`, `releaseUnitTestCompileClasspath` and `releaseUnitTestRuntimeClasspath`; it is still test-only.
+- The current Android SARIF contains **no** `CVE-2026-59171` record. Combined with successful exact-head dependency resolution, unit tests, SBOM and OSV scan, this verifies the specific org.json test-dependency remediation for this scanned head. It does not imply zero remaining advisories.
+- Current OSV scan still reports 56 unique advisory IDs. The highest repeated coordinate families include Netty 4.1.93.Final and 4.1.110.Final, Guava 32.0.1-jre / 33.3.1-jre / 33.7.1-jre, Jackson Core/Databind 2.22.2, Commons Compress 1.21, Bouncy Castle 1.79, jose4j 0.9.5 and JDOM2 2.0.6. The dependency-path reports attribute these primarily to Android internal test-platform or root Gradle build/plugin graphs; they are not evidence that these libraries ship in the app runtime.
+- Current root build graph shows AGP 8.13.2 has raised some transitive versions (for example protobuf-java 3.25.5 and commons-io 2.16.1), but remaining older transitive dependencies still exist. Do not use blind global upgrades: map each advisory to its affected/fixed ranges and dependency configuration, then select compatible targeted updates.
+- Worker exact-head run passed; Worker SARIF artifact ID `13856873085` contains an empty result list for this point-in-time scan. This is not a general vulnerability guarantee.
+- Gate 16 remains **Partial**. This scan confirms the org.json fix and exact-head pipeline operation but does not clear the remaining Android build/test-tool findings, enforce committed lockfiles, independently authenticate Gradle checksums, complete license/notice review, or establish final APK provenance.
+- PR #7 remains open and unmerged. No merge, deployment, APK installation, live OAuth/provider operation, or physical Android QA was performed.
+
