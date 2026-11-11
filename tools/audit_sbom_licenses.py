@@ -33,6 +33,7 @@ def main() -> int:
     parser.add_argument("--sbom", required=True, type=Path)
     parser.add_argument("--reviewed-sbom", required=True, type=Path)
     parser.add_argument("--report", required=True, type=Path)
+    parser.add_argument("--app-notices", required=True, type=Path)
     args = parser.parse_args()
 
     bom = json.loads(args.sbom.read_text(encoding="utf-8"))
