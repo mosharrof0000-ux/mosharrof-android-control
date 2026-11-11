@@ -306,8 +306,8 @@ class McpHttpClientTransportTest {
     fun perRequestBearerTokenValidationRejectsHeaderInjection() {
         assertTrue(McpHttpClient.isValidBearerToken("valid-token_123"))
         assertFalse(McpHttpClient.isValidBearerToken(""))
-        assertFalse(McpHttpClient.isValidBearerToken("token\\rInjected: yes"))
-        assertFalse(McpHttpClient.isValidBearerToken("token\\nInjected: yes"))
+        assertFalse(McpHttpClient.isValidBearerToken("token\rInjected: yes"))
+        assertFalse(McpHttpClient.isValidBearerToken("token\nInjected: yes"))
     }
 
     @Test
