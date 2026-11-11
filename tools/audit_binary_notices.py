@@ -11,7 +11,7 @@ MAX_TEXT_BYTES = 2 * 1024 * 1024
 MAX_ARCHIVE_BYTES = 64 * 1024 * 1024
 
 def safe_text(data: bytes):
-    if not data or len(data) > MAX_TEXT_BYTES or b"\\x00" in data[:4096]: return None
+    if not data or len(data) > MAX_TEXT_BYTES or b"\x00" in data[:4096]: return None
     value = data.decode("utf-8", errors="replace").strip()
     return value or None
 
