@@ -31,6 +31,27 @@ class BinaryNoticeAuditTest(unittest.TestCase):
             notice_text=(root/"out/notices.txt").read_text()
             self.assertNotIn("Sample upstream notice.", notice_text)
             self.assertNotIn("Nested license text.", notice_text)
+    def test_scans_nested_jar_larger_than_text_limit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            d = root / "artifacts/example/vendor/large/1.2.3"
+            d.mkdir(parents=True)
+            nested = io.BytesIO()
+            with zipfile.ZipFile(nested, "w", compression=zipfile.ZIP_STORED) as z:
+                z.writestr("META-INF/LICENSE", "Large nested license text.")
+                z.writestr("assets/padding.bin", bytes(range(256)) * 9000)
+            self.assertGreater(len(nested.getvalue()), 2 * 1024 * 1024)
+            with zipfile.ZipFile(d / "large-1.2.3.aar", "w", compression=zipfile.ZIP_STORED) as z:
+                z.writestr("classes.jar", nested.getvalue())
+            sbom = root / "bom.json"
+            sbom.write_text(json.dumps({"components": [{
+                "group": "example.vendor", "name": "large", "version": "1.2.3",
+                "licenses": [{"license": {"id": "Apache-2.0"}}]
+            }]}), encoding="utf-8")
+            result = audit(sbom, root / "artifacts", root / "out/notices.txt")
+            self.assertEqual(result["archive_notice_component_count"], 1)
+            self.assertIn("Large nested license text.", (root / "out/notices.txt").read_text())
+
     def test_missing_binary_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp); sbom, artifacts=self.fixture(root)
