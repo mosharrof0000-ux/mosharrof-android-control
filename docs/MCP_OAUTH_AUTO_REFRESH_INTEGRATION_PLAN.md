@@ -89,3 +89,12 @@ This work is required before marking automatic OAuth refresh complete. Until all
 - Added `McpConnectorService.callToolAsync(...)` in commit `250f5f88035e7c71ba5e67793ce3e6a68cbf6d8a`. It repeats the existing connector/session, argument-schema and single-use approval checks before invoking `McpHttpClient.postAsync`; it processes complete, input-required and task responses and persists task metadata. The token resolver and IO executor are supplied by the caller; no token is stored in the service.
 - Exact-head Android run `42997652420` and Worker Typecheck `42997652353` were in progress at documentation time. Their results must be checked before marking this slice verified.
 - Remaining migration: wire the Android UI to provide an OAuth token resolver and use `callToolAsync`; migrate connect/protocol negotiation/tools-list pagination and task get/update/cancel to callback-based transport. Existing synchronous service entry points remain for manual-token compatibility and are not OAuth-refresh-safe.
+
+
+## Async tool/task API extension
+
+- Added `McpConnectorService.callToolAsync` for OAuth-backed tool calls. Its authorization preflight is synchronized, validates connector session and input schema, consumes a matching single-use grant before dispatch, and validates complete/input-required/task responses after transport.
+- Added `getTaskAsync`, `updateTaskAsync`, and `cancelTaskAsync`; each uses `McpHttpClient.postAsync` and therefore resolves a fresh OAuth bearer token per operation. Task response parsing continues through the existing task-state validation/persistence path.
+- Added service regression coverage for async tool-call approval preservation, bearer-header delivery, resolver-failure fail-closed behavior, and the three task operations. Test additions are in commits `06e120fef10bece689551871dbff9a0b0273b774`, `d90358b979b3556e76d18f0b88e63690c95fe52b`, and `d93e28bab0dcb8717621a3541f31fde4fe3053da`.
+- The latest source head at this update is `d93e28bab0dcb8717621a3541f31fde4fe3053da`. Do not treat tests as passing until its Android CI finishes.
+- These new service APIs are not yet wired into `PluginDashboardPage` or `MainActivity`. Existing UI flows still use synchronous service methods, including connect and pagination; OAuth-safe operation is therefore not end-to-end until UI construction, authorization callback, connection negotiation, pagination and all tool/task actions are migrated.
