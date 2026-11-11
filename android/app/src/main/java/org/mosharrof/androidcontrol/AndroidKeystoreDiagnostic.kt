@@ -87,8 +87,7 @@ internal object AndroidKeystoreDiagnostic {
         } catch (error: Exception) {
             results.add(
                 "FAIL: Android Keystore — " +
-                    "${error.javaClass.simpleName}: " +
-                    (error.message ?: "অজানা ত্রুটি")
+                    safeUiErrorMessage(error)
             )
         } finally {
             runCatching {
