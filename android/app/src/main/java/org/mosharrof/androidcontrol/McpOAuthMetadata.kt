@@ -63,6 +63,9 @@ internal object McpOAuthMetadata {
     ): Boolean {
         if (!isHttpsIssuer(expectedIssuer)) return false
         if (metadata["issuer"] != expectedIssuer) return false
+        if (metadata.containsKey("authorization_response_iss_parameter_supported") &&
+            metadata["authorization_response_iss_parameter_supported"] !is Boolean
+        ) return false
         if (!isHttpsUrl(metadata["authorization_endpoint"] as? String)) return false
         if (!isHttpsUrl(metadata["token_endpoint"] as? String)) return false
         // Revocation is optional in RFC 8414 metadata. If advertised, reject
@@ -85,8 +88,24 @@ internal object McpOAuthMetadata {
     fun validatedRevocationEndpoint(metadata: Map<String, Any?>): String? =
         (metadata["revocation_endpoint"] as? String)?.takeIf(::isHttpsUrl)
 
-    fun validateAuthorizationIssuer(responseIssuer: String?, expectedIssuer: String): Boolean =
-        isHttpsIssuer(expectedIssuer) && !responseIssuer.isNullOrBlank() && responseIssuer == expectedIssuer
+    /** null means malformed metadata; absent capability defaults to optional iss. */
+    fun authorizationResponseIssuerRequired(metadata: Map<String, Any?>): Boolean? =
+        if (!metadata.containsKey("authorization_response_iss_parameter_supported")) {
+            false
+        } else {
+            metadata["authorization_response_iss_parameter_supported"] as? Boolean
+        }
+
+    /** RFC 9207: validate every supplied iss; require it when the server advertises support. */
+    fun validateAuthorizationIssuer(
+        responseIssuer: String?,
+        expectedIssuer: String,
+        issuerRequired: Boolean = true
+    ): Boolean {
+        if (!isHttpsIssuer(expectedIssuer)) return false
+        if (responseIssuer == null) return !issuerRequired
+        return responseIssuer == expectedIssuer
+    }
 
     /** RFC 8414 issuer identifiers must not contain query or fragment components. */
     private fun isHttpsIssuer(value: String?): Boolean {
