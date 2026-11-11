@@ -297,3 +297,15 @@ This addendum supersedes earlier audit statements that OAuth/CIMD was validator-
 - Android debug APK artifact ID `13870550597`, size `2,582,599` bytes, SHA-256 `5ba5bfe3a035481c3496742b5737737ed40e050d3267ff50b536aeeb3975b5eb`; CI artifact only, not installed. Android dependency evidence artifact ID `13869861290`; Worker dependency evidence artifact ID `13868858628`. SARIF artifacts: Android `13869253629`, Worker `13868579767`.
 - These are point-in-time advisory-database results for the scanned lockfiles, not a guarantee of absence of all vulnerabilities. The OSV and npm audit reports do not replace source-code review, runtime testing, legal license review, or future recurring scans.
 - Non-blocking toolchain warnings observed in Worker logs include Node deprecations (`punycode`, `url.parse`, `Buffer()`) and GitHub Actions Node 20 deprecation notices for v4 actions. Track for maintenance; no failing audit finding was associated with these warnings.
+
+
+## Follow-up exact-head CI and artifact verification — 2026-11-11
+
+**Head:** `a4da4a3f2e57ab03e451cdf0c12fb57b519c0af1` (PR #7, branch `fix/mcp-pagination-20261110`, still open/unmerged).
+
+- Android workflow run `43055759358`: SUCCESS. Assemble job `130644644577` passed strict Gradle dependency verification, `:app:testDebugUnitTest`, CycloneDX BOM, runtime license inventory, debug APK assembly, APK license-notice validation and artifact upload. Dependency scan job `130646117821` succeeded; OSV scanned 167 app lock packages, 192 buildscript lock packages and 409 Gradle verification-metadata packages; scanner log: **No issues found**.
+- Worker workflow run `43055759511`: SUCCESS (exact same head).
+- Android debug APK artifact `13870753793`, archive size 2,584,613 bytes. Downloaded and inspected the ZIP; inner `app-debug.apk` size 2,856,152 bytes; SHA-256 `301ecabe62cdd3501d3f10e611c4e00195ec07fa6ff89996dcf240d0ca120f2e`. This is a CI artifact only; not installed or device-tested.
+- Android OSV SARIF artifact `13871801628` is 589 bytes. Scanner log is the primary evidence for the no-findings result.
+- Build logs contain non-blocking Node deprecation warnings (`punycode`, `url.parse`) and GitHub Actions Node 20 runtime deprecation notices. Track these for CI maintenance; they did not fail the workflow.
+- PR remains open and unmerged. No APK installation, PR merge, or deployment was performed. Live OAuth/CIMD and MCP-server interoperability, Android Keystore/browser callback runtime, physical-device QA, and full legal/toolchain dependency review remain outstanding.
