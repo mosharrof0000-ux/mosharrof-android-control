@@ -211,3 +211,5 @@ Commits:
 - Added a regression test proving that a query-bearing issuer is rejected by both metadata URL derivation and authorization-server metadata validation.
 - This is narrow metadata-validation hardening only. Metadata fetching, CIMD discovery, PKCE, token exchange, refresh/revocation and a complete OAuth flow remain unimplemented.
 - This new source/test head requires fresh Android CI; no pass is claimed until the exact-head run completes.
+
+- Follow-up: the authorization-response issuer comparison now independently requires a valid HTTPS issuer identifier too, so an invalid query-bearing expected issuer cannot pass merely by matching the response value.
