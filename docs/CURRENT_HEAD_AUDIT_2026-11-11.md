@@ -192,3 +192,13 @@ Commits:
 - The latest redaction changes and regression tests are covered by the exact-head Android CI above.
 - Still open: full semantic source/history audit (including non-Kotlin and generated/configuration paths), lockfiles/SBOM/license and vulnerability review, UI transition coverage, interrupted/malformed continuation fixtures, OAuth/CIMD implementation, Android Keystore and physical-device verification, real MCP/live-provider tests, deployed Worker verification, independent security review, and external release approval.
 - No live credentials, deployment, APK installation, or PR merge were used for this verification.
+
+
+## Latest exact-head verification — 2026-11-11 (`9ec21e6ad82d95f2f060da4481ab9b6de895968c`)
+
+- Android workflow run `42973156641` (run #332): Android unit tests PASS; Debug APK assembly PASS; artifact upload PASS. Job cleanup was still running when inspected; all three build/test/upload steps completed successfully.
+- Worker workflow run `42973156667` (run #288): PASS.
+- Artifact `mosharrof-android-control-debug`, ID `13833758820`, size `2,415,482` bytes, SHA-256 `2c2acc4fcfada40c741e85e8f5cb2cf5cb3a94145dcdd8531596fc40e951e59d`. CI artifact only; not installed or physically tested.
+- Added `cancellationDuringApprovalPreventsMcpExecutionAndContinuation`: cancellation from the approval callback causes cancellation failure, exactly one initial provider request, one approval callback, and zero MCP tool calls.
+- Added `rejectsMalformedProviderHistoryBeforeBuildingContinuation`: a malformed Responses API history item is rejected before continuation request construction.
+- Remaining release blockers are unchanged: UI transition/real-device coverage, OAuth/CIMD, live MCP/provider tests, deployed Worker verification, reproducible dependency locking, full transitive SBOM/license/vulnerability review, independent security review, and explicit merge/install authorization.
