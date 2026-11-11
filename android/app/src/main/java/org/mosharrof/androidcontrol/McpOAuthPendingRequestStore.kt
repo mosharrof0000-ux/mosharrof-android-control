@@ -24,7 +24,7 @@ internal object McpOAuthPendingRequestStore {
         require(connectorIdPattern.matches(connectorId)) {
             "Connector ID-এর বিন্যাস সঠিক নয়।"
         }
-        require(request.state.isNotBlank() && request.state.length <= 512) {
+        require(!request.state.isNullOrBlank() && request.state.length <= 512) {
             "OAuth request state অনুপস্থিত বা অবৈধ।"
         }
         require(request.codeVerifier != null &&
