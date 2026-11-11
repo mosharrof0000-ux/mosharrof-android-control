@@ -44,9 +44,9 @@ jobs:
       - name: Capture dependency paths for OSV triage
         run: |
           mkdir -p android/build/reports/dependency-triage
-          gradle -p android :app:dependencies --configuration _internal-unified-test-platform-android-test-plugin-host-emulator-control > android/build/reports/dependency-triage/emulator-control.txt
-          gradle -p android :app:dependencies --configuration _internal-unified-test-platform-android-test-plugin-host-retention > android/build/reports/dependency-triage/retention.txt
-          gradle -p android :app:dependencies --configuration _internal-unified-test-platform-android-test-plugin-result-listener-gradle > android/build/reports/dependency-triage/result-listener.txt
+          # Capture all app configurations instead of hard-coding AGP-internal
+          # configuration names that can disappear between AGP releases.
+          gradle -p android :app:dependencies > android/build/reports/dependency-triage/app-dependencies.txt
           gradle -p android buildEnvironment > android/build/reports/dependency-triage/root-build-environment.txt
           gradle -p android :app:buildEnvironment > android/build/reports/dependency-triage/app-build-environment.txt
 
