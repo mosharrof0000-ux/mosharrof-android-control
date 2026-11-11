@@ -71,3 +71,12 @@ Do not implement a partial wrapper that refreshes only connect or tool calls. Th
 ## Release status
 
 This work is required before marking automatic OAuth refresh complete. Until all service and UI call sites are migrated and exact-head CI tests pass, automatic refresh before every MCP request remains **incomplete**. No live OAuth login, token refresh, or remote revocation has been run as part of this audit.
+
+
+## Latest CI finding and repair
+
+- Android run `42996782193` failed at Kotlin compilation because `McpAccessTokenResolver` was referenced by the HTTP client and provider but its interface declaration was absent from the compiled source tree.
+- The Worker Typecheck for that head passed.
+- Added the missing internal resolver contract beside `McpOAuthAccessTokenProvider` in commit `a350bf68a91ba28e85a5d4add1deb232c5e5791d`. This is a compile-contract repair only; it does not complete service migration.
+- Exact-head Android verification for the repair is running as workflow `42997172705`; do not treat it as passing until the job completes successfully.
+- The synchronous `McpConnectorService` call sites and the OAuth callback's static-token client construction remain outstanding. No OAuth network login or refresh has been executed during this work.
