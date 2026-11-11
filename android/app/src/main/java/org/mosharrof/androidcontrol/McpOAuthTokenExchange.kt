@@ -37,20 +37,25 @@ internal object McpOAuthTokenExchange {
                 return
             }
 
-        val tokenRequest = runCatching { response.createTokenExchangeRequest() }
-            .getOrElse {
-                onComplete(Result.failure(IllegalStateException(
-                    "OAuth token request তৈরি করা যায়নি।"
-                )))
-                return
-            }
-
         val expectedResource = pendingRequest?.additionalParameters?.get("resource")
-        val tokenResource = tokenRequest.additionalParameters["resource"]
-        if (expectedResource.isNullOrBlank() ||
-            !McpHttpClient.isSafeEndpoint(expectedResource) ||
-            tokenResource != expectedResource
-        ) {
+        if (expectedResource.isNullOrBlank() || !McpHttpClient.isSafeEndpoint(expectedResource)) {
+            onComplete(Result.failure(IllegalStateException(
+                "OAuth authorization request-এ বৈধ protected resource অনুপস্থিত।"
+            )))
+            return
+        }
+
+        // AppAuth's no-argument helper does not copy authorization request parameters
+        // into the token request; pass RFC 8707 resource explicitly.
+        val tokenRequest = runCatching {
+            response.createTokenExchangeRequest(mapOf("resource" to expectedResource))
+        }.getOrElse {
+            onComplete(Result.failure(IllegalStateException(
+                "OAuth token request তৈরি করা যায়নি।"
+            )))
+            return
+        }
+        if (tokenRequest.additionalParameters["resource"] != expectedResource) {
             onComplete(Result.failure(IllegalStateException(
                 "OAuth token request-এর protected resource মূল অনুরোধের সঙ্গে মেলেনি।"
             )))
