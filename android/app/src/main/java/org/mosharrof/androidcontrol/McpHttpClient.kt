@@ -28,7 +28,8 @@ class McpHttpClient(
     private val bearerToken: String? = null,
     private val connectionFactory: (URL) -> HttpURLConnection = {
         it.openConnection() as HttpURLConnection
-    }
+    },
+    private val allowSynchronousRequests: Boolean = true
 ) {
     @Volatile private var sessionId: String? = null
 
@@ -108,7 +109,12 @@ class McpHttpClient(
     fun post(
         request: McpProtocol.Request,
         toolDefinition: McpProtocol.ToolDefinition? = null
-    ): JSONObject = postWithBearer(request, toolDefinition, bearerToken)
+    ): JSONObject {
+        check(allowSynchronousRequests) {
+            "এই OAuth Connector-এ synchronous/static-token transport বন্ধ; per-request async token resolution বাধ্যতামূলক।"
+        }
+        return postWithBearer(request, toolDefinition, bearerToken)
+    }
 
     @Synchronized
     private fun postWithBearer(
