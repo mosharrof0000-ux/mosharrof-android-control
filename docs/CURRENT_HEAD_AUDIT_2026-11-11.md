@@ -136,3 +136,15 @@ Commits:
 - Corrected the regression test to assert the fixed redacted provider error string and assert that the simulated server exception text is absent.
 - Fix commit: `a176ef152b515b28818e9dedb4020c11db7fdd55`.
 - Worker CI run `42970314846` passed for the prior source head. Android CI for the fix commit has not yet returned a run/result at the time of this note; rerun status is pending.
+
+
+### Follow-up defense-in-depth source scan
+- Scanned all 22 changed Android main-source Kotlin files for direct exception-message rendering, stack-trace printing, println/Android Log calls, raw response-body forwarding and obvious bearer/authorization concatenation.
+- No direct logging or raw exception-message surfaces were found in the provider, MCP, Relay, encryption, approval-grant and task source files checked, with one additional Termux bridge exception path found.
+- Removed the remaining raw `SecurityException.message` and `IllegalStateException.message` concatenation at the Termux bridge boundary in commit `d162a314ac0520d5511dd06ad751b9ce163e3c3b`.
+- `PluginDashboardPage` matches from the regex scan were false positives on `dialog.dismiss()`, not error-text rendering.
+- This is a source-pattern review of changed Kotlin production files, not a complete repository, Git-history, dependency, runtime or crash-report audit.
+
+### Latest CI for defense-in-depth source commit
+- Worker CI run `42970919190`: PASS.
+- Android CI run `42970919165`: still in progress at this note; unit tests currently running, APK assembly/upload pending.
