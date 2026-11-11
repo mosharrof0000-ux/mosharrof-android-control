@@ -40,7 +40,11 @@ class PluginDashboardPage(
     private lateinit var toolsContainer: LinearLayout
     private lateinit var resultView: TextView
     private lateinit var oauthMetadataView: TextView
+    private lateinit var oauthClientMetadataUrlInput: EditText
+    private lateinit var oauthScopesInput: EditText
     private var oauthDiscoveryInProgress = false
+    @Volatile private var lastOAuthDiscovery: McpOAuthMetadataDiscovery? = null
+    @Volatile private var lastOAuthConnectorId: String? = null
 
     fun render(parent: LinearLayout) {
         val prefs = activity.getSharedPreferences("plugin_dashboard_v1", Activity.MODE_PRIVATE)
@@ -78,6 +82,21 @@ class PluginDashboardPage(
             setPadding(8, 8, 8, 12)
         }
         parent.addView(oauthMetadataView, matchParams())
+        oauthClientMetadataUrlInput = EditText(activity).apply {
+            hint = "OAuth Client Metadata URL (CIMD)"
+            setSingleLine(true)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+        }
+        parent.addView(oauthClientMetadataUrlInput, matchParams())
+        oauthScopesInput = EditText(activity).apply {
+            hint = "OAuth scopes (space-separated)"
+            setSingleLine(true)
+            setText("mcp")
+        }
+        parent.addView(oauthScopesInput, matchParams())
+        button(parent, "Encrypted PKCE Request প্রস্তুত (Browser নয়)") {
+            prepareOAuthAuthorizationRequest()
+        }
         button(parent, "সংরক্ষিত MCP Task পুনরুদ্ধার / যাচাই") {
             loadPendingTasks()
         }
@@ -250,6 +269,8 @@ class PluginDashboardPage(
                     discovery.authorizationServerMetadata["token_endpoint"] as? String
                 activity.runOnUiThread {
                     oauthDiscoveryInProgress = false
+                    lastOAuthDiscovery = discovery
+                    lastOAuthConnectorId = connectorId
                     oauthMetadataView.text = buildString {
                         append("OAuth metadata যাচাইকৃত\n")
                         append("Authorization Server: ").append(issuer)
@@ -265,12 +286,66 @@ class PluginDashboardPage(
             }.onFailure { failure ->
                 activity.runOnUiThread {
                     oauthDiscoveryInProgress = false
+                    lastOAuthDiscovery = null
+                    lastOAuthConnectorId = null
                     oauthMetadataView.text = "OAuth metadata যাচাই ব্যর্থ।"
                     onStatus("OAuth metadata যাচাই ব্যর্থ: " + safeUiErrorMessage(failure))
                 }
             }
         }
     }
+    /**
+     * Builds and encrypts an OAuth Authorization Code + S256 PKCE request.
+     * This deliberately stops before browser launch or any token network call.
+     */
+    private fun prepareOAuthAuthorizationRequest() {
+        val endpoint = endpointInput.text.toString().trim()
+        val connectorId = connectorIdFor(endpoint)
+        if (connectorId == null) {
+            onStatus("OAuth request তৈরির আগে সঠিক HTTPS MCP endpoint দিন।")
+            return
+        }
+        val discovery = lastOAuthDiscovery
+        if (discovery == null || lastOAuthConnectorId != connectorId) {
+            onStatus("আগে এই Connector-এর OAuth metadata যাচাই করুন।")
+            return
+        }
+        val clientMetadataUrl = oauthClientMetadataUrlInput.text.toString().trim()
+        val scopes = oauthScopesInput.text.toString().trim()
+            .split(Regex("\\s+"))
+            .filter { it.isNotBlank() }
+        if (clientMetadataUrl.isBlank()) {
+            onStatus("OAuth Client Metadata URL (CIMD) দিন।")
+            return
+        }
+        onStatus("CIMD যাচাই ও encrypted PKCE request প্রস্তুত হচ্ছে…")
+        worker.execute {
+            runCatching {
+                val clientMetadata = McpOAuthMetadataFetcher()
+                    .fetchClientMetadata(
+                        clientMetadataUrl,
+                        McpOAuthAuthorizationRequestFactory.REDIRECT_URI
+                    ) ?: error("CIMD metadata HTTPS fetch বা validation ব্যর্থ।")
+                val request = McpOAuthAuthorizationRequestFactory.build(
+                    issuer = discovery.authorizationServerIssuer,
+                    authorizationServerMetadata = discovery.authorizationServerMetadata,
+                    clientMetadataUrl = clientMetadataUrl,
+                    clientMetadata = clientMetadata,
+                    scopes = scopes
+                )
+                McpOAuthPendingRequestStore.save(activity, connectorId, request).getOrThrow()
+            }.onSuccess {
+                activity.runOnUiThread {
+                    onStatus("S256 PKCE Authorization Request encrypted storage-এ প্রস্তুত। Browser বা token exchange শুরু হয়নি.")
+                }
+            }.onFailure { error ->
+                activity.runOnUiThread {
+                    onStatus("OAuth request প্রস্তুত হয়নি: " + safeUiErrorMessage(error))
+                }
+            }
+        }
+    }
+
     private fun disconnect() {
         val id = PluginDashboardSession.connectorId
         val service = PluginDashboardSession.service
