@@ -43,6 +43,7 @@ class PluginDashboardPage(
     private lateinit var oauthClientMetadataUrlInput: EditText
     private lateinit var oauthScopesInput: EditText
     private var oauthDiscoveryInProgress = false
+    private var oauthRequestPreparationInProgress = false
     @Volatile private var lastOAuthDiscovery: McpOAuthMetadataDiscovery? = null
     @Volatile private var lastOAuthConnectorId: String? = null
 
@@ -304,6 +305,10 @@ class PluginDashboardPage(
             onStatus("OAuth request তৈরির আগে সঠিক HTTPS MCP endpoint দিন।")
             return
         }
+        if (oauthRequestPreparationInProgress) {
+            onStatus("OAuth PKCE request প্রস্তুত করা ইতিমধ্যে চলছে।")
+            return
+        }
         val discovery = lastOAuthDiscovery
         if (discovery == null || lastOAuthConnectorId != connectorId) {
             onStatus("আগে এই Connector-এর OAuth metadata যাচাই করুন।")
@@ -317,6 +322,7 @@ class PluginDashboardPage(
             onStatus("OAuth Client Metadata URL (CIMD) দিন।")
             return
         }
+        oauthRequestPreparationInProgress = true
         onStatus("CIMD যাচাই ও encrypted PKCE request প্রস্তুত হচ্ছে…")
         worker.execute {
             runCatching {
@@ -335,10 +341,12 @@ class PluginDashboardPage(
                 McpOAuthPendingRequestStore.save(activity, connectorId, request).getOrThrow()
             }.onSuccess {
                 activity.runOnUiThread {
+                    oauthRequestPreparationInProgress = false
                     onStatus("S256 PKCE Authorization Request encrypted storage-এ প্রস্তুত। Browser বা token exchange শুরু হয়নি.")
                 }
             }.onFailure { error ->
                 activity.runOnUiThread {
+                    oauthRequestPreparationInProgress = false
                     onStatus("OAuth request প্রস্তুত হয়নি: " + safeUiErrorMessage(error))
                 }
             }
