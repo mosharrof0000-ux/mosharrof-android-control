@@ -89,6 +89,7 @@ jobs:
       download-artifact: android-gradle-dependency-evidence
       scan-args: |-
         --lockfile=app/gradle.lockfile
+        --lockfile=buildscript-gradle.lockfile
         --lockfile=gradle/verification-metadata.xml
       # Inventory-only first pass: publish findings for review before making
       # vulnerability presence a release-blocking policy.
