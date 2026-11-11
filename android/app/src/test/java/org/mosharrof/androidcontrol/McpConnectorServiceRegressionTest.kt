@@ -1012,4 +1012,56 @@ class McpConnectorServiceRegressionTest {
         assertEquals("OAuth failure must prevent remote tool execution", 0, server.toolCalls.get())
     }
 
+    @Test
+    fun asyncTaskLifecycleResolvesFreshTokenForEachOperation() {
+        registerConnector()
+        val server = FakeServer()
+        val client = McpHttpClient(
+            endpoint = "https://example.com/mcp",
+            connectionFactory = server::connection
+        )
+        val connectorService = McpConnectorService(client)
+        connectorService.connect("test.mcp").getOrThrow()
+        val resolutions = AtomicInteger(0)
+        val resolver = object : McpAccessTokenResolver {
+            override fun resolve(
+                connectorId: String,
+                expectedEndpoint: String,
+                onComplete: (Result<McpOAuthTokenRefresher.FreshBearerToken>) -> Unit
+            ) {
+                resolutions.incrementAndGet()
+                onComplete(Result.success(
+                    McpOAuthTokenRefresher.FreshBearerToken("task-access-token")
+                ))
+            }
+        }
+        val directExecutor = java.util.concurrent.Executor { it.run() }
+        var fetched: Result<McpTaskProtocol.Snapshot>? = null
+        connectorService.getTaskAsync(
+            "test.mcp", "task-1", resolver, directExecutor
+        ) { fetched = it }
+        assertNotNull(fetched)
+        assertEquals(McpTaskProtocol.Status.WORKING, fetched!!.getOrThrow().status)
+
+        var updated: Result<McpTaskProtocol.Snapshot>? = null
+        connectorService.updateTaskAsync(
+            "test.mcp",
+            "task-1",
+            mapOf("confirm" to mapOf("action" to "accept")),
+            resolver,
+            directExecutor
+        ) { updated = it }
+        assertNotNull(updated)
+        assertEquals(McpTaskProtocol.Status.WORKING, updated!!.getOrThrow().status)
+
+        var cancelled: Result<McpTaskProtocol.Snapshot>? = null
+        connectorService.cancelTaskAsync(
+            "test.mcp", "task-1", resolver, directExecutor
+        ) { cancelled = it }
+        assertNotNull(cancelled)
+        assertEquals(McpTaskProtocol.Status.CANCELLED, cancelled!!.getOrThrow().status)
+        assertEquals(3, resolutions.get())
+        assertTrue(server.methods.containsAll(listOf("tasks/get", "tasks/update", "tasks/cancel")))
+    }
+
 }
