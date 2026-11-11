@@ -84,3 +84,22 @@ Verification for source commit `fad2354c48d96f0f2a2c2e82eb6842a19e328814`: Andro
 - No direct Android Log/println/printStackTrace calls or obvious credential interpolation were found in those 24 inspected files.
 - Two UI status paths surface exception messages (credential replacement and MCP token deletion). The visible messages do not interpolate credential values, but their exception-source safety still belongs in the full error-surface review.
 - This is a limited changed-file scan only. It does not cover every tracked file, commit history, dependencies, generated files, runtime logs, crash reports, or every exception path; the whole-repository/history audit remains OPEN.
+
+
+## 2026-11-11 high-risk transport and credential review — PR head `d639cd0ed3b531dae514d198b4be227810c7f6f0`
+
+Reviewed the following 12 changed files at the exact PR head: `AiProviderProfileStore.kt`, `AiProviderHttpTransport.kt`, `AiProviderRuntime.kt`, `AiToolCallOrchestrator.kt`, `McpHttpClient.kt`, `McpConnectorService.kt`, `RelayClient.kt`, `TermuxBridge.kt`, `ToolApprovalGrants.kt`, `EncryptedSecretEnvelope.kt`, `AndroidManifest.xml`, and `android/app/build.gradle.kts`. Also inspected the relevant MCP/AI transport and Relay security test fixtures.
+
+### Controls confirmed in source
+- AI provider transport enforces HTTPS, rejects URL user-info/query/fragment, uses a fixed allowlist of request headers, bounded request/response sizes, finite connect/read timeouts, disables redirects, and does not automatically retry POST requests.
+- MCP transport validates its endpoint at construction, disables redirects, bounds request/response bodies, and converts HTTP errors to status/RPC metadata rather than retaining arbitrary server error text. Regression tests explicitly verify that an echoed bearer token and arbitrary error message are not exposed.
+- Relay normalizes an HTTPS endpoint without user-info/query/fragment, disables redirects, bounds responses, limits command IDs and operation IDs, stores the device token encrypted with Android Keystore AES-GCM, and restricts retry to its documented idempotent request paths/statuses.
+- Termux bridge uses fixed executable paths and fixed argument arrays; unknown operation IDs are rejected. The result receiver is non-exported and the manifest disables app backup.
+- Provider credentials are encrypted using Android Keystore AES-GCM with profile ID as AAD. Profile metadata and encrypted secret are separate; credential replacement validates before writing and preserves profile metadata/active selection.
+
+### Findings and limits
+- No confirmed credential disclosure or unsafe redirect was demonstrated in this reviewed batch.
+- `AiToolCallOrchestrator.safeFailureMessage` forwards a bounded, newline-normalized exception message to the provider; `TermuxBridge` also includes selected Android exception messages in local status text. These are not proven secret leaks, but their exception-origin review and redaction policy remain OPEN.
+- Relay URL validation permits a caller-configured HTTPS host and optional port/path; this is intentional for configurable relay endpoints, but trust still depends on the user configuring the correct server. No domain pinning is implemented or claimed.
+- This is a targeted review of 12 high-risk changed files, not a complete audit of all 65 PR files, every tracked file, Git history, dependencies, runtime logs, crash reporting, or deployed services. Whole-repository/history review remains OPEN.
+- No source code was changed as part of this audit pass. This review does not replace CI, live endpoint testing, Android runtime testing, or independent security review.
