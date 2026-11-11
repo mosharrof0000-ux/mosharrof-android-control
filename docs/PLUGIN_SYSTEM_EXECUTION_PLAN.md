@@ -196,3 +196,11 @@ Dependency/license review is not complete: Worker dependencies still use semver 
 - Revocation tests now cover endpoint userinfo/fragment rejection, invalid client/token fields rejected before network calls, accepted `access_token` hint and form encoding. This remains automated client-side contract coverage, not live authorization-server revocation interoperability.
 - CI Debug APK artifact `13879926314` (2,586,036 bytes; uploaded ZIP SHA-256 `32c59324be498a7bc603e785d1a7e29cdaf46a852b1c12fb3ddfb26c9011102c`); dependency evidence `13879906381`; OSV SARIF `13879981470`. CI artifacts only; no installation or physical-device testing.
 - PR #7 remains open/unmerged. Live OAuth/CIMD interoperability, real MCP/provider checks, Android Keystore device verification, deployed Worker verification and independent security review remain separate blockers. No deployment, APK install or merge.
+
+
+## 2026-11-12 exact-head reconciliation — `bcfb632d44f4196d988c7c96f2bfc6fdce16299a`
+
+- OAuth/CIMD implementation is present in source with bounded metadata/CIMD fetch and validation, AppAuth authorization-code + S256 PKCE, encrypted pending request/AuthState persistence, issuer/state/request binding, RFC 8707 resource-bound token exchange, per-request asynchronous Bearer refresh, serialized refresh attempts, and explicit RFC 7009 revocation. Automated regression tests cover refresh persistence-before-release, safe failure handling, revocation endpoint/input validation and form encoding. Android CI #565 passed on the exact head. This is not live authorization-server, token rotation/revocation, real MCP, AppAuth browser callback or physical Android Keystore verification.
+- Android CI run `43073796330` (#565) passed strict dependency verification, Android unit tests, CycloneDX SBOM, runtime binary notice audit, Debug APK assembly, APK notice validation, artifact upload and OSV scan.
+- Runtime dependency evidence artifact `13879962092` shows 34/34 runtime binaries inspected but 0/34 archive LICENSE/NOTICE texts extracted. The full Apache-2.0 license and generated dependency table are packaged; upstream copyright/attribution requirements remain under review. Gate 16 remains **Partial**.
+- Debug APK artifact `13881210413` is CI-only and has not been installed. PR #7 remains open/unmerged; no merge, deployment or physical-device test was performed.
