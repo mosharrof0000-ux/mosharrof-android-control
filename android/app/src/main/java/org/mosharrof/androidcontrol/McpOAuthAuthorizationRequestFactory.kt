@@ -21,6 +21,8 @@ internal object McpOAuthAuthorizationRequestFactory {
         authorizationServerMetadata: Map<String, Any?>,
         clientMetadataUrl: String,
         clientMetadata: Map<String, Any?>,
+        resourceUrl: String,
+        resourceMetadata: Map<String, Any?>,
         scopes: List<String>
     ): Boolean {
         if (!McpOAuthMetadata.validateAuthorizationServerMetadata(
@@ -47,6 +49,8 @@ internal object McpOAuthAuthorizationRequestFactory {
         authorizationServerMetadata: Map<String, Any?>,
         clientMetadataUrl: String,
         clientMetadata: Map<String, Any?>,
+        resourceUrl: String,
+        resourceMetadata: Map<String, Any?>,
         scopes: List<String>
     ): AuthorizationRequest {
         require(validateInputs(
@@ -54,6 +58,8 @@ internal object McpOAuthAuthorizationRequestFactory {
             authorizationServerMetadata,
             clientMetadataUrl,
             clientMetadata,
+            resourceUrl,
+            resourceMetadata,
             scopes
         )) { "OAuth authorization prerequisites are invalid." }
 
@@ -72,6 +78,8 @@ internal object McpOAuthAuthorizationRequestFactory {
             Uri.parse(REDIRECT_URI)
         )
             .setScope(scopes.joinToString(" "))
+            // RFC 8707 binds authorization to the exact MCP protected resource.
+            .setAdditionalParameters(mapOf("resource" to resourceUrl))
             .build()
 
         check(request.codeVerifier != null &&
