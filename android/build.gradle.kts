@@ -1,7 +1,7 @@
 buildscript {
-    // Align transitive dependencies on the root plugin/buildscript classpath.
-    // This configuration is separate from the Android subproject configurations.
+    // Lock the root buildscript classpath separately from Android subprojects.
     configurations.classpath {
+        resolutionStrategy.activateDependencyLocking()
         resolutionStrategy.eachDependency {
             if (requested.group == "io.netty" &&
                 requested.name.startsWith("netty-") &&
