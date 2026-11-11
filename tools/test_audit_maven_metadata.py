@@ -7,7 +7,7 @@ class MavenMetadataAuditTest(unittest.TestCase):
         self.assertEqual(normalize_license("http://www.apache.org/licenses/LICENSE-2.0.txt"), "Apache-2.0")
 
     def test_parses_license_scm_and_developer_metadata(self):
-        xml = b"""<project><licenses><license><name>Apache License, Version 2.0</name><url>https://www.apache.org/licenses/LICENSE-2.0</url></license></licenses><scm><url>https://example.test/source</url><connection>scm:git:test</connection></scm><developers><developer><name>Example Dev</name><organization>Example Org</organization></developer></developers></project>"""
+        xml = b"""<project xmlns="http://maven.apache.org/POM/4.0.0"><licenses><license><name>Apache License, Version 2.0</name><url>https://www.apache.org/licenses/LICENSE-2.0</url></license></licenses><scm><url>https://example.test/source</url><connection>scm:git:test</connection></scm><developers><developer><name>Example Dev</name><organization>Example Org</organization></developer></developers></project>"""
         result = parse_pom(xml)
         self.assertEqual(result["licenses"][0]["normalized"], "Apache-2.0")
         self.assertEqual(result["scm"]["url"], "https://example.test/source")
