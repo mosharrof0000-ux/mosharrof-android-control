@@ -56,8 +56,20 @@ internal object McpOAuthTokenRefresher {
             return
         }
 
+        val originalRequest = state.lastAuthorizationResponse?.request
+        val resource = originalRequest?.additionalParameters?.get("resource")
+        if (resource.isNullOrBlank() || !McpHttpClient.isSafeEndpoint(resource)) {
+            finish(Result.failure(IllegalStateException(
+                "Encrypted OAuth state-এ বৈধ protected resource নেই; MCP request বন্ধ রাখা হয়েছে।"
+            )))
+            return
+        }
+
         try {
-            state.performActionWithFreshTokens(authorizationService) { accessToken, _, authException ->
+            state.performActionWithFreshTokens(
+                authorizationService,
+                mapOf("resource" to resource)
+            ) { accessToken, _, authException ->
                 val result = runCatching {
                     if (authException != null || accessToken.isNullOrBlank()) {
                         throw IllegalStateException("OAuth access token refresh ব্যর্থ হয়েছে।")
