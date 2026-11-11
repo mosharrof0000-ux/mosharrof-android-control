@@ -52,3 +52,40 @@ Still not verified/performed:
 - Independent security review, APK installation, production deployment and PR merge.
 
 No credentials or secrets were used or recorded in this addendum. No APK installation, live endpoint test, deployment or merge is claimed. PR merge and physical APK installation remain explicit-approval gates.
+
+
+## Latest exact-head verification — 2026-11-11 (`c51ba5f6cb215a461bc6ec3b684276b47ed3f4b2`)
+
+This section supersedes the older exact-head and pending-CI status above for the latest branch head.
+
+- Branch: `fix/mcp-pagination-20261110`
+- Exact source head: `c51ba5f6cb215a461bc6ec3b684276b47ed3f4b2`
+- Android workflow run: [42979220470](https://github.com/mosharrof0000-ux/mosharrof-android-control/actions/runs/42979220470) — PASS.
+- Worker workflow run: [42979220474](https://github.com/mosharrof0000-ux/mosharrof-android-control/actions/runs/42979220474) — PASS.
+- Android job `assemble`: unit tests, debug APK assembly, and artifact upload all completed successfully.
+- Worker CI/typecheck completed successfully.
+
+### Exact-head CI artifact
+
+- Name: `mosharrof-android-control-debug`
+- Artifact ID: `13837350101`
+- Size: `2,417,211` bytes
+- GitHub artifact digest: `sha256:06d77b5ee3bde06af98913b55864f9ef6fbb25ba297d04fdf8717b23569d6899`
+- Expiry: 2027-02-09
+- GitHub workflow metadata binds the artifact to the exact branch and head above.
+
+This is a CI-produced debug artifact only. It was not installed or launched on a physical Android device.
+
+### Gate 6 — MCP task lifecycle polling regression
+
+The task polling regression fix was verified by the Android unit-test job on this exact head. The poller now honors the server-provided polling interval without an artificial 30-second early-poll cap, while still stopping at the caller's remaining wait budget. An injected monotonic clock supports deterministic timing tests. The regression fixture uses a 60-second server interval and a 45-second maximum wait, asserting that only the remaining 45 seconds are slept before polling stops.
+
+**Gate 6 code + automated regression/CI: COMPLETE.** Physical Android persistence/process-restart behavior remains a separate Gate 20 device-validation item; it is not represented as verified here.
+
+### Gate 9 — provider capability verification audit
+
+The provider-neutral capability model distinguishes `SUPPORTED`, `UNSUPPORTED`, and `UNKNOWN`, and `supports()` returns true only for an explicit `SUPPORTED` value. The built-in outbound adapters currently report tool calling, parallel calls, streaming, cancellation, JSON schema, and structured outputs as `UNKNOWN`; model discovery is reported as `UNSUPPORTED`. The provider catalog labels Gemini, OpenAI, xAI, and Anthropic adapters as `TRANSLATION_ONLY`, not live integrations.
+
+Mock adapter/contract tests verify translation behavior, not vendor/model capability. No live capability discovery or credentialed provider round-trip was performed. Accordingly, Gate 9 remains **PARTIAL** until provider/model/API-version-specific capability evidence is obtained through official documented verification and authorized live tests where required.
+
+PR #7 remains open and unmerged. No deployment, APK installation, live provider test, or merge is claimed.
