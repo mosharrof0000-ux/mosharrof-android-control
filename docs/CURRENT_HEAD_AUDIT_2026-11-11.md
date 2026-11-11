@@ -202,3 +202,12 @@ Commits:
 - Added `cancellationDuringApprovalPreventsMcpExecutionAndContinuation`: cancellation from the approval callback causes cancellation failure, exactly one initial provider request, one approval callback, and zero MCP tool calls.
 - Added `rejectsMalformedProviderHistoryBeforeBuildingContinuation`: a malformed Responses API history item is rejected before continuation request construction.
 - Remaining release blockers are unchanged: UI transition/real-device coverage, OAuth/CIMD, live MCP/provider tests, deployed Worker verification, reproducible dependency locking, full transitive SBOM/license/vulnerability review, independent security review, and explicit merge/install authorization.
+
+
+## 2026-11-11 OAuth metadata validator hardening
+
+- Reviewed the OAuth/CIMD metadata helper and JVM tests. The authorization-server metadata validator previously accepted an HTTPS issuer identifier containing a query component, although RFC 8414 issuer identifiers exclude query and fragment components.
+- Added a dedicated HTTPS issuer validator that rejects query/fragment components while preserving the existing HTTPS, host and no-user-info checks.
+- Added a regression test proving that a query-bearing issuer is rejected by both metadata URL derivation and authorization-server metadata validation.
+- This is narrow metadata-validation hardening only. Metadata fetching, CIMD discovery, PKCE, token exchange, refresh/revocation and a complete OAuth flow remain unimplemented.
+- This new source/test head requires fresh Android CI; no pass is claimed until the exact-head run completes.
