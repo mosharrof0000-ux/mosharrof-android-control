@@ -91,3 +91,5 @@ Dependency inventory is preliminary: Android direct dependencies are DocumentFil
 - Authorization-server issuer validation now rejects HTTPS issuer identifiers containing query or fragment components, in addition to requiring HTTPS, a host and no user-info.
 - A JVM regression test covers a query-bearing issuer for both metadata URL derivation and metadata validation.
 - This remains a validator-only safeguard; OAuth/CIMD discovery and the PKCE/token lifecycle are not implemented or verified.
+
+- The authorization-response issuer equality helper independently applies the same issuer validation before accepting an exact match.
