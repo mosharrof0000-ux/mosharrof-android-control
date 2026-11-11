@@ -35,7 +35,7 @@
 - Verify the deployed Worker’s lease/retry, idempotency, rate-limit, and audit behavior end-to-end; source-level implementation alone is not deployment evidence.
 - Verify credential revocation and token invalidation behavior on a physical Android device.
 - MRTR input_required handling uses a user-reviewed JSON response dialog, opaque requestState pass-through, exact request-key matching, and a bounded continuation limit. Native schema-driven elicitation/tool argument forms and HTTPS URL-mode browser handoff are implemented for supported shapes. MCP Tasks task-handle persistence/revalidation and explicit user-triggered refresh/input/cancel UI are implemented in source; no background polling is enabled. Real-server interoperability remains pending.
-- OAuth/CIMD is not a complete authorization flow: metadata URL derivation/validation helpers exist, but live metadata/CIMD fetch, AppAuth PKCE authorization, issuer/resource-bound token exchange, encrypted token refresh/revocation and end-to-end tests remain pending.
+- OAuth/CIMD now has source implementations for bounded metadata/CIMD discovery, AppAuth PKCE authorization request/callback validation, RFC 8707 resource-bound token exchange, encrypted AuthState/pending-request storage, per-request asynchronous token refresh, and explicit RFC 7009 revocation. OAuth-created MCP clients fail closed on synchronous/static-token transport. Live authorization-server interoperability, real token exchange/refresh/revocation, and physical-device verification remain pending.
 - Run a real HTTPS MCP server through connect, discovery, approval, tool execution, and disconnect.
 - Complete a whole-repository tracked-source and history audit of logs, exception/error surfaces, crash paths and generated artifacts for credential/private-data leakage. The 2026-11-11 pass scanned all 22 changed Android production Kotlin files for direct exception-message rendering, logging/stack traces, raw response-body forwarding and obvious authorization concatenation; this is still not a whole-repository/history audit.
 - Complete dependency/version/license and software-supply-chain review. The Cloudflare Worker package currently uses semver ranges for devDependencies and no package-lock.json/npm-shrinkwrap was found at the audited PR head; exact transitive dependency reproducibility and license inventory are therefore not yet established.
@@ -109,3 +109,14 @@ Dependency inventory is preliminary: Android direct dependencies are DocumentFil
 - MCP Task `tasks/update` input is gated by exact request-key matching and non-empty object response envelopes with bounded key names before transmission. This is structural validation only; the remote server remains authoritative for request-specific semantics.
 
 - MCP Task `tasks/update` now validates response envelopes again inside the connector service, not only in the UI: 1–16 bounded request keys, each with a non-empty object payload and bounded property count. UI also checks exact server-request key correspondence. Server-side semantic validation remains authoritative.
+
+
+## 2026-11-11 authoritative OAuth security status
+
+- Branch fix/mcp-pagination-20261110; PR #7 remains open and unmerged.
+- OAuth source includes metadata/CIMD fetch and validation, PKCE request/callback binding, RFC 8707 resource-bound authorization-code exchange and refresh, encrypted state persistence, async per-request token resolution across MCP connect/discovery/tool/task requests, and RFC 7009 revocation.
+- OAuth-only clients reject synchronous/static-token transport before network I/O; manual-token compatibility remains separate.
+- Exact source head 5faf7827f3b227d531c78e75921eb4e493829dad: Android run 43002371560 PASS; Worker run 43002371508 PASS.
+- Follow-up documentation head 3f490d133fb4a13b6b22229c3b4cf08beb3891ca: Android run 43003596437 PASS; Worker run 43003596459 PASS.
+- CI artifacts were not installed. No live OAuth browser flow, token exchange, refresh, remote revocation, real MCP server, or physical Android verification was executed.
+- Still open: live OAuth/CIMD tests, real MCP interoperability, Android Keystore/callback device tests, whole-repository semantic/history review, dependency locking/SBOM/license/vulnerability audit, deployed Worker verification, and independent security review.
