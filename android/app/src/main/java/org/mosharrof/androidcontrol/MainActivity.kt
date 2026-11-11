@@ -570,6 +570,42 @@ class MainActivity : Activity() {
         dialog.show()
     }
 
+    private fun showProviderCapability(profile: AiProviderProfileSummary) {
+        AiProviderRegistry.registerBuiltIns()
+        val adapter = AiProviderRegistry.get(profile.provider)
+        if (adapter == null) {
+            status.text = "এই Provider-এর outbound adapter নেই।"
+            return
+        }
+        val apiVersion = when (profile.provider) {
+            AiProviderId.GEMINI -> "v1beta"
+            AiProviderId.OPENAI, AiProviderId.XAI, AiProviderId.CUSTOM -> "v1"
+            AiProviderId.ANTHROPIC -> "2026-10-21"
+            else -> {
+                status.text = "এই Provider-এর outbound API version নির্ধারিত নয়।"
+                return
+            }
+        }
+        val capability = runCatching {
+            adapter.capabilityProfile(profile.model, apiVersion)
+        }.getOrElse {
+            status.text = "Capability তথ্য তৈরি করা যায়নি: ${it.message}"
+            return
+        }
+        report.text = buildString {
+            append("Provider: ${profile.provider}\n")
+            append("Model: ${profile.model}\n")
+            append("API version: ${capability.apiVersion}\n")
+            append("Adapter version: ${capability.adapterVersion}\n\n")
+            AiCapability.values().forEach { item ->
+                append("${item.name}: ${capability.capabilities[item] ?: CapabilitySupport.UNKNOWN}\n")
+            }
+            append("\nUNKNOWN মানে এই adapter/model/API version-এর সক্ষমতা এখনো যাচাই করা হয়নি।")
+            append("\nএটি live connection test বা vendor capability verification নয়।")
+        }
+        status.text = "Model/Capability তথ্য দেখানো হয়েছে; live test চালানো হয়নি।"
+    }
+
     private fun providerProfilesReport(): String {
         val profiles = AiEngine.providerProfiles(this)
         val activeId = runCatching { AiProviderProfileStore.active(this)?.summary?.id }.getOrNull()
@@ -599,13 +635,14 @@ class MainActivity : Activity() {
                 val selected = profiles[index]
                 AlertDialog.Builder(this)
                     .setTitle(selected.id)
-                    .setItems(arrayOf("এই Profile Active করুন", "Credential বদলান", "Profile মুছে ফেলুন")) { _, action ->
+                    .setItems(arrayOf("এই Profile Active করুন", "Credential বদলান", "Model/Capability দেখুন", "Profile মুছে ফেলুন")) { _, action ->
                         when (action) {
                             0 -> runCatching { AiEngine.setActiveProviderProfile(this, selected.id) }
                                 .onSuccess { status.text = "Active Provider: ${selected.id}"; report.text = providerProfilesReport() }
                                 .onFailure { status.text = "Active নির্বাচন ব্যর্থ: ${it.message}" }
                             1 -> replaceProviderCredential(selected)
-                            2 -> AlertDialog.Builder(this)
+                            2 -> showProviderCapability(selected)
+                            3 -> AlertDialog.Builder(this)
                                 .setTitle("Profile মুছে ফেলবেন?")
                                 .setMessage("Profile metadata ও encrypted credential মুছে যাবে।")
                                 .setNegativeButton("না", null)
