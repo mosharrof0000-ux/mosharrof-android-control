@@ -38,8 +38,12 @@ jobs:
         with:
           gradle-version: "8.14.6"
 
+      - name: Generate dependency locks and verification metadata
+        run: gradle -p android :app:testDebugUnitTest :app:assembleDebug --write-locks --write-verification-metadata sha256
+
       - name: Run Android unit tests
         run: gradle -p android :app:testDebugUnitTest
+
       - name: Assemble debug APK
         run: gradle -p android :app:assembleDebug
 
@@ -48,4 +52,13 @@ jobs:
         with:
           name: mosharrof-android-control-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Upload generated Gradle dependency evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-gradle-dependency-evidence
+          path: |
+            android/app/gradle.lockfile
+            android/gradle/verification-metadata.xml
           if-no-files-found: error
