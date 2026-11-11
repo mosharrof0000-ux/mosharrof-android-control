@@ -7,6 +7,14 @@ class MavenMetadataAuditTest(unittest.TestCase):
         self.assertEqual(normalize_license("The Apache License, Version 2.0"), "Apache-2.0")
         self.assertEqual(normalize_license("http://www.apache.org/licenses/LICENSE-2.0.txt"), "Apache-2.0")
 
+    def test_sbom_must_include_every_pom_declared_license(self):
+        from audit_maven_metadata import licenses_match
+        self.assertTrue(licenses_match(["Apache-2.0", "MIT"], ["Apache-2.0", "MIT"]))
+        self.assertFalse(licenses_match(["Apache-2.0"], ["Apache-2.0", "MIT"]))
+        self.assertFalse(licenses_match(["Apache-2.0", "MIT"], ["Apache-2.0", "GPL-2.0"]))
+        self.assertFalse(licenses_match([], ["Apache-2.0"]))
+        self.assertFalse(licenses_match(["Apache-2.0"], []))
+
     def test_parses_license_scm_and_developer_metadata(self):
         xml = b"""<project xmlns="http://maven.apache.org/POM/4.0.0"><licenses><license><name>Apache License, Version 2.0</name><url>https://www.apache.org/licenses/LICENSE-2.0</url></license></licenses><scm><url>https://example.test/source</url><connection>scm:git:test</connection></scm><developers><developer><name>Example Dev</name><organization>Example Org</organization></developer></developers></project>"""
         result = parse_pom(xml)
