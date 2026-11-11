@@ -64,9 +64,9 @@ object TermuxBridge {
         try {
             context.startService(intent)
         } catch (error: SecurityException) {
-            error("Android/Termux অনুমতি দিয়ে অনুরোধ প্রত্যাখ্যান করেছে: " + (error.message ?: "SecurityException"))
+            error("Android/Termux অনুমতি দিয়ে অনুরোধ প্রত্যাখ্যান করেছে।")
         } catch (error: IllegalStateException) {
-            error("Android service চালু করতে দেয়নি: " + (error.message ?: "IllegalStateException"))
+            error("Android service চালু করতে দেয়নি।")
         }
         "Android Termux service-এ অনুরোধ পাঠিয়েছে; এটি এখনো execution-এর প্রমাণ নয়। ‘Termux ফলাফল’ চাপুন।"
     }
