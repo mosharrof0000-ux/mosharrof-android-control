@@ -140,3 +140,10 @@ The historical implementation logs above are retained as a record of what was tr
 - Debug artifact ID `13832594882`, 2,415,618 bytes, SHA-256 `30f9dfe103e9003f6a6af8bc50d40da20d7e368b36d582064666e45150e6a76d`; CI artifact only, not installed.
 - Error redaction now covers AI tool error results sent to providers, Android UI status messages and Termux bridge exception paths. The regression suite verifies the fixed redacted provider error and rejects raw simulated exception text.
 - Remaining external gates: live provider/MCP interoperability, OAuth/CIMD completion, Android Keystore and physical-device verification, deployed Worker verification, complete repository/history/dependency audit, PR merge and APK installation.
+
+
+## 2026-11-11 latest PR-head status correction
+
+At PR head `8f0d2bb4a7cd0fd318e70f01cd26eb359c859afd`, provider capability display and credential replacement/revoke UX are implemented in source. Capability values marked UNKNOWN remain unverified; this is not live vendor discovery. Error redaction includes AI provider tool errors, Android UI status surfaces, Termux bridge, and the additional diagnostic/permission/module lifecycle exception paths, with regression tests. Android CI run `42972244593` and Worker CI run `42972244607` both passed on this exact head. The current CI artifact is ID `13834056036`, SHA-256 `645aca2aca037d4ae7bbaae51433cfc346a27ed0a043589dd1e504148674e0cb`; not installed.
+
+Dependency/license review is not complete: Worker dependencies still use semver ranges and no lockfile is in the PR changed-file inventory; no full transitive SBOM/license/vulnerability evidence exists. Physical Android QA, live providers/MCP, OAuth/CIMD, deployed Worker, independent security review and merge/install approvals remain pending.
