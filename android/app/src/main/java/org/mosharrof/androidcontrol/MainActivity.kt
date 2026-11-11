@@ -27,6 +27,8 @@ import java.security.MessageDigest
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import net.openid.appauth.AuthorizationRequest
+import net.openid.appauth.AuthorizationService
 
 class MainActivity : Activity() {
     private lateinit var report: TextView
@@ -36,6 +38,7 @@ class MainActivity : Activity() {
     private var selectedTree: DocumentFile? = null
     private val worker = Executors.newSingleThreadExecutor()
     private val folderRequestCode = 4102
+    private val oauthAuthorizationRequestCode = 4103
     private val maxFiles = 5000
     private val maxDepth = 12
     private lateinit var relayUrl: EditText
@@ -433,7 +436,10 @@ class MainActivity : Activity() {
             PluginDashboardPage(
                 activity = this@MainActivity,
                 worker = worker,
-                onStatus = { message -> status.text = message }
+                onStatus = { message -> status.text = message },
+                onStartOAuthAuthorization = { connectorId, endpoint, request ->
+                    startMcpOAuthAuthorization(connectorId, endpoint, request)
+                }
             ).render(this)
         }
     }
@@ -925,6 +931,162 @@ class MainActivity : Activity() {
         relayHandler.removeCallbacks(relayTick)
         status.text = "Relay polling চালু — অ্যাপ সামনে খোলা রাখুন।"
         relayHandler.post(relayTick)
+    }
+
+    private fun startMcpOAuthAuthorization(
+        connectorId: String,
+        endpoint: String,
+        request: AuthorizationRequest
+    ) {
+        val prefs = getSharedPreferences("mosharrof_mcp_oauth_flow", MODE_PRIVATE)
+        try {
+            prefs.edit()
+                .putString("pending_connector_id", connectorId)
+                .putString("pending_endpoint", endpoint)
+                .apply()
+            val authorizationService = AuthorizationService(this)
+            val authorizationIntent = try {
+                authorizationService.getAuthorizationRequestIntent(request)
+            } finally {
+                authorizationService.dispose()
+            }
+            startActivityForResult(authorizationIntent, oauthAuthorizationRequestCode)
+            status.text = "OAuth Browser Login শুরু হয়েছে। Authorization শেষ হলে নিরাপদ callback যাচাই হবে।"
+        } catch (_: Exception) {
+            prefs.edit().remove("pending_connector_id").remove("pending_endpoint").apply()
+            status.text = "OAuth Browser Login শুরু করা যায়নি। Browser বা AppAuth configuration যাচাই করুন।"
+        }
+    }
+
+    @Deprecated("AppAuth authorization result is delivered through the activity result contract.")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != oauthAuthorizationRequestCode) return
+
+        val prefs = getSharedPreferences("mosharrof_mcp_oauth_flow", MODE_PRIVATE)
+        val connectorId = prefs.getString("pending_connector_id", null)
+        val endpoint = prefs.getString("pending_endpoint", null)
+        prefs.edit().remove("pending_connector_id").remove("pending_endpoint").apply()
+
+        if (connectorId.isNullOrBlank() || endpoint.isNullOrBlank()) {
+            status.text = "OAuth callback-এর Connector তথ্য পাওয়া যায়নি; callback প্রত্যাখ্যান করা হয়েছে।"
+            return
+        }
+        if (resultCode != RESULT_OK || data == null) {
+            status.text = "OAuth Browser Login সম্পন্ন হয়নি বা বাতিল হয়েছে। Encrypted pending request অক্ষত আছে।"
+            return
+        }
+
+        status.text = "OAuth callback ও encrypted PKCE request যাচাই হচ্ছে…"
+        val authorizationService = AuthorizationService(this)
+        worker.execute {
+            val pending = McpOAuthPendingRequestStore
+                .read(this@MainActivity, connectorId)
+                .getOrElse {
+                    runOnUiThread {
+                        authorizationService.dispose()
+                        status.text = "Encrypted OAuth pending request পড়া যায়নি; token exchange বন্ধ রাখা হয়েছে।"
+                    }
+                    return@execute
+                }
+            if (pending == null) {
+                runOnUiThread {
+                    authorizationService.dispose()
+                    status.text = "Encrypted OAuth pending request পাওয়া যায়নি; callback প্রত্যাখ্যান করা হয়েছে।"
+                }
+                return@execute
+            }
+
+            val registered = runCatching {
+                val existing = ConnectorRegistry.connectorSnapshot()
+                    .firstOrNull { it.id == connectorId }
+                if (existing == null) {
+                    ConnectorRegistry.registerConnector(
+                        ConnectorRegistry.Connector(
+                            id = connectorId,
+                            name = "MCP Connector",
+                            transport = ConnectorRegistry.Transport.MCP_STREAMABLE_HTTP,
+                            endpoint = endpoint,
+                            state = ConnectorRegistry.ConnectionState.CONFIGURED
+                        )
+                    ).getOrThrow()
+                } else {
+                    require(existing.endpoint == endpoint) {
+                        "OAuth Connector endpoint mismatch"
+                    }
+                }
+            }
+            if (registered.isFailure) {
+                runOnUiThread {
+                    authorizationService.dispose()
+                    status.text = "OAuth Connector যাচাই ব্যর্থ; token exchange করা হয়নি।"
+                }
+                return@execute
+            }
+
+            McpOAuthTokenExchange.exchange(
+                context = this@MainActivity,
+                connectorId = connectorId,
+                callbackIntent = data,
+                pendingRequest = pending,
+                authorizationService = authorizationService
+            ) { exchangeResult ->
+                if (exchangeResult.isFailure) {
+                    authorizationService.dispose()
+                    runOnUiThread {
+                        status.text = "OAuth callback/token exchange যাচাই ব্যর্থ; MCP সংযোগ করা হয়নি।"
+                    }
+                    return@exchange
+                }
+
+                McpOAuthTokenRefresher.withFreshToken(
+                    context = this@MainActivity,
+                    connectorId = connectorId,
+                    authorizationService = authorizationService
+                ) { tokenResult ->
+                    if (tokenResult.isFailure) {
+                        authorizationService.dispose()
+                        runOnUiThread {
+                            status.text = "Encrypted OAuth state থেকে বৈধ Bearer token পাওয়া যায়নি।"
+                        }
+                        return@withFreshToken
+                    }
+
+                    val freshToken = tokenResult.getOrThrow()
+                    worker.execute {
+                        runCatching {
+                            val client = McpHttpClient(
+                                endpoint = endpoint,
+                                bearerToken = freshToken.value
+                            )
+                            val taskPreferences = getSharedPreferences(
+                                "mosharrof_mcp_tasks",
+                                MODE_PRIVATE
+                            )
+                            val connectorService = McpConnectorService(
+                                client = client,
+                                taskStore = SharedPreferencesMcpTaskStore(taskPreferences)
+                            )
+                            val info = connectorService.connect(connectorId).getOrThrow()
+                            PluginDashboardSession.connectorId = connectorId
+                            PluginDashboardSession.service = connectorService
+                            info
+                        }.onSuccess { info ->
+                            authorizationService.dispose()
+                            runOnUiThread {
+                                status.text = "OAuth সংযোগ সফল। আবিষ্কৃত Tool: ${info.discoveredTools}"
+                                showMcpPage()
+                            }
+                        }.onFailure {
+                            authorizationService.dispose()
+                            runOnUiThread {
+                                status.text = "OAuth token সংরক্ষিত; MCP server connection ব্যর্থ।"
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     override fun onResume() {
