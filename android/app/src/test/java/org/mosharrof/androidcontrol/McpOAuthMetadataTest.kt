@@ -154,6 +154,14 @@ class McpOAuthMetadataTest {
                 serverMetadata() + ("issuer" to queryIssuer)
             )
         )
+        val fragmentIssuer = issuer + "#tenant"
+        assertNull(McpOAuthMetadata.authorizationServerMetadataUrl(fragmentIssuer))
+        assertFalse(
+            McpOAuthMetadata.validateAuthorizationServerMetadata(
+                fragmentIssuer,
+                serverMetadata() + ("issuer" to fragmentIssuer)
+            )
+        )
     }
 
     @Test
