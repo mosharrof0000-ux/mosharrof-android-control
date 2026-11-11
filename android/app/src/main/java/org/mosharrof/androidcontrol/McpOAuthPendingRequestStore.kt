@@ -24,12 +24,14 @@ internal object McpOAuthPendingRequestStore {
         require(connectorIdPattern.matches(connectorId)) {
             "Connector ID-এর বিন্যাস সঠিক নয়।"
         }
-        require(!request.state.isNullOrBlank() && request.state.length <= 512) {
+        val requestState = request.state
+        require(!requestState.isNullOrBlank() && requestState.length <= 512) {
             "OAuth request state অনুপস্থিত বা অবৈধ।"
         }
-        require(request.codeVerifier != null &&
-            request.codeVerifier.matches(Regex("[A-Za-z0-9._~-]{43,128}")) &&
-            request.codeChallengeMethod == AuthorizationRequest.CODE_CHALLENGE_METHOD_S256
+        val verifier = request.codeVerifier
+        require(!verifier.isNullOrBlank() &&
+            verifier.matches(Regex("[A-Za-z0-9._~-]{43,128}")) &&
+            request.codeVerifierChallengeMethod == AuthorizationRequest.CODE_CHALLENGE_METHOD_S256
         ) {
             "OAuth request-এর S256 PKCE verifier অবৈধ।"
         }
