@@ -386,3 +386,15 @@ The official OSV-Scanner documentation lists Gradle lockfiles, Gradle verificati
 - Gate 16 remains **Partial**. This scan confirms the org.json fix and exact-head pipeline operation but does not clear the remaining Android build/test-tool findings, enforce committed lockfiles, independently authenticate Gradle checksums, complete license/notice review, or establish final APK provenance.
 - PR #7 remains open and unmerged. No merge, deployment, APK installation, live OAuth/provider operation, or physical Android QA was performed.
 
+
+
+## Targeted Netty alignment — 2026-11-11 (verification pending)
+
+- Added a subproject-only Gradle resolution rule in `android/build.gradle.kts` to align all requested `io.netty` modules to `4.1.140.Final`. This targets the app/subproject dependency configurations; root plugin/buildscript classpaths are intentionally excluded and require separate remediation.
+- Rationale: Netty 4.1.140.Final is the current 4.1 security release dated 2026-11-02 and addresses eight listed security advisories. Release evidence: https://github.com/netty/netty/milestone/352 and the release summary https://whatsnew.fyi/product/netty.
+- Source commit: `2f46f77c60fa19e7af5787390ca8e0da8ee56b27`.
+- Android CI run `43026509771`: still in progress at dependency lock/verification metadata generation when recorded; no Android build/test/SBOM/OSV pass is claimed yet.
+- Worker CI run `43026510030`: SUCCESS, including exact locked npm install, npm audit, CycloneDX SBOM, typecheck/tests, dependency evidence upload and OSV scan.
+- The Netty version change is provisional until the Android run completes and generated lockfile/dependency paths prove all app subproject Netty artifacts resolve to `4.1.140.Final`, with unit tests, APK assembly, SBOM and OSV scan successful. If any module is unavailable or incompatible, revert or narrow the rule rather than treating a forced version as a verified fix.
+- Guava 33.8.0 is now available upstream; the official Google release notes identify 33.7.2 as the fix for CVE-2026-102554 and 33.8.0 as a subsequent release. Do not apply a Guava constraint until current dependency paths establish which configurations and artifact variants require the upgrade.
+- PR #7 remains open/unmerged. No APK installation, deployment or physical-device QA performed.
