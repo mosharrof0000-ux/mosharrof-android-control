@@ -28,12 +28,20 @@ jobs:
       - name: Install exact locked dependencies
         working-directory: cloudflare/worker
         run: npm ci
+      - name: Audit resolved dependencies
+        working-directory: cloudflare/worker
+        run: npm audit --audit-level=high
+      - name: Generate CycloneDX SBOM
+        working-directory: cloudflare/worker
+        run: npm sbom --sbom-format=cyclonedx > worker-sbom.cdx.json
       - name: Type-check and test
         working-directory: cloudflare/worker
         run: npm run check
-      - name: Upload generated lockfile for reviewed commit
+      - name: Upload generated dependency evidence
         uses: actions/upload-artifact@v4
         with:
-          name: worker-package-lock-bootstrap
-          path: cloudflare/worker/package-lock.json
+          name: worker-dependency-evidence
+          path: |
+            cloudflare/worker/package-lock.json
+            cloudflare/worker/worker-sbom.cdx.json
           if-no-files-found: error
