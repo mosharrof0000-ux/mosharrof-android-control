@@ -36,4 +36,90 @@ class McpOAuthRefreshRecoveryTest {
         assertNotNull(failure.message)
         assertFalse(failure.message!!.contains("sensitive provider response"))
     }
+
+    @Test
+    fun refreshedBearerTokenIsReleasedOnlyAfterEncryptedStatePersists() {
+        var persisted = false
+        val result = McpOAuthRefreshCommit.persistBeforeRelease(
+            accessToken = "fresh-access-token",
+            tokenType = "Bearer",
+            authorizationError = null
+        ) {
+            persisted = true
+            Result.success(Unit)
+        }
+        assertTrue(result.isSuccess)
+        assertTrue(persisted)
+        assertEquals("fresh-access-token", result.getOrNull())
+    }
+
+    @Test
+    fun rejectedRefreshNeverAttemptsToPersistOrReleaseToken() {
+        var persisted = false
+        val result = McpOAuthRefreshCommit.persistBeforeRelease(
+            accessToken = null,
+            tokenType = "Bearer",
+            authorizationError = IllegalStateException("sensitive provider body")
+        ) {
+            persisted = true
+            Result.success(Unit)
+        }
+        assertTrue(result.isFailure)
+        assertFalse(persisted)
+        assertEquals(
+            McpOAuthRefreshFailure.REFRESH_REJECTED,
+            (result.exceptionOrNull() as McpOAuthRefreshException).reason
+        )
+    }
+
+    @Test
+    fun nonBearerResponseNeverAttemptsToPersistOrReleaseToken() {
+        var persisted = false
+        val result = McpOAuthRefreshCommit.persistBeforeRelease(
+            accessToken = "opaque-token",
+            tokenType = "MAC",
+            authorizationError = null
+        ) {
+            persisted = true
+            Result.success(Unit)
+        }
+        assertTrue(result.isFailure)
+        assertFalse(persisted)
+        assertEquals(
+            McpOAuthRefreshFailure.BEARER_TOKEN_REQUIRED,
+            (result.exceptionOrNull() as McpOAuthRefreshException).reason
+        )
+    }
+
+    @Test
+    fun encryptedPersistenceFailureNeverReleasesRefreshedToken() {
+        val result = McpOAuthRefreshCommit.persistBeforeRelease(
+            accessToken = "fresh-access-token",
+            tokenType = "Bearer",
+            authorizationError = null
+        ) {
+            Result.failure(IllegalStateException("sensitive storage detail"))
+        }
+        assertTrue(result.isFailure)
+        val failure = result.exceptionOrNull() as McpOAuthRefreshException
+        assertEquals(McpOAuthRefreshFailure.ENCRYPTED_STATE_SAVE_FAILED, failure.reason)
+        assertFalse(failure.message!!.contains("sensitive storage detail"))
+    }
+
+    @Test
+    fun thrownPersistenceFailureNeverReleasesRefreshedToken() {
+        val result = McpOAuthRefreshCommit.persistBeforeRelease(
+            accessToken = "fresh-access-token",
+            tokenType = "Bearer",
+            authorizationError = null
+        ) {
+            throw IllegalStateException("sensitive storage detail")
+        }
+        assertTrue(result.isFailure)
+        assertEquals(
+            McpOAuthRefreshFailure.ENCRYPTED_STATE_SAVE_FAILED,
+            (result.exceptionOrNull() as McpOAuthRefreshException).reason
+        )
+    }
+
 }
