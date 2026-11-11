@@ -59,8 +59,7 @@ internal class McpOAuthAccessTokenProvider(
         ).getOrElse {
             onComplete(Result.failure(
                 McpOAuthRefreshException(
-                    McpOAuthRefreshFailure.ENCRYPTED_STATE_UNAVAILABLE,
-                    it
+                    McpOAuthRefreshFailure.ENCRYPTED_STATE_UNAVAILABLE
                 )
             ))
             return
