@@ -7,7 +7,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.charset.StandardCharsets
 
-internal data class McpOAuthMetadataDiscovery(
+data class McpOAuthMetadataDiscovery(
     val resourceMetadata: Map<String, Any?>,
     val authorizationServerIssuer: String,
     val authorizationServerMetadata: Map<String, Any?>
@@ -20,7 +20,7 @@ internal data class McpOAuthMetadataDiscovery(
  * to a different origin. This class retrieves and validates metadata only; it
  * does not authorize, exchange, persist, or refresh tokens.
  */
-internal class McpOAuthMetadataFetcher(
+class McpOAuthMetadataFetcher(
     private val connectionFactory: (URL) -> HttpURLConnection = {
         it.openConnection() as HttpURLConnection
     }
