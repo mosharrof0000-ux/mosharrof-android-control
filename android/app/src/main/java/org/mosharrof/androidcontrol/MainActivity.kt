@@ -948,7 +948,7 @@ class MainActivity : Activity() {
         val result = TermuxBridge.run(this, operationId)
         result.onSuccess { status.text = it }
             .onFailure { error ->
-                status.text = "Termux চালানো যায়নি: ${error.message ?: "অনুমতি বা সেটআপ পরীক্ষা করুন"}"
+                status.text = "Termux চালানো যায়নি: ${safeUiErrorMessage(error)}"
             }
     }
 
