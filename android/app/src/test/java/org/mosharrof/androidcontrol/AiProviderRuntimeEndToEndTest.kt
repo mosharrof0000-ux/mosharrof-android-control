@@ -264,8 +264,8 @@ class AiProviderRuntimeEndToEndTest {
                     val resultContent = (result["result"] as List<*>)
                         .filterIsInstance<Map<*, *>>()
                         .first()["text"] as String
-                    assertTrue(resultContent.startsWith("ERROR: "))
-                    assertTrue(resultContent.contains("simulated MCP execution failure"))
+                    assertEquals("ERROR: Plugin execution failed. Remote error details are redacted for safety.", resultContent)
+                    assertFalse(resultContent.contains("simulated MCP execution failure"))
                 }
                 responses.removeFirst()
             }
