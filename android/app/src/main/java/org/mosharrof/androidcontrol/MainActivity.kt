@@ -70,7 +70,7 @@ class MainActivity : Activity() {
                             runOnUiThread { requestRelayJobApproval(job) }
                         }
                     }.onFailure { error ->
-                        runOnUiThread { status.text = "Relay polling সমস্যা: ${error.message}" }
+                        runOnUiThread { status.text = "Relay polling সমস্যা: ${safeUiErrorMessage(error)}" }
                     }
                 }
                 if (relayPolling && activityVisible && !relayApprovalPending) {
@@ -358,7 +358,7 @@ class MainActivity : Activity() {
                 val migrated = runCatching { AiEngine.migrateLegacyConfigToProfile(this@MainActivity) }
                 status.text = migrated.fold(
                     { if (it) "পুরোনো Gemini সেটিং Profile-এ স্থানান্তরিত হয়েছে।" else "স্থানান্তর করা হয়নি: সক্রিয় Profile আছে বা পুরোনো Gemini সেটিং নেই।" },
-                    { "স্থানান্তর ব্যর্থ: ${it.message}" }
+                    { "স্থানান্তর ব্যর্থ: ${safeUiErrorMessage(it)}" }
                 )
                 report.text = providerProfilesReport()
             }
@@ -527,7 +527,7 @@ class MainActivity : Activity() {
                             status.text = "Provider Profile নিরাপদে সংরক্ষিত হয়েছে।"
                             report.text = providerProfilesReport()
                         }.onFailure {
-                            status.text = "Profile সংরক্ষণ ব্যর্থ: ${it.message}"
+                            status.text = "Profile সংরক্ষণ ব্যর্থ: ${safeUiErrorMessage(it)}"
                         }
                     }
                 }
@@ -563,7 +563,7 @@ class MainActivity : Activity() {
                     status.text = "Provider credential নিরাপদে বদলানো হয়েছে।"
                     report.text = providerProfilesReport()
                 }.onFailure {
-                    status.text = "Credential বদলানো যায়নি: ${it.message}"
+                    status.text = "Credential বদলানো যায়নি: ${safeUiErrorMessage(it)}"
                 }
             }
         }
@@ -589,7 +589,7 @@ class MainActivity : Activity() {
         val capability = runCatching {
             adapter.capabilityProfile(profile.model, apiVersion)
         }.getOrElse {
-            status.text = "Capability তথ্য তৈরি করা যায়নি: ${it.message}"
+            status.text = "Capability তথ্য তৈরি করা যায়নি: ${safeUiErrorMessage(it)}"
             return
         }
         report.text = buildString {
@@ -639,7 +639,7 @@ class MainActivity : Activity() {
                         when (action) {
                             0 -> runCatching { AiEngine.setActiveProviderProfile(this, selected.id) }
                                 .onSuccess { status.text = "Active Provider: ${selected.id}"; report.text = providerProfilesReport() }
-                                .onFailure { status.text = "Active নির্বাচন ব্যর্থ: ${it.message}" }
+                                .onFailure { status.text = "Active নির্বাচন ব্যর্থ: ${safeUiErrorMessage(it)}" }
                             1 -> replaceProviderCredential(selected)
                             2 -> showProviderCapability(selected)
                             3 -> AlertDialog.Builder(this)
@@ -649,7 +649,7 @@ class MainActivity : Activity() {
                                 .setPositiveButton("মুছে ফেলুন") { _, _ ->
                                     runCatching { AiEngine.deleteProviderProfile(this, selected.id) }
                                         .onSuccess { status.text = "Profile মুছে ফেলা হয়েছে।"; report.text = providerProfilesReport() }
-                                        .onFailure { status.text = "মুছতে ব্যর্থ: ${it.message}" }
+                                        .onFailure { status.text = "মুছতে ব্যর্থ: ${safeUiErrorMessage(it)}" }
                                 }.show()
                         }
                     }.setNegativeButton("ফিরে যান", null).show()
@@ -671,7 +671,7 @@ class MainActivity : Activity() {
             status.text = "AI সেটিং সংরক্ষিত। API Key এনক্রিপ্ট করে রাখা হয়েছে।"
             report.text = AiEngine.configurationSummary(this)
         }.onFailure {
-            status.text = "AI সেটিং সংরক্ষণ হয়নি: ${it.message}"
+            status.text = "AI সেটিং সংরক্ষণ হয়নি: ${safeUiErrorMessage(it)}"
         }
     }
 
@@ -735,7 +735,7 @@ class MainActivity : Activity() {
                             status.text = "AI অনুরোধ বাতিল হয়েছে; Provider-এ পাঠানোর আগেই থেমেছে।"
                         }
                     } else {
-                        status.text = "AI অনুরোধ ব্যর্থ: ${error.message}"
+                        status.text = "AI অনুরোধ ব্যর্থ: ${safeUiErrorMessage(error)}"
                     }
                 }
             }
@@ -835,7 +835,7 @@ class MainActivity : Activity() {
                     setupToken.text.clear()
                     status.text = "Pairing code: $code (৫ মিনিটের মধ্যে অনুমোদিত ChatGPT connector-এ claim করতে হবে)।"
                 }.onFailure { error ->
-                    status.text = "Pairing ব্যর্থ: ${error.message}"
+                    status.text = "Pairing ব্যর্থ: ${safeUiErrorMessage(error)}"
                 }
             }
         }
@@ -871,7 +871,7 @@ class MainActivity : Activity() {
                         status.text = if (result.isSuccess) {
                             "Relay কাজ প্রত্যাখ্যান করা হয়েছে; Termux-এ কিছু চালানো হয়নি।"
                         } else {
-                            "Relay প্রত্যাখ্যানের ফল পাঠানো যায়নি: ${result.exceptionOrNull()?.message}"
+                            "Relay প্রত্যাখ্যানের ফল পাঠানো যায়নি: ${result.exceptionOrNull()?.let(::safeUiErrorMessage) ?: "অজানা সমস্যা"}"
                         }
                         finishRelayApproval()
                     }
@@ -886,7 +886,7 @@ class MainActivity : Activity() {
                     runOnUiThread {
                         status.text = execution.fold(
                             { it },
-                            { "Termux অনুরোধ ব্যর্থ: ${it.message}" }
+                            { "Termux অনুরোধ ব্যর্থ: ${safeUiErrorMessage(it)}" }
                         )
                         finishRelayApproval()
                     }
@@ -895,7 +895,7 @@ class MainActivity : Activity() {
                             RelayClient.savePendingResult(
                                 this@MainActivity,
                                 job.commandId,
-                                execution.exceptionOrNull()?.message ?: "Termux request failed",
+                                execution.exceptionOrNull()?.let(::safeUiErrorMessage) ?: "Termux request failed",
                                 -1
                             )
                             RelayClient.retryPendingResult(this@MainActivity)
@@ -1009,7 +1009,7 @@ class MainActivity : Activity() {
             status.text = "নির্বাচিত ফোল্ডার: ${selectedTree?.name ?: "নাম অজানা"}"
             report.text = "ফোল্ডার অনুমতি সংরক্ষিত হয়েছে। এখন ফাইল তালিকা বা ডুপ্লিকেট স্ক্যান চালান।"
         } catch (error: SecurityException) {
-            status.text = "ফোল্ডার অনুমতি সংরক্ষণ করা যায়নি: ${error.message}"
+            status.text = "ফোল্ডার অনুমতি সংরক্ষণ করা যায়নি: ${safeUiErrorMessage(error)}"
         }
     }
 
