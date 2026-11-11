@@ -20,7 +20,7 @@ internal object McpOAuthMetadata {
         if (metadata["resource"] != expectedResource) return false
         val servers = metadata["authorization_servers"] as? List<*> ?: return false
         return servers.isNotEmpty() && servers.size <= 16 &&
-            servers.all { isHttpsUrl(it as? String) }
+            servers.all { isHttpsIssuer(it as? String) }
     }
 
     private fun wellKnownUrl(value: String, metadataName: String): String? = runCatching {
