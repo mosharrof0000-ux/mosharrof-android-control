@@ -77,25 +77,25 @@ class McpOAuthAuthorizationRequestFactoryTest {
         assertFalse(
             McpOAuthAuthorizationRequestFactory.validateInputs(
                 issuer, authorizationServerMetadata, clientMetadataUrl,
-                clientMetadata, emptyList()
+                clientMetadata, resourceUrl, resourceMetadata, emptyList()
             )
         )
         assertFalse(
             McpOAuthAuthorizationRequestFactory.validateInputs(
                 issuer, authorizationServerMetadata, clientMetadataUrl,
-                clientMetadata, listOf("mcp:tools", "mcp:tools")
+                clientMetadata, resourceUrl, resourceMetadata, listOf("mcp:tools", "mcp:tools")
             )
         )
         assertFalse(
             McpOAuthAuthorizationRequestFactory.validateInputs(
                 issuer, authorizationServerMetadata, clientMetadataUrl,
-                clientMetadata, listOf("scope with spaces")
+                clientMetadata, resourceUrl, resourceMetadata, listOf("scope with spaces")
             )
         )
         assertFalse(
             McpOAuthAuthorizationRequestFactory.validateInputs(
                 issuer, authorizationServerMetadata, clientMetadataUrl,
-                clientMetadata, listOf("x".repeat(129))
+                clientMetadata, resourceUrl, resourceMetadata, listOf("x".repeat(129))
             )
         )
     }
