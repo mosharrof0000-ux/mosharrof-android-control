@@ -171,3 +171,19 @@ Remaining high-priority migration work:
 - The successful CI build produced a CI artifact only. It was not installed on a device and does not establish physical Android acceptance.
 - This verification does not establish live OAuth authorization, real token refresh/rotation, remote revocation, real authorization-server or MCP-server interoperability, or deployed Worker behavior. No live credential flow or remote revocation was executed.
 - PR #7 remains open and unmerged. No merge, deployment, or APK installation was performed.
+
+
+## Superseding implementation and verification update — 2026-11-11
+
+The earlier sections above are chronological engineering notes. Their statements that service/UI migration is pending are superseded by the integrated source at PR #7 head `0bb1cf53b3c79b20292dc68fa1b03e55eaac9098`.
+
+- `McpOAuthMetadataFetcher` retrieves bounded HTTPS protected-resource and authorization-server metadata with redirects disabled, response-size/content-type limits and strict metadata validation. It also fetches and validates CIMD client metadata.
+- `McpOAuthAuthorizationRequestFactory` builds the native public-client authorization-code request with AppAuth S256 PKCE and the exact RFC 8707 resource value. The pending request (including PKCE verifier/state) is encrypted before browser handoff.
+- Callback validation checks AppAuth error state, the original pending request, state, client ID, redirect URI, response type, authorization/token endpoints, resource parameters and PKCE fields before token exchange.
+- `McpOAuthTokenExchange` requires a safe resource, sends that resource again at the token endpoint, accepts only a non-empty Bearer token, persists AuthState through the AndroidKeyStore-backed encrypted secret store, and requires successful deletion of the one-time pending PKCE request before MCP connection readiness.
+- `McpOAuthAccessTokenProvider` binds the registered connector ID and exact endpoint to the original resource. `McpOAuthTokenRefresher` serializes refresh per connector, persists rotated AuthState before exposing the in-memory token, and fails closed on refresh/storage errors.
+- OAuth connection negotiation, legacy fallback/initialized notification, each tools/list page, tools/call and task get/update/cancel use the asynchronous per-request token resolver. OAuth-only clients reject the synchronous/static-token path. Manual-token clients retain their separate compatibility path.
+- Explicit revocation uses the validated metadata revocation endpoint; local encrypted OAuth state is deleted only after remote HTTP 200 confirmation.
+- Exact-head Android workflow `43051676040` and Worker workflow `43051675862` both completed successfully on `0bb1cf53b3c79b20292dc68fa1b03e55eaac9098`. Android job included unit tests and APK assembly; Worker job included npm audit, SBOM and typecheck. The subsequent documentation commits require their own exact-head CI.
+
+**Status:** OAuth/CIMD implementation and automated regression coverage are present in source. Do not mark live OAuth complete: no real authorization-server login, token refresh/rotation, revocation, real MCP server interoperability, physical Android/AppAuth callback, or Android Keystore runtime verification has been performed. Remaining work is external integration/security verification, not another duplicate implementation of the same source flow.
