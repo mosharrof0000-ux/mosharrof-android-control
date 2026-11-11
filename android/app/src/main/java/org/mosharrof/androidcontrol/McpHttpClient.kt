@@ -37,11 +37,9 @@ class McpHttpClient(
             protocolVersion == McpProtocol.MODERN_VERSION ||
             protocolVersion in LEGACY_VERSIONS
         ) { "অসমর্থিত MCP protocol version: $protocolVersion" }
-        require(bearerToken == null || (
-            bearerToken.isNotBlank() &&
-            !bearerToken.contains("\r") &&
-            !bearerToken.contains("\n")
-        )) { "অবৈধ Bearer Token" }
+        require(bearerToken == null || isValidBearerToken(bearerToken)) {
+            "অবৈধ Bearer Token"
+        }
     }
 
     @Synchronized
@@ -64,7 +62,7 @@ class McpHttpClient(
      * are both dispatched off the caller thread. A token is resolved for this
      * request only; it is never retained by this client instance.
      */
-    fun postAsync(
+    internal fun postAsync(
         connectorId: String,
         tokenProvider: McpOAuthAccessTokenProvider,
         ioExecutor: Executor,
@@ -103,6 +101,9 @@ class McpHttpClient(
         toolDefinition: McpProtocol.ToolDefinition?,
         requestBearerToken: String?
     ): JSONObject {
+        require(requestBearerToken == null || isValidBearerToken(requestBearerToken)) {
+            "অবৈধ Bearer Token"
+        }
         require(request.jsonrpc == "2.0")
         require(request.method.matches(Regex("[a-zA-Z0-9/_-]{2,100}")))
         if (request.id == null) {
@@ -286,6 +287,9 @@ class McpHttpClient(
 
             return true
         }
+
+        internal fun isValidBearerToken(value: String): Boolean =
+            value.isNotBlank() && !value.contains("\r") && !value.contains("\n")
 
         internal fun isSafeEndpoint(value: String): Boolean = runCatching {
             val uri = URI(value.trim())
