@@ -2,9 +2,9 @@
 
 **Repository:** `mosharrof0000-ux/mosharrof-android-control`  
 **Branch:** `fix/mcp-pagination-20261110`  
-**Audit scope:** dependency declarations and expected lock/verification/SBOM files inspected through GitHub repository content. This is an inventory, not a vulnerability or license clearance.
+**Audit scope:** dependency declarations, CI toolchain, and expected lock/verification/SBOM files inspected through GitHub repository content. This is an inventory and targeted advisory triage, not a complete vulnerability or license clearance.
 
-## Android dependency declarations
+## Android dependency declarations and CI toolchain
 
 - Android Gradle Plugin: `com.android.application` 8.7.3.
 - Kotlin Android Gradle Plugin: 2.0.21.
@@ -15,21 +15,26 @@
   - `junit:junit:4.13.2`
   - `org.json:json:20240303`
 - App compile SDK 35, min SDK 26, target SDK 35, Java/Kotlin target 17.
+- Android CI previously pinned its setup action to Gradle 8.9. This is below the patched versions for the October 7, 2026 high-severity Gradle advisories (8.14.6 / 9.8.1). The workflow has now been changed to Gradle 8.14.6; exact-head Android tests/build must pass before treating this mitigation as verified.
+- CI uses `gradle/actions/setup-gradle@v4` with an explicit Gradle version; no Gradle wrapper distribution is currently used by this workflow.
 
 Sources inspected:
 - `android/build.gradle.kts`
 - `android/app/build.gradle.kts`
 - `android/settings.gradle.kts`
 - `android/gradle.properties`
+- `.github/workflows/android-build.yml`
 
 ## Cloudflare Worker dependency declarations
 
 From `cloudflare/worker/package.json`:
 - `@cloudflare/workers-types: ^5.20261101.1`
 - `typescript: ^5.9.3`
-- `wrangler: ^4.45.0`
+- `wrangler: ^4.59.1`
 
-These are semver ranges, not exact resolved versions.
+These are semver ranges, not exact resolved versions. The Wrangler minimum was raised from `^4.45.0` to `^4.59.1` in source commit `178678ed80f7f9d0d160049f2deb9ec41f5188d8` to exclude the advisory's affected versions below 4.59.1. This is a minimum-version mitigation, not a complete vulnerability scan; a committed lockfile is still required.
+
+The current Worker workflow `.github/workflows/worker-check.yml` still runs `npm install`, not `npm ci`, because no lockfile is committed yet.
 
 ## Reproducibility and supply-chain findings
 
@@ -43,14 +48,14 @@ The following expected files were not found at the audited branch paths:
 No generated SBOM, complete resolved transitive dependency inventory, license attribution report, or vulnerability scan result was present in the reviewed audit material.
 
 Consequences:
-- Worker transitive dependency resolution is not evidenced as reproducible from a committed npm lockfile.
+- Worker transitive dependency resolution is not yet reproducible from a committed npm lockfile.
 - Android transitive dependency versions and artifact checksums are not pinned by Gradle dependency locking/verification metadata in the inspected paths.
 - Direct dependency declarations alone cannot establish transitive license obligations or vulnerability status.
 - No conclusion that dependencies are vulnerability-free or license-cleared is made.
 
 ## Required follow-up before release
 
-1. In the project's build-capable CI environment, use the configured Node/npm toolchain to generate and commit `cloudflare/worker/package-lock.json`; update CI to use `npm ci` and verify `npm ci` plus Worker tests/typecheck.
+1. Generate `cloudflare/worker/package-lock.json` using npm in a build-capable CI environment; commit the generated lockfile, change the Worker workflow to `npm ci`, and verify tests/typecheck.
 2. Enable Gradle dependency locking for relevant resolvable configurations and generate lock state by resolving the actual Android build/test configurations.
 3. Generate Gradle dependency verification metadata from trusted repositories in a controlled build, review checksums, and commit it; do not hand-author artifact hashes.
 4. Generate an SPDX or CycloneDX SBOM for both Android and Worker resolved dependency graphs.
@@ -59,13 +64,21 @@ Consequences:
 
 ## Audit limits
 
-This pass did not execute package managers or Gradle, resolve transitive graphs, download dependencies, generate checksums, run vulnerability scanners, inspect every dependency's license, or alter CI install behavior. These steps require the project's build-capable CI/runtime and must not be simulated by guessed lockfiles or fabricated hashes.
+This pass did not execute package managers or Gradle locally, resolve transitive graphs, download dependencies, generate checksums, run vulnerability scanners, inspect every dependency's license, or generate SBOMs. These steps require the project's build-capable CI/runtime and must not be simulated by guessed lockfiles or fabricated hashes.
 
-No dependency lock, dependency upgrade, deployment, APK installation or PR merge was performed during this inventory.
+No dependency lock, deployment, APK installation or PR merge was performed during the inventory.
 
-## Wrangler advisory triage — 2026-11-11
+## Advisory references
 
-- A current package advisory lookup identifies a command-injection issue in Wrangler's `pages deploy --commit-hash` handling. The advisory lists Wrangler 4.x versions below 4.59.1 as affected when an attacker controls the `--commit-hash` input; it lists 4.59.1 as the fixed floor. Source: Snyk package advisory for `wrangler@4.45.0` (reviewed 2026-11-11): https://security.snyk.io/package/npm/wrangler/4.45.0
-- The repository declared `wrangler: ^4.45.0`, a range whose lower bound includes affected releases. No committed lockfile was present to prove the exact resolved CI version.
-- Raised the declared minimum to `^4.59.1` in source commit `178678ed80f7f9d0d160049f2deb9ec41f5188d8`. This is a minimum-version mitigation, not a complete vulnerability scan; the range still floats within compatible 4.x releases and a lockfile is still required.
-- Worker CI must pass on the exact updated head. No Wrangler deployment was performed.
+- Wrangler advisory: https://security.snyk.io/package/npm/wrangler/4.45.0 — Wrangler 4.x below 4.59.1 is affected by the described `pages deploy --commit-hash` input-validation issue when the input is attacker-controlled.
+- Gradle advisory list: https://github.com/gradle/gradle/security/advisories — multiple high-severity advisories were published 2026-10-07.
+- Gradle advisory GHSA-mvvg-497x-hmj8: https://github.com/gradle/gradle/security/advisories/GHSA-mvvg-497x-hmj8 — affected versions include all versions below 8.14.6; patched versions include 8.14.6 and 9.8.1.
+- Gradle advisory GHSA-j5m7-59rp-24f5: https://github.com/gradle/gradle/security/advisories/GHSA-j5m7-59rp-24f5 — affected versions include all versions below 8.14.6; patched versions include 8.14.6 and 9.8.1.
+
+## Exact-head CI evidence before this update
+
+At commit `4e1c1e11ea9e3df40ca30f3cbfc39688ed443446`:
+- Android workflow run `43006072623`: Unit Tests, Debug APK Assembly, and Upload all completed successfully.
+- Worker workflow run `43006072544`: Typecheck/test workflow completed successfully.
+
+These results predate the Gradle 8.14.6 workflow update and do not verify that update. A new exact-head CI run is required.
