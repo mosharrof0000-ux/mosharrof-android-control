@@ -129,6 +129,27 @@ class McpOAuthMetadataTest {
     }
 
     @Test
+    fun acceptsOptionalHttpsRevocationEndpointAndRejectsUnsafeAdvertisedEndpoint() {
+        val valid = serverMetadata() + ("revocation_endpoint" to "$issuer/revoke")
+        assertTrue(McpOAuthMetadata.validateAuthorizationServerMetadata(issuer, valid))
+        assertEquals(
+            "$issuer/revoke",
+            McpOAuthMetadata.validatedRevocationEndpoint(valid)
+        )
+
+        val missing = serverMetadata()
+        assertTrue(McpOAuthMetadata.validateAuthorizationServerMetadata(issuer, missing))
+        assertNull(McpOAuthMetadata.validatedRevocationEndpoint(missing))
+
+        val insecure = serverMetadata() + ("revocation_endpoint" to "http://auth.example.com/revoke")
+        assertFalse(McpOAuthMetadata.validateAuthorizationServerMetadata(issuer, insecure))
+        assertNull(McpOAuthMetadata.validatedRevocationEndpoint(insecure))
+
+        val fragment = serverMetadata() + ("revocation_endpoint" to "$issuer/revoke#fragment")
+        assertFalse(McpOAuthMetadata.validateAuthorizationServerMetadata(issuer, fragment))
+    }
+
+    @Test
     fun rejectsWrongIssuerAndMissingPkce() {
         assertFalse(
             McpOAuthMetadata.validateAuthorizationServerMetadata(
