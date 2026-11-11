@@ -8,7 +8,7 @@
 ## Android dependencies and CI toolchain
 
 - Android Gradle Plugin: `com.android.application` 8.7.3.
-- Kotlin Android Gradle Plugin: 2.0.21.
+- Kotlin Android Gradle Plugin: 2.4.21 (upgraded and verified on exact head `77da729e219c4003a624299c26f15934a6e93660`; earlier historical sections retain the old version as a record of the prior scan).
 - App direct dependencies: `androidx.documentfile:documentfile:1.0.1`, `net.openid:appauth:0.11.1`.
 - Test-only direct dependencies: `junit:junit:4.13.2`, `org.json:json:20240303`.
 - Compile SDK 35, min SDK 26, target SDK 35, Java/Kotlin target 17.
@@ -327,3 +327,21 @@ The official OSV-Scanner documentation lists Gradle lockfiles, Gradle verificati
 - Official Kotlin compiler-options migration guidance: https://kotlinlang.org/docs/gradle-compiler-options.html. The official KGP compatibility table lists 2.4.20–2.4.21 as fully supporting Gradle 7.6.3–9.7.0 and AGP 8.5.2–9.3.1; this project's Gradle 8.14.6 and AGP 8.7.3 are within those stated ranges: https://kotlinlang.org/docs/gradle-configure-project.html.
 - **Pending verification:** run Android CI on the corrective exact head and confirm typed DSL configuration, dependency-path diagnostics, unit tests, SBOM, APK assembly/upload and OSV scan. Do not count the KGP advisory as remediated until the exact-head scan proves the affected coordinate is gone or at a fixed version.
 - PR #7 remains open/unmerged. No APK installation, deployment, live OAuth operation or physical Android QA was performed.
+
+
+## Kotlin Gradle Plugin remediation verified — exact head 2026-11-11
+
+- Exact head: `77da729e219c4003a624299c26f15934a6e93660`.
+- Android workflow run `43020312921`: **SUCCESS**. Assemble job `130521575617` passed dependency lock/verification bootstrap, all five dependency-path reports, Android unit tests, CycloneDX SBOM, debug APK assembly, and both artifact uploads. The `dependency-scan / osv-scan` job `130523116531` also completed SUCCESS.
+- Worker workflow run `43020312877`: **SUCCESS**.
+- Root `buildEnvironment` report in artifact `13855405401` explicitly resolves `org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.21` and its 2.4.21 plugin API/BOM/IDE components; no 2.0.21 KGP entry remains in that report.
+- Android OSV SARIF artifact ID `13855230872`; archive SHA-256 `83bd9589fd55b3807a0136b2277dd48d9190596e3286b1ffa1934e27eb5d3cf7`. Extracted `results.sarif` SHA-256 `fdd8c3a8b87834afcdd1e833173360a3da04d9f7ed97e3726e0379d5a47fe201`.
+- Parsed SARIF now contains **111 result records, 64 unique advisory IDs, and 18 unique package coordinates**. The previous scan had 112 records and 65 unique advisory IDs. The Kotlin advisory `CVE-2026-53914` is absent, and the root dependency report confirms KGP 2.4.21. This is evidence that the specific KGP advisory was removed from this scanned inventory; it is not a complete security clearance.
+- Remaining SARIF records are still concentrated in the previously attributed internal Android test-platform configurations and root Gradle build/plugin classpath. The scan is inventory-only and still does not establish CVSS severity, exploitability, or app-runtime reachability.
+- Dependency evidence artifact ID `13855405401`, archive size 116,841 bytes, SHA-256 `85c70007a439b5065718d4d0408dc8c0eacca47e742e374a8bea5cb4e76537a6`. It contains the regenerated lockfile, verification metadata, CycloneDX SBOM and all five dependency-path reports.
+- Debug APK artifact ID `13854004448`, archive size 2,562,449 bytes. This is CI build evidence only; it was not installed or physically tested.
+- Current exact-head finding counts by scanned input: 45 SARIF records from `app/gradle.lockfile` and 66 from `gradle/verification-metadata.xml`. These overlap by advisory and must not be summed as unique vulnerabilities.
+- Current package-coordinate inventory (records per coordinate): Jackson Core 2.22.2 (2), Jackson Databind 2.22.2 (2), Guava 32.0.1-jre (2), Guava 33.7.1-jre (1), protobuf-java 3.22.3 (2), Commons IO 2.13.0 (2), Netty 4.1.93.Final family (82 across six modules), Commons Compress 1.21 (2), jose4j 0.9.5 (1), Bouncy Castle bcpkix 1.77 (2), bcprov 1.77 (10), JDOM2 2.0.6 (1), and org.json 20240303 (2). Exact package names/versions were parsed from SARIF messages; advisory duplicates remain.
+- Updated remediation result: KGP 2.0.21 → 2.4.21 and the compiler DSL migration are verified by successful exact-head Android CI and the new OSV inventory. The remaining build/test-tool dependency findings are not yet remediated. Next work must select a compatible, evidence-backed target and rerun the full exact-head pipeline; do not blindly upgrade all transitive dependencies.
+- Gate 16 remains **Partial**. Persistent committed lockfiles, independently authenticated checksum provenance, component-level license/notice review, full advisory severity/applicability analysis and release APK provenance remain open.
+- PR #7 remains open/unmerged. No deployment, merge, APK installation, live OAuth/provider operation or physical Android QA was performed.
