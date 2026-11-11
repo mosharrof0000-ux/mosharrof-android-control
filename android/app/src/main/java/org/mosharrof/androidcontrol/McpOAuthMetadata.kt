@@ -78,7 +78,7 @@ internal object McpOAuthMetadata {
     }
 
     fun validateAuthorizationIssuer(responseIssuer: String?, expectedIssuer: String): Boolean =
-        !responseIssuer.isNullOrBlank() && responseIssuer == expectedIssuer
+        isHttpsIssuer(expectedIssuer) && !responseIssuer.isNullOrBlank() && responseIssuer == expectedIssuer
 
     /** RFC 8414 issuer identifiers must not contain query or fragment components. */
     private fun isHttpsIssuer(value: String?): Boolean {
