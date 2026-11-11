@@ -27,8 +27,8 @@ internal object McpOAuthTokenRefresher {
         onComplete: (Result<FreshBearerToken>) -> Unit
     ) {
         if (!inFlight.add(connectorId)) {
-            onComplete(Result.failure(IllegalStateException(
-                "এই Connector-এর OAuth refresh ইতিমধ্যে চলছে।"
+            onComplete(Result.failure(McpOAuthRefreshException(
+                McpOAuthRefreshFailure.REFRESH_ALREADY_RUNNING
             )))
             return
         }
@@ -45,13 +45,14 @@ internal object McpOAuthTokenRefresher {
             context.applicationContext,
             connectorId
         ).getOrElse {
-            finish(Result.failure(IllegalStateException(
-                "Encrypted OAuth state পড়া যায়নি। আবার সংযোগ করুন।"
+            finish(Result.failure(McpOAuthRefreshException(
+                McpOAuthRefreshFailure.ENCRYPTED_STATE_UNAVAILABLE,
+                it
             )))
             return
         } ?: run {
-            finish(Result.failure(IllegalStateException(
-                "এই Connector-এর OAuth credentials সংরক্ষিত নেই।"
+            finish(Result.failure(McpOAuthRefreshException(
+                McpOAuthRefreshFailure.AUTHORIZATION_STATE_MISSING
             )))
             return
         }
@@ -59,8 +60,8 @@ internal object McpOAuthTokenRefresher {
         val originalRequest = state.lastAuthorizationResponse?.request
         val resource = originalRequest?.additionalParameters?.get("resource")
         if (resource.isNullOrBlank() || !McpHttpClient.isSafeEndpoint(resource)) {
-            finish(Result.failure(IllegalStateException(
-                "Encrypted OAuth state-এ বৈধ protected resource নেই; MCP request বন্ধ রাখা হয়েছে।"
+            finish(Result.failure(McpOAuthRefreshException(
+                McpOAuthRefreshFailure.RESOURCE_BINDING_INVALID
             )))
             return
         }
@@ -72,13 +73,16 @@ internal object McpOAuthTokenRefresher {
             ) { accessToken, _, authException ->
                 val result = runCatching {
                     if (authException != null || accessToken.isNullOrBlank()) {
-                        throw IllegalStateException("OAuth access token refresh ব্যর্থ হয়েছে।")
+                        throw McpOAuthRefreshException(
+                            McpOAuthRefreshFailure.REFRESH_REJECTED,
+                            authException
+                        )
                     }
 
                     val tokenType = state.lastTokenResponse?.tokenType
                     if (!tokenType.equals("Bearer", ignoreCase = true)) {
-                        throw IllegalStateException(
-                            "OAuth token type Bearer নয়; MCP request বন্ধ রাখা হয়েছে।"
+                        throw McpOAuthRefreshException(
+                            McpOAuthRefreshFailure.BEARER_TOKEN_REQUIRED
                         )
                     }
 
@@ -87,8 +91,9 @@ internal object McpOAuthTokenRefresher {
                         connectorId,
                         state
                     ).getOrElse {
-                        throw IllegalStateException(
-                            "Refreshed OAuth state encrypted storage-এ সংরক্ষণ করা যায়নি।"
+                        throw McpOAuthRefreshException(
+                            McpOAuthRefreshFailure.ENCRYPTED_STATE_SAVE_FAILED,
+                            it
                         )
                     }
 
@@ -97,8 +102,8 @@ internal object McpOAuthTokenRefresher {
                 finish(result)
             }
         } catch (_: Exception) {
-            finish(Result.failure(IllegalStateException(
-                "OAuth refresh শুরু করা যায়নি। আবার সংযোগ করুন।"
+            finish(Result.failure(McpOAuthRefreshException(
+                McpOAuthRefreshFailure.REFRESH_START_FAILED
             )))
         }
     }
