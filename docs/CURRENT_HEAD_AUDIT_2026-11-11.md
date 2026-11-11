@@ -222,3 +222,11 @@ Commits:
 - Worker workflow run `42973901430` (#295): PASS.
 - CI debug artifact `mosharrof-android-control-debug`, ID `13833924281`, size 2,415,687 bytes, SHA-256 `7206fc24f538e7e5fecbf312edcd787aa55a57ba34c828dcd14e4dbc2f06b30a`. CI artifact only; not installed or physically tested.
 - The subsequent test-only commit `c2fa0e0c983d5c0df9646d0db3bfcd78d0ae4107` adds fragment-bearing issuer coverage and is not covered by this prior run; its exact-head CI must complete before that extension is considered verified.
+
+
+## 2026-11-11 protected-resource authorization-server issuer validation follow-up
+
+- A further OAuth metadata review found that `validateProtectedResourceMetadata` accepted authorization-server entries containing query components because it used the general HTTPS URL validator. These entries are issuer identifiers and must obey the stricter RFC 8414 issuer constraints.
+- Changed the authorization-server list check to use the HTTPS issuer validator, rejecting both query and fragment components while retaining HTTPS, host and no-user-info checks.
+- Added JVM regression coverage for valid issuer entries and rejection of query-bearing and fragment-bearing entries.
+- This is validator-only hardening. OAuth metadata fetching, CIMD discovery, PKCE, token exchange, refresh/revocation and live interoperability remain unimplemented. Exact-head Android and Worker CI are pending for this change.
