@@ -174,3 +174,14 @@ At this exact PR head, the Android source includes bounded HTTPS-only protected-
 The refresh failure model now retains only a typed safe reason and user-facing message. The original authorization-server/storage exception is not attached as a cause, avoiding accidental propagation through stack traces or crash reporting. The refresh commit gate rejects authorization errors, blank access tokens and non-Bearer token types before persistence, and releases a Bearer token only after encrypted AuthState persistence succeeds.
 
 This exact-head CI verifies JVM unit tests and build behavior, not live OAuth server interoperability, actual encrypted Android Keystore behavior on a device, token rotation/revocation against a real server, or crash-reporting behavior in production. The debug artifact is CI-only and was not installed or launched on a physical Android device. No deployment or merge was performed.
+
+
+## Exact-head OAuth revocation regression verification — 2026-11-11 (`98fb0deb97627299211022ab09dbe6ab3516f66f`)
+
+- PR #7 source/test head: `98fb0deb97627299211022ab09dbe6ab3516f66f`; PR remains OPEN and UNMERGED.
+- Android CI run [43073118767](https://github.com/mosharrof0000-ux/mosharrof-android-control/actions/runs/43073118767): SUCCESS. The strict Gradle command ran `:app:testDebugUnitTest`, `:app:cyclonedxDirectBom`, and `:app:assembleDebug`; Gradle reported BUILD SUCCESSFUL. The OAuth revocation test additions are included in the successful Android JVM unit-test task.
+- Android binary notice audit covered 34/34 runtime SBOM components; APK license/notice validation passed. Android OSV scan and SARIF upload completed successfully.
+- Worker CI run [43073118888](https://github.com/mosharrof0000-ux/mosharrof-android-control/actions/runs/43073118888): SUCCESS; locked dependency install, dependency audit, SBOM, typecheck/tests, dependency evidence and OSV scan completed successfully.
+- Android Debug APK artifact ID: `13879926314`, size 2,586,036 bytes, uploaded artifact ZIP SHA-256 `32c59324be498a7bc603e785d1a7e29cdaf46a852b1c12fb3ddfb26c9011102c`. Android dependency evidence artifact ID: `13879906381`. OSV SARIF artifact ID: `13879981470`.
+- Added revocation regression cases reject endpoint userinfo/fragment before network access; reject blank/oversized client IDs and blank tokens before network access; and accept `access_token` token hint while verifying URL form encoding. Existing tests also cover HTTPS-only endpoints, redirect/non-success rejection, invalid token hints and token bounds.
+- These are JVM/unit and CI checks, not live RFC 7009 server interoperability or Android Keystore physical-device verification. The APK is CI-only and was not installed or launched. No deployment or merge was performed.
