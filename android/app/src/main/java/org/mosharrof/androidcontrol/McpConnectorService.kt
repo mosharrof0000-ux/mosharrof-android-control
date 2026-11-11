@@ -4,6 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
 import java.util.UUID
+import java.util.concurrent.Executor
 import java.util.concurrent.CancellationException
 
 /**
@@ -509,6 +510,142 @@ class McpConnectorService(
             }
         }
         result.toString()
+    }
+
+    /**
+     * OAuth-aware tool execution. All policy checks and the single-use approval
+     * grant are consumed before the asynchronous transport is started.
+     */
+    internal fun callToolAsync(
+        toolId: String,
+        arguments: Map<String, Any?>,
+        tokenProvider: McpAccessTokenResolver,
+        ioExecutor: Executor,
+        approvalGrant: String? = null,
+        inputResponses: Map<String, Any?>? = null,
+        requestState: String? = null,
+        onComplete: (Result<String>) -> Unit
+    ) {
+        val prepared = runCatching {
+            val tool = ConnectorRegistry.toolSnapshot()
+                .firstOrNull { it.id == toolId }
+                ?: error("নিবন্ধিত Tool পাওয়া যায়নি।")
+
+            require(tool.connectorId in connected) {
+                "Connector এই Service session-এ সংযুক্ত নয়।"
+            }
+            require(McpArgumentsValidator.validate(tool.inputSchema, arguments, tool.requiredFields)) {
+                "Tool input schema অনুযায়ী arguments অবৈধ অথবা required value অনুপস্থিত।"
+            }
+            require(tool.requiredFields.all(arguments::containsKey)) {
+                "প্রয়োজনীয় input অনুপস্থিত।"
+            }
+
+            when (ConnectorRegistry.authorize(toolId)) {
+                ConnectorRegistry.Decision.ALLOW_READ_ONLY -> Unit
+                ConnectorRegistry.Decision.APPROVAL_REQUIRED -> {
+                    val token = approvalGrant
+                        ?: error("এই Tool চালাতে একবারের Approval Grant প্রয়োজন।")
+                    require(ToolApprovalGrants.consume(
+                        token = token,
+                        connectorId = tool.connectorId,
+                        toolId = toolId,
+                        arguments = arguments
+                    )) {
+                        "Approval Grant অবৈধ, মেয়াদোত্তীর্ণ, ব্যবহৃত অথবা এই Input-এর জন্য নয়।"
+                    }
+                }
+                ConnectorRegistry.Decision.DENY_CONNECTOR_UNAVAILABLE ->
+                    error("Connector সংযুক্ত নেই।")
+                else -> error("নিরাপত্তা নীতিতে Tool call অনুমোদিত হয়নি।")
+            }
+
+            val definition = McpProtocol.ToolDefinition(
+                name = tool.name,
+                description = tool.description,
+                inputSchema = tool.inputSchema
+            )
+            val modernProtocol = clientProtocolVersion() == McpProtocol.MODERN_VERSION
+            require(modernProtocol || (inputResponses == null && requestState == null)) {
+                "MCP MRTR fields শুধু আধুনিক protocol-এ ব্যবহার করা যাবে।"
+            }
+            val request = if (modernProtocol) {
+                McpProtocol.modernToolsCallRequest(
+                    id = UUID.randomUUID().toString(),
+                    toolName = tool.name,
+                    arguments = arguments,
+                    clientName = clientName,
+                    clientVersion = clientVersion,
+                    inputResponses = inputResponses,
+                    requestState = requestState
+                )
+            } else {
+                McpProtocol.toolsCallRequest(
+                    id = UUID.randomUUID().toString(),
+                    toolName = tool.name,
+                    arguments = arguments
+                )
+            }
+            Triple(tool, definition, Pair(request, modernProtocol))
+        }
+
+        val (tool, definition, requestInfo) = prepared.getOrElse {
+            onComplete(Result.failure(it))
+            return
+        }
+        val (request, modernProtocol) = requestInfo
+
+        client.postAsync(
+            connectorId = tool.connectorId,
+            tokenProvider = tokenProvider,
+            ioExecutor = ioExecutor,
+            request = request,
+            toolDefinition = definition
+        ) { responseResult ->
+            val result = responseResult.mapCatching { response ->
+                if (response.has("error")) {
+                    val rpcError = response.optJSONObject("error")
+                    error(rpcError?.optString("message") ?: "MCP Tool call ব্যর্থ হয়েছে।")
+                }
+                val resultObject = response.optJSONObject("result")
+                    ?: error("MCP Tool response-এ result পাওয়া যায়নি।")
+                if (modernProtocol) {
+                    when (val resultType = resultObject.optString("resultType")) {
+                        "complete" -> Unit
+                        "input_required" -> {
+                            val inputRequests = resultObject.optJSONObject("inputRequests")
+                                ?: error("MCP input_required response-এ inputRequests অনুপস্থিত।")
+                            require(McpProtocol.validateInputRequests(inputRequests.toMap())) {
+                                "MCP inputRequests-এর method, key বা params অবৈধ।"
+                            }
+                            if (resultObject.has("requestState")) {
+                                val state = resultObject.opt("requestState")
+                                require(state is String && state.length <= MAX_MRTR_REQUEST_STATE_CHARS) {
+                                    "MCP requestState string হতে হবে এবং নির্ধারিত আকারের মধ্যে থাকতে হবে।"
+                                }
+                            }
+                        }
+                        "task" -> {
+                            val handle = McpTaskProtocol.parseHandle(resultObject.toMap())
+                                ?: error("MCP Task handle-এর taskId, status, TTL অথবা poll interval অবৈধ।")
+                            taskStore.upsert(
+                                McpTaskRecord(
+                                    connectorId = tool.connectorId,
+                                    taskId = handle.taskId,
+                                    status = handle.status.name,
+                                    ttlMs = handle.ttlMs,
+                                    pollIntervalMs = handle.pollIntervalMs,
+                                    observedAtEpochMs = System.currentTimeMillis()
+                                )
+                            )
+                        }
+                        else -> error("অসমর্থিত MCP resultType: $resultType")
+                    }
+                }
+                resultObject.toString()
+            }
+            onComplete(result)
+        }
     }
 
     /** Fetch one MCP Tasks snapshot after a modern session has been negotiated. */
