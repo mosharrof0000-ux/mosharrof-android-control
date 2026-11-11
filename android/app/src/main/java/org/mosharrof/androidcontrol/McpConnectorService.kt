@@ -215,9 +215,14 @@ class McpConnectorService(
         onComplete: (Result<ConnectionInfo>) -> Unit
     ) {
         val completed = java.util.concurrent.atomic.AtomicBoolean(false)
+        val ownsConnectionSlot = java.util.concurrent.atomic.AtomicBoolean(false)
         fun finish(result: Result<ConnectionInfo>) {
             if (completed.compareAndSet(false, true)) {
-                synchronized(this) { connecting.remove(connectorId) }
+                // Only the invocation that acquired the slot may release it.
+                // A rejected duplicate attempt must never unlock the active attempt.
+                if (ownsConnectionSlot.get()) {
+                    synchronized(this) { connecting.remove(connectorId) }
+                }
                 onComplete(result)
             }
         }
@@ -234,7 +239,9 @@ class McpConnectorService(
         }
 
         val alreadyConnecting = synchronized(this) {
-            !connecting.add(connectorId)
+            val acquired = connecting.add(connectorId)
+            if (acquired) ownsConnectionSlot.set(true)
+            !acquired
         }
         if (alreadyConnecting) {
             finish(Result.failure(IllegalStateException("এই Connector-এর connection negotiation ইতিমধ্যে চলছে।")))
