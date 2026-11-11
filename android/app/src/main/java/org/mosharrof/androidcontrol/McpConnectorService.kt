@@ -517,8 +517,8 @@ class McpConnectorService(
         inputResponses: Map<String, Any?>
     ): Result<McpTaskProtocol.Snapshot> = runCatching {
         requireModernTaskConnection(connectorId)
-        require(inputResponses.isNotEmpty() && inputResponses.size <= 16) {
-            "Task inputResponses খালি অথবা অতিরিক্ত বড়।"
+        require(McpTaskProtocol.validateInputResponsePayloads(inputResponses)) {
+            "Task inputResponses-এর প্রতিটি request key-এর জন্য non-empty object payload প্রয়োজন।"
         }
         val response = client.post(
             McpProtocol.modernTasksUpdateRequest(
