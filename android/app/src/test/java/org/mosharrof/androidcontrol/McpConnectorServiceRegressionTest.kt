@@ -1172,4 +1172,58 @@ class McpConnectorServiceRegressionTest {
         assertTrue(connectorService.connectedConnectorIds().isEmpty())
         assertEquals(2, server.toolListCursors.size)
     }
+
+    @Test
+    fun asyncConnectDuplicateAttemptCannotReleaseActiveConnectionSlot() {
+        registerConnector()
+        val server = FakeServer()
+        val connectorService = service(server)
+        var firstPending: ((Result<McpOAuthTokenRefresher.FreshBearerToken>) -> Unit)? = null
+        val resolutions = AtomicInteger(0)
+        val resolver = object : McpAccessTokenResolver {
+            override fun resolve(
+                connectorId: String,
+                expectedEndpoint: String,
+                onComplete: (Result<McpOAuthTokenRefresher.FreshBearerToken>) -> Unit
+            ) {
+                if (resolutions.incrementAndGet() == 1) {
+                    firstPending = onComplete
+                } else {
+                    onComplete(Result.success(
+                        McpOAuthTokenRefresher.FreshBearerToken("slot-guard-token")
+                    ))
+                }
+            }
+        }
+        val directExecutor = java.util.concurrent.Executor { it.run() }
+        var first: Result<McpConnectorService.ConnectionInfo>? = null
+        var duplicate: Result<McpConnectorService.ConnectionInfo>? = null
+        var third: Result<McpConnectorService.ConnectionInfo>? = null
+
+        connectorService.connectAsync("test.mcp", resolver, directExecutor) { first = it }
+        assertNotNull("First attempt should be waiting for token resolution", firstPending)
+
+        connectorService.connectAsync("test.mcp", resolver, directExecutor) { duplicate = it }
+        connectorService.connectAsync("test.mcp", resolver, directExecutor) { third = it }
+
+        assertNotNull(duplicate)
+        assertTrue(duplicate!!.isFailure)
+        assertNotNull(third)
+        assertTrue("A rejected duplicate must not unlock the first attempt", third!!.isFailure)
+        assertEquals("Duplicate attempts must not reach token resolution", 1, resolutions.get())
+
+        firstPending!!(Result.success(
+            McpOAuthTokenRefresher.FreshBearerToken("first-attempt-token")
+        ))
+        assertNotNull(first)
+        assertTrue(first!!.isSuccess)
+        assertTrue(connectorService.connectedConnectorIds().contains("test.mcp"))
+
+        var afterCompletion: Result<McpConnectorService.ConnectionInfo>? = null
+        connectorService.connectAsync("test.mcp", resolver, directExecutor) {
+            afterCompletion = it
+        }
+        assertNotNull(afterCompletion)
+        assertTrue("Connection slot should be released by its owner", afterCompletion!!.isSuccess)
+    }
 }
