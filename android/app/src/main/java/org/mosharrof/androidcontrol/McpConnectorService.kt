@@ -201,6 +201,288 @@ class McpConnectorService(
         }
     }
 
+
+    /**
+     * OAuth-safe connection lifecycle. Every discovery, initialize,
+     * initialized notification, and tools/list page resolves its own token.
+     * Tools are staged until every page has validated successfully.
+     */
+    internal fun connectAsync(
+        connectorId: String,
+        tokenProvider: McpAccessTokenResolver,
+        ioExecutor: Executor,
+        onComplete: (Result<ConnectionInfo>) -> Unit
+    ) {
+        val completed = java.util.concurrent.atomic.AtomicBoolean(false)
+        fun finish(result: Result<ConnectionInfo>) {
+            if (completed.compareAndSet(false, true)) onComplete(result)
+        }
+
+        val connector = ConnectorRegistry.connectorSnapshot()
+            .firstOrNull { it.id == connectorId }
+        if (connector == null) {
+            finish(Result.failure(IllegalArgumentException("নিবন্ধিত Connector পাওয়া যায়নি।")))
+            return
+        }
+        if (connector.transport != ConnectorRegistry.Transport.MCP_STREAMABLE_HTTP) {
+            finish(Result.failure(IllegalArgumentException("এই Connector MCP Streamable HTTP নয়।")))
+            return
+        }
+
+        synchronized(this) {
+            if (connectorId in connected) connected.remove(connectorId)
+            ToolApprovalGrants.revokeConnector(connectorId)
+            ConnectorRegistry.unregisterToolsForConnector(connectorId)
+        }
+
+        val stagedTools = mutableListOf<ConnectorRegistry.Tool>()
+        val seenNames = mutableSetOf<String>()
+        val seenCursors = mutableSetOf<String>()
+        var pageCount = 0
+        var protocolVersion = McpProtocol.MODERN_VERSION
+        var serverInfo: Map<String, Any?> = emptyMap()
+
+        fun fail(failure: Throwable) {
+            synchronized(this) {
+                ToolApprovalGrants.revokeConnector(connectorId)
+                connected.remove(connectorId)
+                ConnectorRegistry.unregisterToolsForConnector(connectorId)
+                runCatching {
+                    ConnectorRegistry.updateConnectionState(
+                        connectorId,
+                        ConnectorRegistry.ConnectionState.DISCONNECTED
+                    )
+                }
+            }
+            finish(Result.failure(failure))
+        }
+
+        fun request(
+            value: McpProtocol.Request,
+            next: (Result<JSONObject>) -> Unit
+        ) {
+            client.postAsync(
+                connectorId = connectorId,
+                tokenProvider = tokenProvider,
+                ioExecutor = ioExecutor,
+                request = value
+            ) { result -> next(result) }
+        }
+
+        fun completeConnection() {
+            try {
+                stagedTools.forEach { ConnectorRegistry.registerTool(it).getOrThrow() }
+                ConnectorRegistry.updateConnectionState(
+                    connectorId,
+                    ConnectorRegistry.ConnectionState.CONNECTED
+                ).getOrThrow()
+                synchronized(this) { connected.add(connectorId) }
+                finish(Result.success(ConnectionInfo(
+                    connectorId = connectorId,
+                    protocolVersion = protocolVersion,
+                    serverInfo = serverInfo,
+                    discoveredTools = stagedTools.size
+                )))
+            } catch (failure: Throwable) {
+                fail(failure)
+            }
+        }
+
+        lateinit var fetchPage: (String?) -> Unit
+        fetchPage = page@{ cursor ->
+            if (pageCount >= MAX_TOOL_LIST_PAGES) {
+                fail(IllegalStateException("MCP tools/list পৃষ্ঠা সীমা অতিক্রম করেছে।"))
+                return@page
+            }
+            val listRequest = if (protocolVersion == McpProtocol.MODERN_VERSION) {
+                McpProtocol.modernToolsListRequest(
+                    id = UUID.randomUUID().toString(),
+                    clientName = clientName,
+                    clientVersion = clientVersion,
+                    cursor = cursor
+                )
+            } else {
+                McpProtocol.toolsListRequest(UUID.randomUUID().toString(), cursor)
+            }
+            request(listRequest) { responseResult ->
+                responseResult.fold(
+                    onFailure = ::fail,
+                    onSuccess = { response ->
+                        try {
+                            val listResult = response.optJSONObject("result")
+                                ?: error(response.optJSONObject("error")?.optString("message")
+                                    ?: "MCP tools/list ব্যর্থ হয়েছে।")
+                            if (protocolVersion == McpProtocol.MODERN_VERSION) {
+                                require(listResult.optString("resultType") == "complete") {
+                                    "Modern MCP tools/list resultType complete নয়।"
+                                }
+                                validateModernCacheHints(listResult, "tools/list")
+                            }
+                            val toolsArray = listResult.optJSONArray("tools")
+                                ?: error("MCP tools/list response-এ tools array অনুপস্থিত।")
+                            for (index in 0 until toolsArray.length()) {
+                                require(stagedTools.size < MAX_DISCOVERED_TOOLS) {
+                                    "MCP Tool সংখ্যা নির্ধারিত সীমা অতিক্রম করেছে।"
+                                }
+                                val item = toolsArray.optJSONObject(index)
+                                    ?: error("MCP tools/list-এর Tool entry অবজেক্ট নয়।")
+                                val name = item.optString("name").trim()
+                                require(name.isNotBlank() && seenNames.add(name)) {
+                                    "MCP Tool name অনুপস্থিত অথবা duplicate।"
+                                }
+                                val description = item.optString("description", name)
+                                val schemaObject = item.optJSONObject("inputSchema")
+                                    ?: error("MCP Tool inputSchema অনুপস্থিত: $name")
+                                val inputSchema = schemaObject.toMap()
+                                require(inputSchema["type"] == "object" &&
+                                    McpArgumentsValidator.supportsSchema(inputSchema)) {
+                                    "MCP Tool inputSchema-এ অসমর্থিত বা অবৈধ JSON Schema keyword আছে: $name"
+                                }
+                                val required = schemaObject.optJSONArray("required").toStringSet()
+                                val safePart = name.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+                                    .take(24).ifBlank { "tool" }
+                                val toolId = "${connectorId.take(40)}.$safePart.${sha256(name).take(12)}"
+                                stagedTools += ConnectorRegistry.Tool(
+                                    id = toolId,
+                                    connectorId = connectorId,
+                                    name = name,
+                                    description = description,
+                                    risk = ConnectorRegistry.Risk.WRITE,
+                                    requiredFields = required,
+                                    inputSchema = inputSchema
+                                )
+                            }
+                            pageCount++
+                            val nextCursor = when {
+                                !listResult.has("nextCursor") || listResult.isNull("nextCursor") -> null
+                                else -> listResult.opt("nextCursor") as? String
+                                    ?: error("MCP tools/list nextCursor string নয়।")
+                            }
+                            if (nextCursor == null) {
+                                completeConnection()
+                            } else {
+                                require(nextCursor.isNotBlank() && seenCursors.add(nextCursor)) {
+                                    "MCP tools/list cursor ফাঁকা অথবা পুনরাবৃত্ত; pagination থামানো হয়েছে।"
+                                }
+                                require(pageCount < MAX_TOOL_LIST_PAGES) {
+                                    "MCP tools/list পৃষ্ঠা সীমা অতিক্রম করেছে।"
+                                }
+                                fetchPage(nextCursor)
+                            }
+                        } catch (failure: Throwable) {
+                            fail(failure)
+                        }
+                    }
+                )
+            }
+        }
+
+        fun beginLegacy(requestedVersion: String = "2025-11-25") {
+            try {
+                require(requestedVersion in setOf("2025-03-26", "2025-06-18", "2025-11-25")) {
+                    "অসমর্থিত Legacy MCP protocol version."
+                }
+                protocolVersion = requestedVersion
+                client.selectProtocolVersion(requestedVersion)
+                request(McpProtocol.initializeRequest(
+                    id = UUID.randomUUID().toString(),
+                    clientName = clientName,
+                    clientVersion = clientVersion,
+                    protocolVersion = requestedVersion
+                )) { initResult ->
+                    initResult.fold(
+                        onFailure = ::fail,
+                        onSuccess = { response ->
+                            try {
+                                val result = response.optJSONObject("result")
+                                    ?: error(response.optJSONObject("error")?.optString("message")
+                                        ?: "Legacy MCP initialize ব্যর্থ হয়েছে।")
+                                val negotiated = result.optString("protocolVersion")
+                                require(negotiated in setOf("2025-03-26", "2025-06-18", "2025-11-25")) {
+                                    "Server অসমর্থিত Legacy MCP protocol version দিয়েছে।"
+                                }
+                                protocolVersion = negotiated
+                                client.selectProtocolVersion(negotiated)
+                                serverInfo = result.optJSONObject("serverInfo")?.toMap() ?: emptyMap()
+                                request(McpProtocol.initializedNotification()) { notificationResult ->
+                                    notificationResult.fold(
+                                        onFailure = ::fail,
+                                        onSuccess = { fetchPage(null) }
+                                    )
+                                }
+                            } catch (failure: Throwable) {
+                                fail(failure)
+                            }
+                        }
+                    )
+                }
+            } catch (failure: Throwable) {
+                fail(failure)
+            }
+        }
+
+        client.selectProtocolVersion(McpProtocol.MODERN_VERSION)
+        request(McpProtocol.modernDiscoveryRequest(
+            id = UUID.randomUUID().toString(),
+            clientName = clientName,
+            clientVersion = clientVersion
+        )) { discoveryResult ->
+            discoveryResult.fold(
+                onFailure = { failure ->
+                    val http = failure as? McpHttpException
+                    val modernErrorCodes = setOf(-32601, -32020, -32021, -32022)
+                    when {
+                        http?.rpcErrorCode == -32022 -> {
+                            val supported = http.rpcErrorData?.optJSONArray("supported")
+                            val versions = supported?.let { array ->
+                                (0 until array.length()).map { array.optString(it) }.toSet()
+                            }.orEmpty()
+                            val legacy = listOf("2025-11-25", "2025-06-18", "2025-03-26")
+                                .firstOrNull { it in versions }
+                            if (legacy == null) fail(IllegalStateException(
+                                "MCP server-এর supported তালিকায় পরিচিত Legacy version নেই।"
+                            )) else beginLegacy(legacy)
+                        }
+                        http?.statusCode in setOf(400, 404) &&
+                            http?.rpcErrorCode !in modernErrorCodes -> beginLegacy()
+                        else -> fail(failure)
+                    }
+                },
+                onSuccess = { response ->
+                    try {
+                        val result = response.optJSONObject("result")
+                            ?: error(response.optJSONObject("error")?.optString("message")
+                                ?: "MCP server/discover response-এ result পাওয়া যায়নি।")
+                        require(result.optString("resultType") == "complete") {
+                            "Modern MCP discovery resultType complete নয়।"
+                        }
+                        val versions = result.optJSONArray("supportedVersions")
+                            ?: error("Modern MCP discovery-এ supportedVersions অনুপস্থিত।")
+                        val supported = (0 until versions.length()).map { versions.optString(it) }.toSet()
+                        if (McpProtocol.MODERN_VERSION !in supported) {
+                            val legacy = listOf("2025-11-25", "2025-06-18", "2025-03-26")
+                                .firstOrNull { it in supported }
+                                ?: error("MCP server-এর supported তালিকায় পরিচিত protocol version নেই।")
+                            beginLegacy(legacy)
+                            return@onSuccess
+                        }
+                        require(result.optJSONObject("capabilities") != null) {
+                            "Modern MCP discovery-এ capabilities অনুপস্থিত।"
+                        }
+                        validateModernCacheHints(result, "server/discover")
+                        protocolVersion = McpProtocol.MODERN_VERSION
+                        serverInfo = result.optJSONObject("_meta")
+                            ?.optJSONObject("io.modelcontextprotocol/serverInfo")
+                            ?.toMap() ?: emptyMap()
+                        fetchPage(null)
+                    } catch (failure: Throwable) {
+                        fail(failure)
+                    }
+                }
+            )
+        }
+    }
+
     private fun negotiateProtocol(): NegotiatedConnection {
         client.selectProtocolVersion(McpProtocol.MODERN_VERSION)
 
