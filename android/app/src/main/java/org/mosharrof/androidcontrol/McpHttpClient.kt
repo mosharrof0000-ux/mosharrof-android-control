@@ -8,6 +8,7 @@ import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
 import java.nio.charset.StandardCharsets
+import java.util.concurrent.Executor
 
 /**
  * HTTPS Streamable HTTP transport for MCP.
@@ -58,8 +59,50 @@ class McpHttpClient(
         }
     }
 
+    /**
+     * Callback-based OAuth request entry point. Token resolution and HTTP work
+     * are both dispatched off the caller thread. A token is resolved for this
+     * request only; it is never retained by this client instance.
+     */
+    fun postAsync(
+        connectorId: String,
+        tokenProvider: McpOAuthAccessTokenProvider,
+        ioExecutor: Executor,
+        request: McpProtocol.Request,
+        toolDefinition: McpProtocol.ToolDefinition? = null,
+        onComplete: (Result<JSONObject>) -> Unit
+    ) {
+        ioExecutor.execute {
+            tokenProvider.resolve(connectorId, endpoint) { tokenResult ->
+                tokenResult.fold(
+                    onSuccess = { token ->
+                        ioExecutor.execute {
+                            val result = runCatching {
+                                postWithBearer(request, toolDefinition, token.value)
+                            }
+                            onComplete(result)
+                        }
+                    },
+                    onFailure = { failure ->
+                        onComplete(Result.failure(failure))
+                    }
+                )
+            }
+        }
+    }
+
+    /** Retains the static/manual-token API for non-OAuth connectors. */
+    fun post(
+        request: McpProtocol.Request,
+        toolDefinition: McpProtocol.ToolDefinition? = null
+    ): JSONObject = postWithBearer(request, toolDefinition, bearerToken)
+
     @Synchronized
-    fun post(request: McpProtocol.Request, toolDefinition: McpProtocol.ToolDefinition? = null): JSONObject {
+    private fun postWithBearer(
+        request: McpProtocol.Request,
+        toolDefinition: McpProtocol.ToolDefinition?,
+        requestBearerToken: String?
+    ): JSONObject {
         require(request.jsonrpc == "2.0")
         require(request.method.matches(Regex("[a-zA-Z0-9/_-]{2,100}")))
         if (request.id == null) {
@@ -109,7 +152,7 @@ class McpHttpClient(
             connection.setRequestProperty("Content-Type", "application/json")
             connection.setRequestProperty("Accept", "application/json, text/event-stream")
             connection.setRequestProperty("MCP-Protocol-Version", protocolVersion)
-            bearerToken?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
+            requestBearerToken?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
             sessionId?.let { connection.setRequestProperty("Mcp-Session-Id", it) }
 
             if (modern) {
