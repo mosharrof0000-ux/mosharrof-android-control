@@ -85,3 +85,9 @@ Dependency inventory is preliminary: Android direct dependencies are DocumentFil
 - Added `cancellationDuringApprovalPreventsMcpExecutionAndContinuation`: cancellation from the approval callback causes cancellation failure, exactly one initial provider request, one approval callback, and zero MCP tool calls.
 - Added `rejectsMalformedProviderHistoryBeforeBuildingContinuation`: a malformed Responses API history item is rejected before continuation request construction.
 - Remaining release blockers are unchanged: UI transition/real-device coverage, OAuth/CIMD, live MCP/provider tests, deployed Worker verification, reproducible dependency locking, full transitive SBOM/license/vulnerability review, independent security review, and explicit merge/install authorization.
+
+
+### OAuth issuer URL validation hardening — 2026-11-11
+- Authorization-server issuer validation now rejects HTTPS issuer identifiers containing query or fragment components, in addition to requiring HTTPS, a host and no user-info.
+- A JVM regression test covers a query-bearing issuer for both metadata URL derivation and metadata validation.
+- This remains a validator-only safeguard; OAuth/CIMD discovery and the PKCE/token lifecycle are not implemented or verified.
