@@ -3,7 +3,7 @@
 ## Goal
 Implement a working, provider-neutral plugin platform. A new AI provider should be onboarded by adding and testing an adapter, not by rewriting plugin definitions, approval policy, Android device-control code, or the plugin runtime.
 
-This is an implementation checklist, not a claim that provider adapters or live integrations already exist.
+This is an implementation checklist. Distinguish implemented source/mock-test paths from live vendor verification; the authoritative current snapshot is docs/CURRENT_HEAD_AUDIT_2026-11-11.md. Earlier dated notes below are historical and are superseded where they conflict with that audit.
 
 ## Two integration directions
 - MOSHARROF → AI provider (outbound): MOSHARROF calls an AI API and translates native tool/function-call responses into the canonical plugin runtime.
@@ -12,7 +12,7 @@ This is an implementation checklist, not a claim that provider adapters or live 
 An outbound API adapter does not automatically make MOSHARROF an MCP server. These directions must be implemented and tested separately.
 
 ## Phase 0 — Baseline and canonical contract
-- [ ] Inventory current AI code, MCP client, relay, connector registry, approval grants, secret storage, UI and tests.
+- [x] Inventory current AI code, MCP client, relay, connector registry, approval grants, secret storage, UI and tests (source inventory recorded in docs/CURRENT_HEAD_AUDIT_2026-11-11.md; live integrations remain separate).
 - [ ] Record provider-specific assumptions. Current AiEngine supports Gemini generateContent text requests and a generic OpenAI-compatible chat-completions format; this is not a complete multi-provider tool-calling layer.
 - [x] Define initial canonical models: ProviderId, ModelId, ProviderConfig, CapabilityProfile, PluginDefinition, CanonicalToolCall and CanonicalToolResult. CanonicalError, stream event and cancellation contracts remain pending.
 - [ ] Define a versioned canonical JSON Schema subset.
@@ -39,12 +39,12 @@ An outbound API adapter does not automatically make MOSHARROF an MCP server. The
 - [x] Add bounded canonical provider tool-call parsing with call-ID preservation and duplicate rejection in the adapters; end-to-end AiEngine integration remains pending.
 - [x] Validate tool name, connector state, schema, argument size/depth and risk before execution through CanonicalToolCallGuard.
 - [x] Add a fail-closed CanonicalToolCallGuard that resolves provider tool names against registered MOSHARROF tools, validates arguments against the registered schema, rejects ambiguous/unknown/disconnected tools, and separates READ_ONLY from approval-required risks. The guard never issues grants or executes tools.
-- [ ] Connect the approval-required decision to a user-facing confirmation UI and issue an exact-argument, single-use grant only after explicit approval for WRITE, EXTERNAL_SIDE_EFFECT and DESTRUCTIVE.
-- [x] Add AiToolCallOrchestrator bridge for guarded execution through an injected connector executor; arbitrary provider-supplied code is never executed. Runtime/UI wiring remains pending.
+- [x] Connect approval-required decisions to the user-facing confirmation callback and issue an exact-argument, single-use grant only after explicit approval for WRITE, EXTERNAL_SIDE_EFFECT and DESTRUCTIVE; exact-head mocked E2E tests cover approved/declined continuations.
+- [x] Add AiToolCallOrchestrator bridge for guarded execution through the exact connected MCP service session; runtime/UI wiring is integrated in source and mock-tested. Arbitrary provider-supplied code is never executed.
 - [x] Add provider-native result translators for Gemini Interactions, OpenAI Responses, xAI Responses and Anthropic Messages. End-to-end continuation state/history orchestration remains pending.
 - [ ] Handle parallel calls with bounded concurrency and separate approval per call.
-- [ ] Add max-turn, max-call, total-time, payload and usage limits.
-- [ ] Add cancellation, timeout, retry and unknown-outcome handling without duplicate side effects.
+- [x] Add bounded continuation rounds, total tool-call limits, request/response/prompt/argument size bounds and cancellation/unknown-outcome handling; provider-specific usage/quota accounting remains pending.
+- [x] Add cancellation, timeout, bounded transport and unknown-outcome handling without automatic POST retries; provider-side reconciliation of uncertain outcomes remains pending.
 - [ ] Add audit events with secrets and sensitive payloads redacted.
 **Gate:** identical mock plugin behavior and approval outcomes across adapters; replay, duplicate, mismatch and timeout tests pass.
 
@@ -81,7 +81,7 @@ An outbound API adapter does not automatically make MOSHARROF an MCP server. The
 **Gate:** a simulated API-version change is handled by updating one adapter without changing canonical plugin definitions or approval logic.
 
 ## Phase 6 — UX, observability and release
-- [ ] Provider management UI: add/edit/disable, model selection, connection test, capability view and credential revocation.
+- [ ] Provider management UI: model/capability display, connection test, credential replace/revoke and explicit active-profile state. Add/select/delete profile flows exist; remaining UX is tracked in the current-head audit.
 - [ ] Unified permission UI showing which provider can invoke which tools and their risk.
 - [ ] Show every tool request, arguments, risk and approval result before sensitive execution.
 - [ ] Add per-provider health, quota/rate-limit state and sanitized errors.
@@ -154,3 +154,17 @@ Do not code five unrelated clients in parallel. Stabilize the common contract fi
 - Worker job `typecheck`: dependency install and type-check succeeded.
 - Debug APK artifact `mosharrof-android-control-debug`, artifact ID `13768837277`, size 2,362,239 bytes; artifact not installed on a physical device.
 - This verifies CI/build for the current PR head. It does not verify live provider API round-trips, real MCP interoperability, or physical Android behavior.
+
+## 2026-11-11 authoritative current implementation status
+
+The source audit at 8713269590dc3a1b9621d1abf66bbe7a15ea8bd0 supersedes older dated entries above where they describe earlier architecture states:
+
+- Integrated in source: AiEngine.askWithMcpApproval selects the active encrypted provider profile and routes through AiProviderRuntime; bounded HTTPS transport, request factory, provider response decoding and bounded continuation are connected.
+- Integrated in source: AiToolCallOrchestrator uses the exact connected McpConnectorService session. Approval-required calls use the Android approval callback and one-time grant path; read-only calls do not receive write grants.
+- Mock-tested provider flows: Gemini Interactions, OpenAI Responses, xAI Responses, Anthropic Messages and Custom OpenAI-compatible. This verifies local translation/continuation contracts only, not vendor API availability, credentials, model capability or live endpoint compatibility.
+- Provider profiles: encrypted per-provider profiles and add/select/delete flows exist. Model/capability display, credential replace/revoke UX and live connection tests remain incomplete.
+- MCP Tasks: task-handle persistence/revalidation and explicit refresh/input/cancel UI exist. There is no background polling. A real server must verify protocol interoperability.
+- Cancellation: active HTTP cancellation and persistent unknown-outcome reminder exist. A reminder does not reveal whether the vendor executed the request.
+- Still not implemented end-to-end: OAuth/CIMD authorization, inbound MOSHARROF MCP server/bridge, Microsoft declarative-agent packaging, physical Android QA, live provider API round-trips and deployed Worker verification.
+
+Current-head exact CI: Android run 42966451646 and Worker run 42966451641 passed at the audited source head. Do not apply that evidence to later source changes; documentation-only commits do not alter the source but still need a current-head CI check for an up-to-date PR gate.
