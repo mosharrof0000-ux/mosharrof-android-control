@@ -104,7 +104,7 @@ jobs:
       - name: Assemble debug APK
         run: gradle -p android --dependency-verification=strict :app:assembleDebug
 
-      - name: Verify APK contains third-party license notices
+      - name: Verify APK packages generated license inventory and declared license text
         run: |
           python3 - <<'PY'
           import zipfile
@@ -123,12 +123,12 @@ jobs:
               notices = archive.read("assets/THIRD_PARTY_NOTICES.md").decode("utf-8")
               upstream = archive.read("assets/UPSTREAM_THIRD_PARTY_NOTICES.txt").decode("utf-8")
               if "Version 2.0" not in license_text or "appauth" not in notices or not upstream.strip():
-                  raise SystemExit("APK license/notice content validation failed")
+                  raise SystemExit("APK license inventory/full-text content validation failed")
           import json
           audit = json.load(open("android/build/reports/license-review/binary-notice-audit.json", encoding="utf-8"))
           if audit["component_count"] == 0 or audit["binary_component_count"] != audit["component_count"] or audit["failures"]:
               raise SystemExit("Binary notice audit did not cover every SBOM component")
-          print(f"APK contains license notices; binary audit covered {audit['binary_component_count']} runtime components.")
+          print(f"APK contains generated license inventory and Apache-2.0 text; inspected {audit['binary_component_count']} runtime components; extracted archive notices for {audit['archive_notice_component_count']}.")
           PY
 
       - name: Upload debug APK
