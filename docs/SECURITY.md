@@ -66,3 +66,12 @@ Until these gates pass, describe remote relay and physical-device behavior as im
 - Source commits: `14c460e97b439ceb420bd2611c5f2f4a7611c7db`, `c76254451b91cf17c18146d33c96fb31a3990ddf`, `6222ebaa78efabb2a62a728709dc4e075af33242`, `99ce8ec7309bc417b4fa05f4948bceffc1eb5205`; test commit `b465c948d47129b6d3df1d77f6b548ad0353e7fc`.
 - Selected patterns found no remaining direct exception-message, logging, stack-trace, raw response-body or obvious authorization-concatenation matches in the newly inspected files after fixes.
 - This does not close a semantic full-repository/history audit or dependency/license, crash-report, runtime-log and deployed-service review. Android CI for the latest source/test commit is pending.
+
+
+## 2026-11-11 authoritative current-head update
+
+The latest exact PR head at this update is `8f0d2bb4a7cd0fd318e70f01cd26eb359c859afd`. The earlier note describing a scan of 22 changed Android files is historical; the later expanded pass covered all 35 tracked Android production Kotlin files with selected patterns. This remains a heuristic scan, not a complete semantic repository/history audit.
+
+Exact-head CI: Android run `42972244593` PASS (unit tests, debug APK assembly, artifact upload); Worker run `42972244607` PASS. Artifact ID `13834056036`, SHA-256 `645aca2aca037d4ae7bbaae51433cfc346a27ed0a043589dd1e504148674e0cb`; CI artifact only, not installed.
+
+Dependency inventory is preliminary: Android direct dependencies are DocumentFile 1.0.1 and AppAuth 0.11.1, plus test-only JUnit 4.13.2 and org.json 20240303. Worker direct devDependencies are workers-types ^5.20261101.1, TypeScript ^5.9.3 and Wrangler ^4.45.0. No package lock/shrinkwrap or Gradle lock/verification metadata is present in the PR changed-file inventory; no complete transitive license/SBOM/vulnerability report is available. Locking and license review remain release blockers.
