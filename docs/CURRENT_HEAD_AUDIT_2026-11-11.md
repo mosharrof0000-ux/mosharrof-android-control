@@ -68,3 +68,12 @@ Some earlier sections in `PLUGIN_SYSTEM_EXECUTION_PLAN.md`, `MULTI_AI_ADAPTER_IM
 - PR #7 merge requires explicit user approval.
 
 **No merge, deployment, live credentialed test, or APK installation was performed for this audit.**
+
+## 2026-11-11 provider profile UX follow-up
+
+After the source audit above, the branch added:
+- Credential-only replacement for an existing encrypted provider profile. Provider/model/endpoint metadata and active selection are preserved; invalid values are rejected before the replacement write.
+- Profile-manager UI for hidden credential replacement, and a per-profile model/API-version/adapter-version capability view. Capability values remain UNKNOWN unless the adapter explicitly reports otherwise; this is not live model discovery or a vendor API test.
+- Regression tests for successful replacement, metadata/active-profile preservation, and rejection of missing profiles/invalid credentials.
+
+Verification for source commit `fad2354c48d96f0f2a2c2e82eb6842a19e328814`: Worker CI run `42968929491` PASS; Android CI run `42968929411` IN PROGRESS at the time this note was written. Unit tests were running; debug APK assembly and artifact upload had not started. No device test or installation.
