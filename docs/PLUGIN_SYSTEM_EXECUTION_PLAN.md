@@ -166,3 +166,13 @@ Dependency/license review is not complete: Worker dependencies still use semver 
 - Exact-head CI: Android run `43051676040` completed successfully. Its job passed committed Gradle lock/checksum verification, Android unit tests, CycloneDX SBOM generation, license inventory generation, debug APK assembly, packaged-license validation, and dependency evidence upload; the OSV scan job also completed successfully. Worker run `43051675862` completed successfully, including `npm ci`, `npm audit --audit-level=high`, CycloneDX SBOM generation, typecheck and dependency evidence upload; its OSV scan job completed successfully.
 - CI evidence establishes build/test and scanner execution only. Do not describe this as a complete vulnerability, legal-license, live OAuth, or supply-chain clearance without reviewing the generated evidence artifacts and findings.
 - Remaining external gates: real authorization-server/CIMD login and token refresh/revocation; real MCP server interoperability; Android Keystore and AppAuth browser callback behavior on a physical device; deployed Worker round-trip; independent semantic security review; and explicit approval before PR merge, deployment, or APK installation.
+
+
+## Latest exact-head status — 2026-11-11 (`a4da4a3f2e57ab03e451cdf0c12fb57b519c0af1`)
+
+- PR #7 remains open/unmerged.
+- Android CI run `43055759358`: SUCCESS, including strict Gradle dependency verification, unit tests, CycloneDX SBOM, runtime license inventory, APK assembly and packaged license notice validation. Android OSV scan checked 167 app lock packages, 192 buildscript lock packages and 409 Gradle verification metadata packages; log reports no issues found.
+- Worker CI run `43055759511`: SUCCESS.
+- CI debug APK artifact `13870753793` downloaded and archive inspected; APK SHA-256 `301ecabe62cdd3501d3f10e611c4e00195ec07fa6ff89996dcf240d0ca120f2e`. Not installed and not physical-device tested.
+- OAuth implementation has source-level RFC 9207 issuer binding in the callback path (pending issuer/capability binding and fail-closed validation); this remains automated/source evidence, not live authorization-server interoperability proof.
+- Remaining gates: inspect dependency/license evidence beyond runtime dependencies; live OAuth/CIMD authorization, refresh/rotation and revocation; real MCP interoperability; Android Keystore/AppAuth callback on physical device; deployed Worker round-trip; independent security review. No merge, deployment or install.
