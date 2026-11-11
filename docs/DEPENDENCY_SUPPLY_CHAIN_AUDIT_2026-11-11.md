@@ -145,3 +145,9 @@ Both workflows completed successfully on the same exact commit:
 The Android and Worker lock/verification outputs remain CI artifacts rather than committed, enforced repository files. Android Gradle verification signatures are not enabled, and the generated hashes need independent provenance review. The SBOMs now provide both Android and Worker inventories, but LGPL-2.1 Android components and Worker LGPL/compound-license entries require a component-level distribution/notice review. No full vulnerability or license clearance is claimed.
 
 No deployment, PR merge, APK installation, live OAuth operation or physical Android QA was performed. The APK artifact is build evidence only, not approval to install it.
+
+
+### Component-level LGPL inventory from the latest SBOMs
+
+- Android SBOM LGPL-2.1-only components: `net.java.dev.jna:jna:5.6.0`, `net.java.dev.jna:jna-platform:5.6.0`, and `org.jetbrains.intellij.deps:trove4j:1.0.20200330`. Confirm whether these are packaged into the distributable APK or appear only in build/tooling dependency scope; the SBOM alone does not establish shipping status.
+- Worker SBOM LGPL-related components: `@img/sharp-libvips-linux-x64@1.3.4`, `@img/sharp-libvips-linuxmusl-x64@1.3.4`, and `@img/sharp-wasm32@0.35.5` (compound expression `Apache-2.0 AND LGPL-3.0-or-later AND MIT`). Confirm target deployment/runtime platform and whether each optional package is actually shipped or used.
