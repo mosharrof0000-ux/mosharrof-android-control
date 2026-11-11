@@ -1064,4 +1064,112 @@ class McpConnectorServiceRegressionTest {
         assertTrue(server.methods.containsAll(listOf("tasks/get", "tasks/update", "tasks/cancel")))
     }
 
+
+    @Test
+    fun asyncConnectResolvesTokenForEveryNegotiationAndPaginationRequest() {
+        registerConnector()
+        val server = FakeServer(paginatedTools = true)
+        val connectorService = service(server)
+        val resolutions = AtomicInteger(0)
+        val resolver = object : McpAccessTokenResolver {
+            override fun resolve(
+                connectorId: String,
+                expectedEndpoint: String,
+                onComplete: (Result<McpOAuthTokenRefresher.FreshBearerToken>) -> Unit
+            ) {
+                assertEquals("test.mcp", connectorId)
+                assertEquals("https://example.com/mcp", expectedEndpoint)
+                resolutions.incrementAndGet()
+                onComplete(Result.success(
+                    McpOAuthTokenRefresher.FreshBearerToken("fresh-per-request-token")
+                ))
+            }
+        }
+        var result: Result<McpConnectorService.ConnectionInfo>? = null
+
+        connectorService.connectAsync(
+            connectorId = "test.mcp",
+            tokenProvider = resolver,
+            ioExecutor = java.util.concurrent.Executor { it.run() }
+        ) { result = it }
+
+        assertNotNull(result)
+        assertTrue(result!!.isSuccess)
+        assertEquals(2, result!!.getOrThrow().discoveredTools)
+        assertEquals(3, resolutions.get())
+        assertEquals(
+            listOf("server/discover", "tools/list", "tools/list"),
+            server.methods
+        )
+        assertEquals(listOf(null, "next"), server.toolListCursors)
+        assertEquals(setOf("echo", "second"),
+            ConnectorRegistry.toolsFor("test.mcp").map { it.name }.toSet())
+        assertEquals(setOf("test.mcp"), connectorService.connectedConnectorIds())
+    }
+
+    @Test
+    fun asyncConnectUsesFreshTokensForLegacyInitializeAndNotification() {
+        registerConnector()
+        val server = FakeServer(legacy = true)
+        val connectorService = service(server)
+        val resolutions = AtomicInteger(0)
+        val resolver = object : McpAccessTokenResolver {
+            override fun resolve(
+                connectorId: String,
+                expectedEndpoint: String,
+                onComplete: (Result<McpOAuthTokenRefresher.FreshBearerToken>) -> Unit
+            ) {
+                resolutions.incrementAndGet()
+                onComplete(Result.success(
+                    McpOAuthTokenRefresher.FreshBearerToken("legacy-fresh-token")
+                ))
+            }
+        }
+        var result: Result<McpConnectorService.ConnectionInfo>? = null
+
+        connectorService.connectAsync(
+            "test.mcp",
+            resolver,
+            java.util.concurrent.Executor { it.run() }
+        ) { result = it }
+
+        assertNotNull(result)
+        assertTrue(result!!.isSuccess)
+        assertEquals(4, resolutions.get())
+        assertEquals(
+            listOf("server/discover", "initialize", "notifications/initialized", "tools/list"),
+            server.methods
+        )
+    }
+
+    @Test
+    fun asyncConnectDoesNotExposePartialToolsWhenLaterPageFails() {
+        registerConnector()
+        val server = FakeServer(paginatedTools = true, invalidSecondTool = true)
+        val connectorService = service(server)
+        val resolver = object : McpAccessTokenResolver {
+            override fun resolve(
+                connectorId: String,
+                expectedEndpoint: String,
+                onComplete: (Result<McpOAuthTokenRefresher.FreshBearerToken>) -> Unit
+            ) {
+                onComplete(Result.success(
+                    McpOAuthTokenRefresher.FreshBearerToken("page-failure-token")
+                ))
+            }
+        }
+        var result: Result<McpConnectorService.ConnectionInfo>? = null
+
+        connectorService.connectAsync(
+            "test.mcp",
+            resolver,
+            java.util.concurrent.Executor { it.run() }
+        ) { result = it }
+
+        assertNotNull(result)
+        assertTrue(result!!.isFailure)
+        assertTrue(ConnectorRegistry.toolsFor("test.mcp").isEmpty())
+        assertTrue(connectorService.connectedConnectorIds().isEmpty())
+        assertEquals(2, server.toolListCursors.size)
+    }
 }
