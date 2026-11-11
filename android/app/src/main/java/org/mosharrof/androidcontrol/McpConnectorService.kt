@@ -578,19 +578,20 @@ class McpConnectorService(
         maxWaitMs: Long = 60_000L,
         maxPolls: Int = 20,
         sleeper: (Long) -> Unit = { Thread.sleep(it) },
-        shouldCancel: () -> Boolean = { false }
+        shouldCancel: () -> Boolean = { false },
+        clockNanos: () -> Long = { System.nanoTime() }
     ): Result<McpTaskProtocol.Snapshot> = runCatching {
         require(maxWaitMs in 1L..300_000L) { "Task polling সময়সীমা ১–৩০০ সেকেন্ড হতে হবে।" }
         require(maxPolls in 1..100) { "Task polling সংখ্যা ১–১০০ হতে হবে।" }
         if (shouldCancel()) throw CancellationException("MCP Task polling বাতিল করা হয়েছে।")
-        val startedAt = System.nanoTime()
+        val startedAt = clockNanos()
         var snapshot = getTask(connectorId, taskId).getOrThrow()
         var polls = 1
         while (!snapshot.isTerminal &&
             snapshot.status != McpTaskProtocol.Status.INPUT_REQUIRED &&
             polls < maxPolls
         ) {
-            val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000L
+            val elapsedMs = (clockNanos() - startedAt) / 1_000_000L
             val remainingMs = maxWaitMs - elapsedMs
             if (remainingMs <= 0L) break
             if (shouldCancel()) throw CancellationException("MCP Task polling বাতিল করা হয়েছে।")
@@ -599,7 +600,7 @@ class McpConnectorService(
 val delayMs = minOf(snapshot.pollIntervalMs, remainingMs)
             sleeper(delayMs)
             if (shouldCancel()) throw CancellationException("MCP Task polling বাতিল করা হয়েছে।")
-            if ((System.nanoTime() - startedAt) / 1_000_000L >= maxWaitMs) break
+            if ((clockNanos() - startedAt) / 1_000_000L >= maxWaitMs) break
             snapshot = getTask(connectorId, taskId).getOrThrow()
             polls++
         }
