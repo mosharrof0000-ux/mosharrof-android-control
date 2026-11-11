@@ -310,4 +310,79 @@ class McpHttpClientTransportTest {
         assertFalse(McpHttpClient.isValidBearerToken("token\\nInjected: yes"))
     }
 
+    @Test
+    fun asyncRequestResolvesTokenBeforeSendingAndDoesNotRetainIt() {
+        val fake = FakeConnection(
+            URL("https://example.com/mcp"),
+            200,
+            responseBody = """{"jsonrpc":"2.0","id":"transport-test-1","result":{"resultType":"complete"}}"""
+        )
+        val resolver = object : McpAccessTokenResolver {
+            override fun resolve(
+                connectorId: String,
+                expectedEndpoint: String,
+                onComplete: (Result<McpOAuthTokenRefresher.FreshBearerToken>) -> Unit
+            ) {
+                assertEquals("connector-1", connectorId)
+                assertEquals("https://example.com/mcp", expectedEndpoint)
+                onComplete(Result.success(
+                    McpOAuthTokenRefresher.FreshBearerToken("one-request-token")
+                ))
+            }
+        }
+        val directExecutor = java.util.concurrent.Executor { it.run() }
+        val client = McpHttpClient(
+            endpoint = "https://example.com/mcp",
+            connectionFactory = { fake }
+        )
+        var completed: Result<org.json.JSONObject>? = null
+
+        client.postAsync(
+            connectorId = "connector-1",
+            tokenProvider = resolver,
+            ioExecutor = directExecutor,
+            request = request()
+        ) { completed = it }
+
+        assertTrue(completed?.isSuccess == true)
+        assertEquals(
+            "Bearer one-request-token",
+            fake.getRequestProperty("Authorization")
+        )
+        assertTrue(fake.wasDisconnected)
+    }
+
+    @Test
+    fun asyncRequestDoesNotOpenConnectionWhenTokenResolutionFails() {
+        var connectionCreated = false
+        val resolver = object : McpAccessTokenResolver {
+            override fun resolve(
+                connectorId: String,
+                expectedEndpoint: String,
+                onComplete: (Result<McpOAuthTokenRefresher.FreshBearerToken>) -> Unit
+            ) {
+                onComplete(Result.failure(IllegalStateException("safe refresh failure")))
+            }
+        }
+        val directExecutor = java.util.concurrent.Executor { it.run() }
+        val client = McpHttpClient(
+            endpoint = "https://example.com/mcp",
+            connectionFactory = {
+                connectionCreated = true
+                FakeConnection(it, 200)
+            }
+        )
+        var completed: Result<org.json.JSONObject>? = null
+
+        client.postAsync(
+            connectorId = "connector-1",
+            tokenProvider = resolver,
+            ioExecutor = directExecutor,
+            request = request()
+        ) { completed = it }
+
+        assertTrue(completed?.isFailure == true)
+        assertFalse(connectionCreated)
+    }
+
 }
