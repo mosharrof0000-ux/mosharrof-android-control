@@ -103,3 +103,27 @@ Reviewed the following 12 changed files at the exact PR head: `AiProviderProfile
 - Relay URL validation permits a caller-configured HTTPS host and optional port/path; this is intentional for configurable relay endpoints, but trust still depends on the user configuring the correct server. No domain pinning is implemented or claimed.
 - This is a targeted review of 12 high-risk changed files, not a complete audit of all 65 PR files, every tracked file, Git history, dependencies, runtime logs, crash reporting, or deployed services. Whole-repository/history review remains OPEN.
 - No source code was changed as part of this audit pass. This review does not replace CI, live endpoint testing, Android runtime testing, or independent security review.
+
+
+## 2026-11-11 PR-wide error-surface scan and redaction follow-up
+
+**Reviewed PR head before redaction:** `552d496ae3db21c1b429196e3e9c6577a32b72ea`. A patch-level heuristic scan covered all 65 changed files and classified added lines for logging calls, credential-shaped values, exception-message surfaces, HTTP transport configuration and sensitive preference use. This is a triage scan, not proof that every possible leak is absent.
+
+### Changes made
+- Added `safeUiErrorMessage(Throwable)`, which returns a fixed generic message and never includes the throwable message, class name, stack trace, URL, server response or credential.
+- Replaced raw exception-message interpolation across `MainActivity` and `PluginDashboardPage` status surfaces with the redaction helper.
+- Changed AI tool execution error content sent back into the provider continuation to a fixed redacted failure string instead of forwarding arbitrary exception text from MCP/server/library failures.
+- Added regression coverage asserting that an exception containing a bearer-like secret is not reflected in the UI-safe message, and updated the orchestrator failure test to assert the fixed redacted result.
+- Post-change source scan of the two UI files and orchestrator found no remaining direct `.message` / `localizedMessage` / `exceptionOrNull()?.message` surfaces.
+
+Commits:
+- `e3bd5542de328657e909196e3e9c6577a32b72ea` — orchestrator/provider error redaction
+- `ea5ecbc4b40892b3284e8a5c249a879762fc46e7` and `8ac81f14f4fe9030b2de9ec2ce2e3d8cb5a5cd37` — initial Android UI redaction
+- `b09ab81f8f2557968364dba40467680e212ce77f` — redaction regression test
+- `8caf5dfe1fde0d2f268e42cb30b3a4c231d336a8` and `397384a2b1b9a7546e107adba4b526fe33539981` — removed remaining raw Termux/MCP connection exception text
+
+### Verification status
+- Worker CI run `42970314846`: PASS.
+- Android CI run `42970314972`: in progress at documentation update; Android unit tests, APK assembly and artifact upload are not yet claimed as passed.
+- The UI helper test is JVM test coverage only. No Android device, real server, live provider or deployed Worker test was performed.
+- Whole-repository source and Git-history audit, dependency/license audit, runtime log/crash-report review and independent security review remain OPEN.
