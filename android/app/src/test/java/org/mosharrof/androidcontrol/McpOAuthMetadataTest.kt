@@ -171,5 +171,7 @@ class McpOAuthMetadataTest {
         assertTrue(McpOAuthMetadata.validateAuthorizationIssuer(issuer, issuer))
         assertFalse(McpOAuthMetadata.validateAuthorizationIssuer(null, issuer))
         assertFalse(McpOAuthMetadata.validateAuthorizationIssuer("https://evil.example", issuer))
+        val queryIssuer = issuer + "?tenant=unexpected"
+        assertFalse(McpOAuthMetadata.validateAuthorizationIssuer(queryIssuer, queryIssuer))
     }
 }
