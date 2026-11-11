@@ -147,3 +147,13 @@ The historical implementation logs above are retained as a record of what was tr
 At PR head `8f0d2bb4a7cd0fd318e70f01cd26eb359c859afd`, provider capability display and credential replacement/revoke UX are implemented in source. Capability values marked UNKNOWN remain unverified; this is not live vendor discovery. Error redaction includes AI provider tool errors, Android UI status surfaces, Termux bridge, and the additional diagnostic/permission/module lifecycle exception paths, with regression tests. Android CI run `42972244593` and Worker CI run `42972244607` both passed on this exact head. The current CI artifact is ID `13834056036`, SHA-256 `645aca2aca037d4ae7bbaae51433cfc346a27ed0a043589dd1e504148674e0cb`; not installed.
 
 Dependency/license review is not complete: Worker dependencies still use semver ranges and no lockfile is in the PR changed-file inventory; no full transitive SBOM/license/vulnerability evidence exists. Physical Android QA, live providers/MCP, OAuth/CIMD, deployed Worker, independent security review and merge/install approvals remain pending.
+
+
+## Latest exact-head verification — 2026-11-11 (`9ec21e6ad82d95f2f060da4481ab9b6de895968c`)
+
+- Android workflow run `42973156641` (run #332): Android unit tests PASS; Debug APK assembly PASS; artifact upload PASS. Job cleanup was still running when inspected; all three build/test/upload steps completed successfully.
+- Worker workflow run `42973156667` (run #288): PASS.
+- Artifact `mosharrof-android-control-debug`, ID `13833758820`, size `2,415,482` bytes, SHA-256 `2c2acc4fcfada40c741e85e8f5cb2cf5cb3a94145dcdd8531596fc40e951e59d`. CI artifact only; not installed or physically tested.
+- Added `cancellationDuringApprovalPreventsMcpExecutionAndContinuation`: cancellation from the approval callback causes cancellation failure, exactly one initial provider request, one approval callback, and zero MCP tool calls.
+- Added `rejectsMalformedProviderHistoryBeforeBuildingContinuation`: a malformed Responses API history item is rejected before continuation request construction.
+- Remaining release blockers are unchanged: UI transition/real-device coverage, OAuth/CIMD, live MCP/provider tests, deployed Worker verification, reproducible dependency locking, full transitive SBOM/license/vulnerability review, independent security review, and explicit merge/install authorization.
