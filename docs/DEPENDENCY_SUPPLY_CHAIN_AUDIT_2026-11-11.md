@@ -398,3 +398,27 @@ The official OSV-Scanner documentation lists Gradle lockfiles, Gradle verificati
 - The Netty version change is provisional until the Android run completes and generated lockfile/dependency paths prove all app subproject Netty artifacts resolve to `4.1.140.Final`, with unit tests, APK assembly, SBOM and OSV scan successful. If any module is unavailable or incompatible, revert or narrow the rule rather than treating a forced version as a verified fix.
 - Guava 33.8.0 is now available upstream; the official Google release notes identify 33.7.2 as the fix for CVE-2026-102554 and 33.8.0 as a subsequent release. Do not apply a Guava constraint until current dependency paths establish which configurations and artifact variants require the upgrade.
 - PR #7 remains open/unmerged. No APK installation, deployment or physical-device QA performed.
+
+
+## Netty + Guava alignment — exact-head verification — 2026-11-11
+
+**Verified source head:** `b27f7525425abb88a88e39caeb0a28e6f15ada5b`
+
+- Android CI run `43027530526`: **SUCCESS**. Dependency lock/verification generation, dependency-path capture, Android unit tests, CycloneDX SBOM, debug APK assembly and artifact uploads all passed. OSV scan completed successfully.
+- Worker CI run `43027530224`: **SUCCESS**. Exact locked npm install, audit, CycloneDX SBOM, typecheck/tests, evidence upload and OSV scan all passed.
+- Android dependency evidence artifact `13858371061`, archive SHA-256 `ba99ed4001aa19a3b8015091ff5ec34684b47c9e8dfd4fe4b83a951c5dcf35ea`.
+- Android OSV SARIF artifact `13857797312`, archive SHA-256 `21c36cb6d9e1ad0a46cfb76dbc1b289d3dbd96fe3a3f0a39958e1d6a88120d34`; extracted `results.sarif` SHA-256 `2958bf4729a836c90af44c4f35603195bd7e5a21fb216914224490fe755be321`.
+- Debug APK CI artifact `13857608511`, archive SHA-256 `ca0d105ae3b2db69ca3975d87cd31dafde239904dd37e97f3461de6a4763fe44`. CI artifact only; not installed or physically tested.
+- Resolved dependency evidence confirms Android app/test graph Guava is `33.8.0-android`; root Gradle build-environment Guava is `33.8.0-jre`. The app CycloneDX BOM contains Netty modules at `4.1.140.Final`; app and root dependency-path reports show older requested Netty versions redirected to `4.1.140.Final`.
+- The exact-head OSV SARIF contains 18 result records across 15 unique advisory IDs. It contains **no Netty or Guava advisory records**, confirming those two targeted alignment changes for this scan.
+- Remaining findings are not cleared: JDOM2 2.0.6 (CVE-2021-33813); jose4j 0.9.5 (CVE-2024-29371); Commons Compress 1.21 (CVE-2024-26308, CVE-2024-25710); Bouncy Castle 1.79 (CVE-2025-14813, CVE-2026-8763, CVE-2026-0636, CVE-2026-5598, CVE-2026-13506, CVE-2026-5588); protobuf-java/protobuf-kotlin 3.24.4 (CVE-2024-7254); Jackson Core/Databind 2.22.2 (CVE-2026-89407, CVE-2026-89425, CVE-2026-91776, CVE-2026-91777). SARIF records can repeat one advisory across lockfile and verification metadata; 18 records are not 18 distinct CVEs.
+- Next targeted change: align Jackson modules in root plugin/buildscript and subproject configurations to 2.22.4. The Jackson release notes list 2.22.3 fixes for CVE-2026-91776 and CVE-2026-91777, and 2.22.4 includes subsequent security hardening; the scan must verify the exact resolved versions and advisory disappearance. Source: https://github.com/FasterXML/jackson-databind/blob/3.x/release-notes/VERSION-2.x ; https://issues.apache.org/jira/browse/KAFKA-21157.
+- Gate 16 remains **Partial**. This exact-head evidence verifies the targeted Netty and Guava alignment only; it does not close remaining build/tool findings, committed-lockfile policy, checksum/provenance validation or license/notice review.
+- PR #7 remains open/unmerged. No merge, deployment, APK installation, live OAuth/provider operation or physical Android QA was performed.
+
+## Jackson alignment — change committed, CI verification pending — 2026-11-11
+
+- Commit `c92be1e4f6711b79baa285178a19cc86d4670d6d` adds Jackson alignment to `2.22.4` in root buildscript classpath and Android subproject dependency configurations.
+- This targets the Jackson 2.22.2 findings in the exact-head SARIF above. Official Jackson release notes document the 2.22.3 fixes for CVE-2026-91776 and CVE-2026-91777; Apache Kafka's resolved issue record also lists CVE-2026-89407 and CVE-2026-89425 as fixed by 2.22.3. Version 2.22.4 is selected as the later patch release.
+- **Verification pending:** do not claim the Jackson findings are cleared until an Android CI run on this exact commit succeeds and regenerated dependency evidence plus OSV SARIF show Jackson modules at the intended compatible version and the targeted advisory records absent.
+- PR #7 remains open/unmerged. No merge, deployment, APK installation or physical-device QA performed.
