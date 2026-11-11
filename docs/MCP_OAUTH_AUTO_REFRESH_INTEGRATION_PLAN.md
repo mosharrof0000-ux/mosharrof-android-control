@@ -7,9 +7,9 @@ Status: implementation and mocked regression coverage are present for per-reques
 - `McpOAuthTokenRefresher.withFreshToken(...)` is callback-based and persists refreshed AppAuth state through the encrypted `McpOAuthAuthStateStore` before exposing an in-memory Bearer token.
 - Refresh attempts are serialized per connector; duplicate in-flight attempts fail safely.
 - `McpOAuthAccessTokenProvider` now verifies the registered MCP connector, exact endpoint, encrypted AppAuth state, and exact RFC 8707 resource binding before requesting a fresh token. It rejects invocation from the Android main thread.\n- `McpHttpClient.postAsync(...)` now resolves a token per request on an IO executor and only then sends the HTTP request; it does not retain the OAuth token on the client. The legacy `post(...)` path remains for static/manual-token connectors. Per-request Bearer values are checked for header injection.
-- `McpConnectorService` is synchronous and calls `client.post(...)` from connection negotiation, paginated `tools/list`, tool calls, and task get/update/cancel operations.
-- UI entry points currently dispatch service work to the supplied worker `Executor`. This avoids main-thread network I/O but does not make token refresh happen before each request.
-- MainActivity performs one refresh after OAuth token exchange and uses that token to create the initial MCP client. This is not a per-request refresh guarantee.
+- `McpConnectorService` retains synchronous compatibility methods for manual-token connectors, and also exposes async OAuth variants for connection negotiation, initialized notification, paginated `tools/list`, tool calls, and task get/update/cancel. OAuth-created clients set `allowSynchronousRequests=false`, so accidental calls into the synchronous methods fail before network I/O.
+- OAuth UI entry points now pass `McpOAuthAccessTokenProvider` and the worker `Executor` into the async service methods. The resolver rejects main-thread entry, validates the exact registered connector endpoint and RFC 8707 resource binding, and resolves from encrypted AppAuth state for each request.
+- MainActivity persists the authorization-code/PKCE token response, then constructs an OAuth-only client without a static Bearer token and calls `connectAsync`; every handshake and discovery request resolves a token independently. Later dashboard tool/task operations also use async per-request resolution.
 
 ## Exact source call-site audit (branch head before this audit update)
 
