@@ -5,6 +5,18 @@ import android.os.Looper
 import net.openid.appauth.AuthorizationService
 
 /**
+ * Resolves a short-lived bearer credential for one MCP HTTP request.
+ * Implementations must never persist the resolved token outside encrypted AuthState.
+ */
+internal interface McpAccessTokenResolver {
+    fun resolve(
+        connectorId: String,
+        expectedEndpoint: String,
+        onComplete: (Result<McpOAuthTokenRefresher.FreshBearerToken>) -> Unit
+    )
+}
+
+/**
  * Resolves OAuth credentials for one registered MCP endpoint.
  *
  * This is the only supported bridge from a connector identity to the encrypted
