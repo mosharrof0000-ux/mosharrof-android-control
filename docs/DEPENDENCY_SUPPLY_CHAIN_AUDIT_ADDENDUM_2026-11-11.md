@@ -53,3 +53,12 @@
 - Verification metadata covers 745 artifact entries with SHA-256 checksums and zero PGP signature entries; `verify-signatures=false`. Strict checksum verification is proven, but independent publisher-signature/provenance verification is not.
 - Debug APK artifact `13867945154` is CI evidence only and has not been installed. PR #7 remains open/unmerged; no deployment, live OAuth/provider operation or physical Android QA was performed.
 - Gate 16 remains **Partial** pending authoritative license/notice review (including missing javax.annotation license and LGPL obligations), checksum provenance/signature policy, and final release APK provenance. Do not promote overall Gate completion based on clean OSV output alone.
+
+
+## License metadata follow-up — 2026-11-11
+
+- Investigated the SBOM's missing license field for `javax.annotation:javax.annotation-api:1.3.2`. Maven Central metadata identifies the upstream license as **CDDL + GPLv2 with Classpath Exception**; upstream project POM and license source: `https://github.com/javaee/javax.annotation/blob/master/pom.xml` and `https://github.com/javaee/javax.annotation/blob/master/LICENSE`.
+- This is a metadata gap in the CycloneDX SBOM, not evidence that the component has no license. Its path in the app dependency report is through Android tooling / gRPC-related dependencies; distribution applicability and notices still require review.
+- The SBOM also lists JNA 5.6.0 and jna-platform 5.6.0 with LGPL-2.1-only and Apache-2.0 dual-license entries, JUnit 4.13.2 under EPL-1.0, and kxml2 2.3.0 with BSD-style / Public Domain notices. Confirm which license option applies to each artifact and include required notices/source-offer obligations if distributing applicable binaries.
+- Source for javax annotation license metadata: `https://central.sonatype.com/artifact/javax.annotation/javax.annotation-api`; upstream POM/license above. This is preliminary engineering triage, not legal advice or a completed legal review.
+- Gate 16 remains Partial until a distributable NOTICE/license bundle and obligations review are completed.
