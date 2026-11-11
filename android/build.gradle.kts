@@ -12,7 +12,9 @@ buildscript {
                 useVersion("33.8.0-jre")
             }
             if (requested.group.startsWith("com.fasterxml.jackson")) {
-                useVersion("2.22.4")
+                // jackson-annotations uses the 2.22 line without a patch suffix;
+                // the other Jackson 2.22 modules use patch versions such as 2.22.4.
+                useVersion(if (requested.name == "jackson-annotations") "2.22" else "2.22.4")
             }
         }
     }
@@ -48,7 +50,9 @@ subprojects {
                 useVersion("33.8.0-android")
             }
             if (requested.group.startsWith("com.fasterxml.jackson")) {
-                useVersion("2.22.4")
+                // jackson-annotations uses the 2.22 line without a patch suffix;
+                // the other Jackson 2.22 modules use patch versions such as 2.22.4.
+                useVersion(if (requested.name == "jackson-annotations") "2.22" else "2.22.4")
             }
         }
     }
