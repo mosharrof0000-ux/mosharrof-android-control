@@ -29,6 +29,7 @@ class McpOAuthPendingRequestStoreTest {
         assertEquals(first, second)
         assertFalse(first.contains(connectorId))
         assertTrue(first.matches(Regex("oauth\\.iss\\.[0-9a-f]{64}")))
+        assertTrue(first.length <= 80)
         assertNotEquals(McpOAuthPendingRequestStore.storageId(connectorId), first)
     }
 
