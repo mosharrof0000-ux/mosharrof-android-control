@@ -131,6 +131,9 @@ object AiEngine {
     fun providerProfiles(context: Context): List<AiProviderProfileSummary> =
         AiProviderProfileStore.list(context)
 
+    fun replaceProviderCredential(context: Context, id: String, apiKey: String): AiProviderProfileSummary =
+        AiProviderProfileStore.replaceCredential(context, id, apiKey)
+
     fun setActiveProviderProfile(context: Context, id: String) =
         AiProviderProfileStore.setActive(context, id)
 
