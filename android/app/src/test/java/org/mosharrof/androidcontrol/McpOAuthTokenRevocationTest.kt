@@ -90,4 +90,70 @@ class McpOAuthTokenRevocationTest {
             ) { _, _, _ -> 200 }.isFailure
         )
     }
+
+    @Test
+    fun rejectsEndpointUserInfoAndFragmentBeforeNetworkCall() {
+        val endpoints = listOf(
+            "https://user:password@auth.example.com/revoke",
+            "https://auth.example.com/revoke#fragment"
+        )
+        endpoints.forEach { endpoint ->
+            var called = false
+            val result = McpOAuthTokenRevocation.revoke(
+                endpoint,
+                "https://client.example.com/metadata",
+                "opaque-token"
+            ) { _, _, _ ->
+                called = true
+                200
+            }
+            assertTrue(result.isFailure)
+            assertFalse(called)
+        }
+    }
+
+    @Test
+    fun rejectsBlankAndOversizedClientOrTokenBeforeNetworkCall() {
+        val invalidInputs = listOf(
+            Triple("https://auth.example.com/revoke", "", "opaque-token"),
+            Triple("https://auth.example.com/revoke", "x".repeat(4_097), "opaque-token"),
+            Triple("https://auth.example.com/revoke", "https://client.example.com/metadata", "")
+        )
+        invalidInputs.forEach { (endpoint, clientId, token) ->
+            var called = false
+            val result = McpOAuthTokenRevocation.revoke(
+                endpoint,
+                clientId,
+                token
+            ) { _, _, _ ->
+                called = true
+                200
+            }
+            assertTrue(result.isFailure)
+            assertFalse(called)
+        }
+    }
+
+    @Test
+    fun acceptsAccessTokenHintAndEncodesClientAndTokenFields() {
+        val token = "access token/with+reserved"
+        var capturedBody: String? = null
+        val result = McpOAuthTokenRevocation.revoke(
+            revocationEndpoint = "https://auth.example.com/revoke",
+            clientId = "https://client.example.com/metadata",
+            token = token,
+            tokenTypeHint = "access_token"
+        ) { _, body, _ ->
+            capturedBody = body.toString(Charsets.UTF_8)
+            200
+        }
+        assertTrue(result.isSuccess)
+        val fields = capturedBody!!.split("&").associate {
+            val pair = it.split("=", limit = 2)
+            URLDecoder.decode(pair[0], "UTF-8") to URLDecoder.decode(pair[1], "UTF-8")
+        }
+        assertEquals(token, fields["token"])
+        assertEquals("access_token", fields["token_type_hint"])
+    }
+
 }
