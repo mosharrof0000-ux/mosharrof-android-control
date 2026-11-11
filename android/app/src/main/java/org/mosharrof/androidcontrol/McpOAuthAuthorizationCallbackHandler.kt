@@ -14,16 +14,15 @@ import net.openid.appauth.TokenRequest
  */
 internal object McpOAuthAuthorizationCallbackHandler {
 
-    fun createValidatedTokenRequest(
+    fun validateAuthorizationResponse(
         callbackIntent: Intent?,
         pendingRequest: AuthorizationRequest?
-    ): Result<TokenRequest> = runCatching {
+    ): Result<AuthorizationResponse> = runCatching {
         requireNotNull(callbackIntent) { "OAuth callback অনুপস্থিত।" }
         val originalRequest = requireNotNull(pendingRequest) {
             "OAuth pending request পাওয়া যায়নি; callback প্রত্যাখ্যান করা হয়েছে।"
         }
 
-        // AppAuth encodes authorization errors separately from successful responses.
         require(AuthorizationException.fromIntent(callbackIntent) == null) {
             "OAuth authorization ব্যর্থ হয়েছে বা ব্যবহারকারী বাতিল করেছেন।"
         }
@@ -41,6 +40,16 @@ internal object McpOAuthAuthorizationCallbackHandler {
             codeChallengeMethod = originalRequest.codeVerifierChallengeMethod
         ).getOrThrow()
 
+        response
+    }
+
+    fun createValidatedTokenRequest(
+        callbackIntent: Intent?,
+        pendingRequest: AuthorizationRequest?
+    ): Result<TokenRequest> = validateAuthorizationResponse(
+        callbackIntent,
+        pendingRequest
+    ).map { response ->
         // AppAuth carries the original PKCE verifier into this token exchange request.
         response.createTokenExchangeRequest()
     }
