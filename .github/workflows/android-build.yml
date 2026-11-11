@@ -128,13 +128,17 @@ jobs:
               license_text = archive.read("assets/licenses/Apache-2.0.txt").decode("utf-8")
               notices = archive.read("assets/THIRD_PARTY_NOTICES.md").decode("utf-8")
               upstream = archive.read("assets/UPSTREAM_THIRD_PARTY_NOTICES.txt").decode("utf-8")
-              if "Version 2.0" not in license_text or "appauth" not in notices or not upstream.strip():
+              pom_attributions = archive.read("assets/POM_THIRD_PARTY_ATTRIBUTIONS.txt").decode("utf-8")
+              if "Version 2.0" not in license_text or "appauth" not in notices or not upstream.strip() or not pom_attributions.strip():
                   raise SystemExit("APK license inventory/full-text content validation failed")
           import json
           audit = json.load(open("android/build/reports/license-review/binary-notice-audit.json", encoding="utf-8"))
           if audit["component_count"] == 0 or audit["binary_component_count"] != audit["component_count"] or audit["failures"]:
               raise SystemExit("Binary notice audit did not cover every SBOM component")
-          print(f"APK contains generated license inventory and Apache-2.0 text; inspected {audit['binary_component_count']} runtime components; extracted archive notices for {audit['archive_notice_component_count']}.")
+          metadata = json.load(open("android/build/reports/license-review/maven-metadata-audit.json", encoding="utf-8"))
+          if metadata["pom_component_count"] != metadata["component_count"] or metadata["license_match_count"] != metadata["component_count"] or metadata["failures"]:
+              raise SystemExit("Maven POM license metadata audit did not verify every SBOM component")
+          print("APK contains license inventory and POM metadata for " + str(metadata["pom_component_count"]) + " runtime components.")
           PY
 
       - name: Upload debug APK
