@@ -28,6 +28,8 @@ class BinaryNoticeAuditTest(unittest.TestCase):
             root=Path(tmp); sbom, artifacts=self.fixture(root, outer_notice=False, nested_license=False)
             result=audit(sbom, artifacts, root/"out/notices.txt")
             self.assertEqual(result["components"][0]["evidence_level"], "SBOM_DECLARED_LICENSE_ONLY")
+            self.assertEqual(result["manual_review_component_count"], 1)
+            self.assertEqual(result["manual_review_components"], ["example.vendor:sample:1.2.3"])
             notice_text=(root/"out/notices.txt").read_text()
             self.assertNotIn("Sample upstream notice.", notice_text)
             self.assertNotIn("Nested license text.", notice_text)
