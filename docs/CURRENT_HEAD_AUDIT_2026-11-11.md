@@ -127,3 +127,12 @@ Commits:
 - Android CI run `42970314972`: in progress at documentation update; Android unit tests, APK assembly and artifact upload are not yet claimed as passed.
 - The UI helper test is JVM test coverage only. No Android device, real server, live provider or deployed Worker test was performed.
 - Whole-repository source and Git-history audit, dependency/license audit, runtime log/crash-report review and independent security review remain OPEN.
+
+
+### CI failure triage and correction — 2026-11-11
+- Android CI run `42970314972` failed in `testDebugUnitTest`: 323 tests ran, one failed.
+- Exact failure: `AiProviderRuntimeEndToEndTest.mcpExecutionFailureIsReturnedToProviderAndConversationContinues` still expected the old raw simulated MCP exception text after the intended redaction change.
+- This was a stale test expectation, not a Kotlin compilation failure: main and test Kotlin compilation completed; the failure occurred at the assertion in `AiProviderRuntimeEndToEndTest.kt:268`.
+- Corrected the regression test to assert the fixed redacted provider error string and assert that the simulated server exception text is absent.
+- Fix commit: `a176ef152b515b28818e9dedb4020c11db7fdd55`.
+- Worker CI run `42970314846` passed for the prior source head. Android CI for the fix commit has not yet returned a run/result at the time of this note; rerun status is pending.
