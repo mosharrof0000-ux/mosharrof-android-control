@@ -33,6 +33,7 @@ class McpConnectorServiceRegressionTest {
         val methods = mutableListOf<String>()
         val toolCallMetadata = mutableListOf<Boolean>()
         val toolCallHeaders = mutableListOf<Map<String, String?>>()
+        val authorizationHeaders = mutableListOf<String?>()
         val toolCallParams = mutableListOf<JSONObject>()
         val toolListCursors = mutableListOf<String?>()
 
@@ -68,6 +69,7 @@ class McpConnectorServiceRegressionTest {
                     }
 
                     if (method == "tools/call") {
+                        authorizationHeaders.add(getRequestProperty("Authorization"))
                         val params = request.optJSONObject("params")
                         if (params != null) toolCallParams.add(JSONObject(params.toString()))
                         val metadata = params?.optJSONObject("_meta")
@@ -968,6 +970,7 @@ class McpConnectorServiceRegressionTest {
         assertTrue(callbackResult!!.isSuccess)
         assertTrue(callbackResult!!.getOrThrow().contains("ok"))
         assertEquals(1, server.toolCalls.get())
+        assertEquals("Bearer test-access-token", server.authorizationHeaders.last())
     }
 
     @Test
