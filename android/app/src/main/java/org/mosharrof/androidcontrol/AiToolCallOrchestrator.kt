@@ -5,6 +5,10 @@ package org.mosharrof.androidcontrol
  * existing connector runtime. It deliberately does not display UI, issue grants,
  * or execute arbitrary provider-supplied code.
  */
+/** Never surface arbitrary exception text from remote servers or libraries. */
+internal fun safeUiErrorMessage(failure: Throwable): String =
+    "অপারেশন সম্পন্ন হয়নি। নিরাপত্তার জন্য বিস্তারিত error text আড়াল রাখা হয়েছে।"
+
 sealed class AiToolCallPlan {
     data class Ready(
         val call: CanonicalToolCall,
@@ -111,9 +115,7 @@ object AiToolCallOrchestrator {
     }
 
     private fun safeFailureMessage(failure: Throwable): String =
-        (failure.message ?: "Plugin execution failed.")
-            .replace(Regex("[\\r\\n\\t]+"), " ")
-            .take(MAX_RESULT_CHARS)
+        "Plugin execution failed. Remote error details are redacted for safety."
 
     private const val MAX_RESULT_CHARS = 64 * 1024
 }
