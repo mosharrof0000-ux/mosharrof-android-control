@@ -161,6 +161,32 @@ class McpTaskProtocolTest {
     }
 
     @Test
+    fun taskInputResponsePayloadsAreValidatedAtServiceBoundary() {
+        assertTrue(
+            McpTaskProtocol.validateInputResponsePayloads(
+                mapOf("confirm" to mapOf("action" to "accept"))
+            )
+        )
+        assertFalse(McpTaskProtocol.validateInputResponsePayloads(emptyMap()))
+        assertFalse(McpTaskProtocol.validateInputResponsePayloads(mapOf("confirm" to "accept")))
+        assertFalse(
+            McpTaskProtocol.validateInputResponsePayloads(
+                mapOf("confirm" to emptyMap<String, Any?>())
+            )
+        )
+        assertFalse(
+            McpTaskProtocol.validateInputResponsePayloads(
+                mapOf(" " to mapOf("action" to "accept"))
+            )
+        )
+        assertFalse(
+            McpTaskProtocol.validateInputResponsePayloads(
+                (1..17).associate { "request-$it" to mapOf("action" to "accept") }
+            )
+        )
+    }
+
+    @Test
     fun taskRequestBuildersBindTaskIdsAndValidateUpdateAnswers() {
         val get = McpProtocol.modernTasksGetRequest(
             "rpc-1", "task-1", "MOSHARROF", "1"
