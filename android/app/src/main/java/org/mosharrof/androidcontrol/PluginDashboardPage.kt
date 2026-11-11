@@ -852,8 +852,8 @@ class PluginDashboardPage(
                         onStatus("Task input JSON সঠিক নয়: ${safeUiErrorMessage(it)}")
                         return@setPositiveButton
                     }
-                if (responses.keys != requests.keys) {
-                    onStatus("Task inputResponses-এর key সার্ভারের প্রতিটি request key-এর সঙ্গে হুবহু মিলতে হবে।")
+                if (!McpTaskProtocol.validateInputResponses(requests, responses)) {
+                    onStatus("Task inputResponses-এর key ও object payload সার্ভারের request-এর সঙ্গে মিলতে হবে।")
                     return@setPositiveButton
                 }
                 val service = PluginDashboardSession.service
