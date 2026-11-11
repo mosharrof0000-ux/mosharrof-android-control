@@ -20,6 +20,11 @@ buildscript {
                 requested.name in setOf("protobuf-java", "protobuf-kotlin", "protobuf-javalite", "protobuf-kotlin-lite", "protobuf-java-util")) {
                 useVersion("3.25.5")
             }
+            if (requested.group == "org.bouncycastle" &&
+                requested.name in setOf("bcprov-jdk18on", "bcpkix-jdk18on", "bcutil-jdk18on")) {
+                // 1.86 is the upstream release that resolves the audited 1.79 findings.
+                useVersion("1.86")
+            }
         }
     }
 }
