@@ -27,7 +27,8 @@ internal object PluginDashboardSession {
 class PluginDashboardPage(
     private val activity: Activity,
     private val worker: Executor,
-    private val onStatus: (String) -> Unit
+    private val onStatus: (String) -> Unit,
+    private val onStartOAuthAuthorization: (String, String, net.openid.appauth.AuthorizationRequest) -> Unit
 ) {
     private companion object {
         const val MAX_MRTR_ROUNDS = 10
@@ -96,6 +97,9 @@ class PluginDashboardPage(
         parent.addView(oauthScopesInput, matchParams())
         button(parent, "Encrypted PKCE Request প্রস্তুত (Browser নয়)") {
             prepareOAuthAuthorizationRequest()
+        }
+        button(parent, "প্রস্তুত OAuth Request দিয়ে Browser Login শুরু করুন") {
+            startPreparedOAuthAuthorization()
         }
         button(parent, "সংরক্ষিত MCP Task পুনরুদ্ধার / যাচাই") {
             loadPendingTasks()
@@ -351,6 +355,38 @@ class PluginDashboardPage(
                     oauthRequestPreparationInProgress = false
                     onStatus("OAuth request প্রস্তুত হয়নি: " + safeUiErrorMessage(error))
                 }
+            }
+        }
+    }
+
+    /**
+     * Launches only after an explicit in-app user tap. The authorization request
+     * must already exist in encrypted storage and is re-read immediately before use.
+     */
+    private fun startPreparedOAuthAuthorization() {
+        val endpoint = endpointInput.text.toString().trim()
+        val connectorId = connectorIdFor(endpoint)
+        if (connectorId == null) {
+            onStatus("OAuth Browser Login-এর জন্য সঠিক HTTPS MCP endpoint দিন।")
+            return
+        }
+        worker.execute {
+            val pending = McpOAuthPendingRequestStore
+                .read(activity, connectorId)
+                .getOrElse {
+                    activity.runOnUiThread {
+                        onStatus("Encrypted OAuth request পড়া যায়নি; আগে PKCE request প্রস্তুত করুন।")
+                    }
+                    return@execute
+                }
+            if (pending == null) {
+                activity.runOnUiThread {
+                    onStatus("Encrypted pending OAuth request নেই; আগে PKCE request প্রস্তুত করুন।")
+                }
+                return@execute
+            }
+            activity.runOnUiThread {
+                onStartOAuthAuthorization(connectorId, endpoint, pending)
             }
         }
     }
