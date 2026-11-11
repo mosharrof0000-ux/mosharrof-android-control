@@ -961,6 +961,20 @@ class MainActivity : Activity() {
     @Deprecated("AppAuth authorization result is delivered through the activity result contract.")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == folderRequestCode) {
+            if (resultCode != RESULT_OK) return
+            val uri = data?.data ?: return
+            val flags = data.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            try {
+                contentResolver.takePersistableUriPermission(uri, flags)
+                selectedTree = DocumentFile.fromTreeUri(this, uri)
+                status.text = "নির্বাচিত ফোল্ডার: ${selectedTree?.name ?: "নাম অজানা"}"
+                report.text = "ফোল্ডার অনুমতি সংরক্ষিত হয়েছে। এখন ফাইল তালিকা বা ডুপ্লিকেট স্ক্যান চালান।"
+            } catch (error: SecurityException) {
+                status.text = "ফোল্ডার অনুমতি সংরক্ষণ করা যায়নি: ${safeUiErrorMessage(error)}"
+            }
+            return
+        }
         if (requestCode != oauthAuthorizationRequestCode) return
 
         val prefs = getSharedPreferences("mosharrof_mcp_oauth_flow", MODE_PRIVATE)
@@ -1159,23 +1173,7 @@ class MainActivity : Activity() {
         startActivityForResult(intent, folderRequestCode)
     }
 
-    @Deprecated("Platform document picker callback")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != folderRequestCode || resultCode != RESULT_OK) return
-        val uri = data?.data ?: return
-        val flags = data.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-        try {
-            contentResolver.takePersistableUriPermission(uri, flags)
-            selectedTree = DocumentFile.fromTreeUri(this, uri)
-            status.text = "নির্বাচিত ফোল্ডার: ${selectedTree?.name ?: "নাম অজানা"}"
-            report.text = "ফোল্ডার অনুমতি সংরক্ষিত হয়েছে। এখন ফাইল তালিকা বা ডুপ্লিকেট স্ক্যান চালান।"
-        } catch (error: SecurityException) {
-            status.text = "ফোল্ডার অনুমতি সংরক্ষণ করা যায়নি: ${safeUiErrorMessage(error)}"
-        }
-    }
-
-    private fun scanSelectedFolder(findDuplicates: Boolean) {
+        private fun scanSelectedFolder(findDuplicates: Boolean) {
         val root = selectedTree
         if (root == null) {
             Toast.makeText(this, "আগে একটি ফোল্ডার নির্বাচন করুন", Toast.LENGTH_SHORT).show()
