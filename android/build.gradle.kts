@@ -11,6 +11,9 @@ buildscript {
             if (requested.group == "com.google.guava" && requested.name == "guava") {
                 useVersion("33.8.0-jre")
             }
+            if (requested.group.startsWith("com.fasterxml.jackson")) {
+                useVersion("2.22.4")
+            }
         }
     }
 }
@@ -43,6 +46,9 @@ subprojects {
             if (requested.group == "com.google.guava" && requested.name == "guava") {
                 // Keep the Android-specific artifact variant for app/test tooling.
                 useVersion("33.8.0-android")
+            }
+            if (requested.group.startsWith("com.fasterxml.jackson")) {
+                useVersion("2.22.4")
             }
         }
     }
