@@ -264,38 +264,64 @@ class PluginDashboardPage(
                         "Connector endpoint-এর সঙ্গে নিবন্ধিত endpoint মিলছে না।"
                     }
                 }
-
                 if (enteredToken.isNotBlank()) {
                     PluginSecretStore.saveToken(activity, id, enteredToken).getOrThrow()
                 }
-                val encryptedOAuthState = McpOAuthAuthStateStore.read(activity, id).getOrThrow()
-                require(enteredToken.isNotBlank() || encryptedOAuthState == null) {
-                    "এই Connector-এর encrypted OAuth session আছে। পুরোনো static-token Connect path বন্ধ রাখা হয়েছে; async OAuth connection ও pagination migration সম্পূর্ণ না হওয়া পর্যন্ত stale token দিয়ে reconnect করা যাবে না।"
-                }
-                val token = if (enteredToken.isNotBlank()) {
-                    enteredToken
-                } else {
-                    PluginSecretStore.readToken(activity, id)
-                }
-
-                val client = McpHttpClient(
-                    endpoint = endpoint,
-                    bearerToken = token
-                )
+                val oauthState = McpOAuthAuthStateStore.read(activity, id).getOrThrow()
                 val taskPreferences = activity.getSharedPreferences("mosharrof_mcp_tasks", Activity.MODE_PRIVATE)
-                val service = McpConnectorService(
-                    client = client,
-                    taskStore = SharedPreferencesMcpTaskStore(taskPreferences)
-                )
-                val info = service.connect(id).getOrThrow()
-                PluginDashboardSession.connectorId = id
-                PluginDashboardSession.service = service
-                info
+                val service = if (oauthState != null && enteredToken.isBlank()) {
+                    val authorizationService = AuthorizationService(activity)
+                    val resolver = McpOAuthAccessTokenProvider(activity, authorizationService)
+                    val oauthClient = McpHttpClient(endpoint = endpoint)
+                    val oauthConnectorService = McpConnectorService(
+                        client = oauthClient,
+                        taskStore = SharedPreferencesMcpTaskStore(taskPreferences)
+                    )
+                    oauthConnectorService.connectAsync(
+                        connectorId = id,
+                        tokenProvider = resolver,
+                        ioExecutor = worker
+                    ) { result ->
+                        authorizationService.dispose()
+                        result.onSuccess { info ->
+                            PluginDashboardSession.connectorId = id
+                            PluginDashboardSession.service = oauthConnectorService
+                            activity.runOnUiThread {
+                                tokenInput.text.clear()
+                                onStatus("OAuth-সহ MCP সংযুক্ত। আবিষ্কৃত Tool: ${info.discoveredTools}")
+                                showTools(info.connectorId)
+                            }
+                        }.onFailure { error ->
+                            activity.runOnUiThread {
+                                onStatus("OAuth MCP সংযোগ ব্যর্থ: ${safeUiErrorMessage(error)}")
+                            }
+                        }
+                    }
+                    null
+                } else {
+                    val token = if (enteredToken.isNotBlank()) {
+                        enteredToken
+                    } else {
+                        PluginSecretStore.readToken(activity, id)
+                    }
+                    val client = McpHttpClient(endpoint = endpoint, bearerToken = token)
+                    val manualService = McpConnectorService(
+                        client = client,
+                        taskStore = SharedPreferencesMcpTaskStore(taskPreferences)
+                    )
+                    val info = manualService.connect(id).getOrThrow()
+                    PluginDashboardSession.connectorId = id
+                    PluginDashboardSession.service = manualService
+                    info
+                }
+                service
             }.onSuccess { info ->
-                activity.runOnUiThread {
-                    tokenInput.text.clear()
-                    onStatus("MCP সংযুক্ত। আবিষ্কৃত Tool: ${info.discoveredTools}")
-                    showTools(info.connectorId)
+                if (info != null) {
+                    activity.runOnUiThread {
+                        tokenInput.text.clear()
+                        onStatus("MCP সংযুক্ত। আবিষ্কৃত Tool: ${info.discoveredTools}")
+                        showTools(info.connectorId)
+                    }
                 }
             }.onFailure { error ->
                 activity.runOnUiThread {
