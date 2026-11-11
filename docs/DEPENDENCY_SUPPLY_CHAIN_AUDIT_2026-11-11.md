@@ -422,3 +422,20 @@ The official OSV-Scanner documentation lists Gradle lockfiles, Gradle verificati
 - This targets the Jackson 2.22.2 findings in the exact-head SARIF above. Official Jackson release notes document the 2.22.3 fixes for CVE-2026-91776 and CVE-2026-91777; Apache Kafka's resolved issue record also lists CVE-2026-89407 and CVE-2026-89425 as fixed by 2.22.3. Version 2.22.4 is selected as the later patch release.
 - **Verification pending:** do not claim the Jackson findings are cleared until an Android CI run on this exact commit succeeds and regenerated dependency evidence plus OSV SARIF show Jackson modules at the intended compatible version and the targeted advisory records absent.
 - PR #7 remains open/unmerged. No merge, deployment, APK installation or physical-device QA performed.
+
+
+## Jackson artifact-aware alignment — exact-head verification — 2026-11-11
+
+**Verified source head:** `b4a0290bcf86d1cd0a115f6a6e7644369375da97`
+
+- Corrected the Jackson alignment rule after the prior attempt incorrectly forced `jackson-annotations` to `2.22.4`. This artifact follows the Jackson `2.22` line without the patch suffix; the other Jackson modules use `2.22.4`.
+- Android CI run `43029858723`: **SUCCESS**. Dependency lock/verification generation, dependency-path capture, Android unit tests, CycloneDX SBOM, debug APK assembly, and artifact uploads all passed. Android OSV scan job also completed SUCCESS.
+- Worker CI run `43029858769`: **SUCCESS**. Type-check/tests, dependency evidence upload, and OSV scan completed successfully.
+- Android dependency evidence artifact `13859748016`, archive SHA-256 `deb85b04f1b1455ae99d75dc60b1005219b0e8d049849e859a9a14a4acdfa469`.
+- Android OSV SARIF artifact `13859139257`, archive SHA-256 `6b37a1b244bd5f0665bf820228e939964b8be2e403a115bb2b83c7098d0de228`.
+- Resolved root build-environment report shows Jackson Core, Databind and Dataformat XML/YAML at `2.22.4`, and Jackson Annotations at `2.22`. The targeted Jackson advisory records (CVE-2026-89407, CVE-2026-89425, CVE-2026-91776 and CVE-2026-91777) are absent from the new Android SARIF.
+- New Android SARIF contains 14 result records across 11 unique advisory IDs, down from 18 records across 15 unique IDs in the prior exact-head scan. Remaining records: JDOM2 2.0.6 (CVE-2021-33813); jose4j 0.9.5 (CVE-2024-29371); Commons Compress 1.21 (CVE-2024-26308, CVE-2024-25710); Bouncy Castle 1.79 (CVE-2025-14813, CVE-2026-8763, CVE-2026-0636, CVE-2026-5598, CVE-2026-13506, CVE-2026-5588); protobuf-java/protobuf-kotlin 3.24.4 (CVE-2024-7254). Duplicate package/advisory records mean 14 SARIF results are not 14 distinct CVEs.
+- Debug APK artifact `13858823946` (2,576,962 bytes; archive SHA-256 `d8d325229ad8473fabbb4661e74522c1f767a1cf105613deafe003bd90718431`) is CI-only; it has not been installed or physically tested.
+- This verifies the targeted Jackson alignment for this scanned head only; it does not imply zero remaining vulnerabilities or prove every reported build/test dependency ships in the app runtime.
+- Next triage: map protobuf 3.24.4 and Bouncy Castle 1.79 to exact root build/test configurations and fixed compatible versions before applying narrow constraints. Avoid blind global upgrades.
+- Gate 16 remains **Partial**. PR #7 remains open/unmerged. No merge, deployment, APK installation, live OAuth/provider operation or physical Android QA was performed.
