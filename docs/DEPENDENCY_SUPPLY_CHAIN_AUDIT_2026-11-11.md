@@ -62,3 +62,10 @@ Consequences:
 This pass did not execute package managers or Gradle, resolve transitive graphs, download dependencies, generate checksums, run vulnerability scanners, inspect every dependency's license, or alter CI install behavior. These steps require the project's build-capable CI/runtime and must not be simulated by guessed lockfiles or fabricated hashes.
 
 No dependency lock, dependency upgrade, deployment, APK installation or PR merge was performed during this inventory.
+
+## Wrangler advisory triage — 2026-11-11
+
+- A current package advisory lookup identifies a command-injection issue in Wrangler's `pages deploy --commit-hash` handling. The advisory lists Wrangler 4.x versions below 4.59.1 as affected when an attacker controls the `--commit-hash` input; it lists 4.59.1 as the fixed floor. Source: Snyk package advisory for `wrangler@4.45.0` (reviewed 2026-11-11): https://security.snyk.io/package/npm/wrangler/4.45.0
+- The repository declared `wrangler: ^4.45.0`, a range whose lower bound includes affected releases. No committed lockfile was present to prove the exact resolved CI version.
+- Raised the declared minimum to `^4.59.1` in source commit `178678ed80f7f9d0d160049f2deb9ec41f5188d8`. This is a minimum-version mitigation, not a complete vulnerability scan; the range still floats within compatible 4.x releases and a lockfile is still required.
+- Worker CI must pass on the exact updated head. No Wrangler deployment was performed.
