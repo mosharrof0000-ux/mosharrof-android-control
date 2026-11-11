@@ -11,6 +11,25 @@ Status: design/audit only — implementation not yet complete.
 - UI entry points currently dispatch service work to the supplied worker `Executor`. This avoids main-thread network I/O but does not make token refresh happen before each request.
 - MainActivity performs one refresh after OAuth token exchange and uses that token to create the initial MCP client. This is not a per-request refresh guarantee.
 
+## Exact source call-site audit (branch head before this audit update)
+
+The request boundary is centralized in `McpHttpClient.post(...)`, but the service currently invokes it synchronously from these paths:
+
+| Source location | Operation | Outbound request coverage required |
+|---|---|---|
+| `McpConnectorService.connect` | session setup + tool discovery | Modern discovery, legacy initialize fallback, every paginated tools/list page |
+| `McpConnectorService.negotiateProtocol` | protocol negotiation | Modern discovery request and legacy initialize request |
+| `McpConnectorService.negotiateLegacyProtocol` | legacy session initialization | Initialize and initialized notification |
+| `McpConnectorService.callTool` | tool execution | Every tools/call, after approval grant consumption |
+| `McpConnectorService.getTask` | task snapshot | Every tasks/get |
+| `McpConnectorService.updateTask` | task input submission | Every tasks/update |
+| `McpConnectorService.cancelTask` | task cancellation | Every tasks/cancel |
+| `McpConnectorService.disconnect` | session teardown | Audit whether the transport sends a network request; local-only teardown must not be mistaken for one |
+
+The UI currently supplies a single-thread `Executors.newSingleThreadExecutor()` from `MainActivity`; `PluginDashboardPage` dispatches its service operations to that worker. OAuth callback handling is separate and returns to the UI thread. This is a useful starting point for a callback-based pipeline, but it is not sufficient evidence that every possible caller is off-main-thread. Add explicit thread assertions at the OAuth transport boundary and migrate all call sites before enabling OAuth transport mode.
+
+The current OAuth handoff in `MainActivity.startMcpOAuthAuthorization` performs one refresh after code exchange, then constructs `McpHttpClient(endpoint, bearerToken = freshToken.value)`. That creates a static-token client, so later requests can use an expired token. The initial refresh must be removed from the long-lived-client design once the per-request provider is wired; code exchange should persist state, then the authenticated transport should resolve a token for each request.
+
 ## Required behavior
 
 1. For an OAuth-backed connector, every outbound MCP HTTP request must obtain a fresh-or-valid token through AppAuth immediately before the request.
