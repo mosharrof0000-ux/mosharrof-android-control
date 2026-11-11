@@ -116,4 +116,41 @@ class AiProviderAdapterContractTest {
         assertFalse(catalog[AiProviderId.MICROSOFT]?.adapterRegistered == true)
     }
 
+
+    @Test fun builtInProviderCapabilitiesFailClosedUntilVendorVerified() {
+        AiProviderRegistry.registerBuiltIns()
+        val versions = mapOf(
+            AiProviderId.GEMINI to "v1beta",
+            AiProviderId.OPENAI to "v1",
+            AiProviderId.XAI to "v1",
+            AiProviderId.ANTHROPIC to "2026-10-21",
+            AiProviderId.CUSTOM to "v1"
+        )
+
+        versions.forEach { (provider, apiVersion) ->
+            val adapter = requireNotNull(AiProviderRegistry.get(provider))
+            val profile = adapter.capabilityProfile("model-under-test", apiVersion)
+
+            assertEquals(provider, profile.provider)
+            assertEquals("model-under-test", profile.model)
+            assertEquals(apiVersion, profile.apiVersion)
+            assertEquals(CapabilitySupport.UNSUPPORTED, profile.capabilities[AiCapability.MODEL_DISCOVERY])
+            listOf(
+                AiCapability.TOOL_CALLING,
+                AiCapability.PARALLEL_TOOL_CALLS,
+                AiCapability.STREAMING,
+                AiCapability.CANCELLATION,
+                AiCapability.JSON_SCHEMA,
+                AiCapability.STRUCTURED_OUTPUTS
+            ).forEach { capability ->
+                assertEquals(
+                    "$provider must not claim unverified $capability support",
+                    CapabilitySupport.UNKNOWN,
+                    profile.capabilities[capability]
+                )
+                assertFalse(profile.supports(capability))
+            }
+        }
+    }
+
 }
