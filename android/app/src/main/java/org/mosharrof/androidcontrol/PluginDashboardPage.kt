@@ -272,7 +272,7 @@ class PluginDashboardPage(
                 val service = if (oauthState != null && enteredToken.isBlank()) {
                     val authorizationService = AuthorizationService(activity)
                     val resolver = McpOAuthAccessTokenProvider(activity, authorizationService)
-                    val oauthClient = McpHttpClient(endpoint = endpoint)
+                    val oauthClient = McpHttpClient(endpoint = endpoint, allowSynchronousRequests = false)
                     val oauthConnectorService = McpConnectorService(
                         client = oauthClient,
                         taskStore = SharedPreferencesMcpTaskStore(taskPreferences)
