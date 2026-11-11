@@ -108,3 +108,17 @@ This work is required before marking automatic OAuth refresh complete. Until all
 - Connectors without encrypted OAuth state retain the existing static/manual-token synchronous path. If encrypted OAuth state exists but cannot be read, the UI fails closed instead of falling back to a potentially stale static token.
 - This slice does **not** migrate connection negotiation, legacy initialize/initialized notification, `tools/list` pagination, or the OAuth callback's initial static-token connection. Those remain outstanding and prevent an end-to-end per-request guarantee for all MCP HTTP operations.
 - The latest source head for this slice is `12c2355e75e54bbbb7e0742fe16bf69594621141`. Exact-head Android and Worker CI must complete before this change is considered verified. No live OAuth authorization or token refresh was executed.
+
+
+## Exact-head verification — 2026-11-11
+
+Dashboard tool-call and task-lifecycle migration commit `d6bdaa29d13ec9362d1d49547be74b5aede67465` passed:
+- Android build workflow run `42998747291`: Android unit tests, Debug APK assembly, and artifact upload all completed successfully.
+- Worker typecheck workflow run `42998747304`: passed.
+- These results verify compilation and automated tests at that exact source head only. They do not verify live OAuth authorization, a real refresh-token exchange, server interoperability, or device behavior.
+
+Remaining high-priority migration work:
+- Convert the full connection lifecycle (modern discovery, legacy initialize/initialized notification) to callback-driven token-resolved requests.
+- Convert every tools/list pagination page to its own fresh-token request while preserving bounded cursor validation and atomic tool registration.
+- Wire MainActivity's connection entry point to the async service API; ensure no OAuth connector can fall back to a stale static token.
+- Add deterministic fake-resolver/fake-transport tests for negotiation fallback, pagination continuation, duplicate cursors, resolver failure, and cancellation.
