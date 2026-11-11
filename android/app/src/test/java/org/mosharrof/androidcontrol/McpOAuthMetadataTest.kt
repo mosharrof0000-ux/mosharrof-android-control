@@ -150,6 +150,30 @@ class McpOAuthMetadataTest {
     }
 
     @Test
+    fun enforcesRfc9207IssuerWhenAdvertisedAndValidatesAnySuppliedIssuer() {
+        val required = serverMetadata() +
+            ("authorization_response_iss_parameter_supported" to true)
+        assertTrue(McpOAuthMetadata.validateAuthorizationServerMetadata(issuer, required))
+        assertEquals(true, McpOAuthMetadata.authorizationResponseIssuerRequired(required))
+        assertTrue(McpOAuthMetadata.validateAuthorizationIssuer(issuer, issuer, true))
+        assertFalse(McpOAuthMetadata.validateAuthorizationIssuer(null, issuer, true))
+        assertFalse(McpOAuthMetadata.validateAuthorizationIssuer("https://evil.example", issuer, true))
+
+        val optional = serverMetadata() +
+            ("authorization_response_iss_parameter_supported" to false)
+        assertTrue(McpOAuthMetadata.validateAuthorizationServerMetadata(issuer, optional))
+        assertEquals(false, McpOAuthMetadata.authorizationResponseIssuerRequired(optional))
+        assertTrue(McpOAuthMetadata.validateAuthorizationIssuer(null, issuer, false))
+        assertTrue(McpOAuthMetadata.validateAuthorizationIssuer(issuer, issuer, false))
+        assertFalse(McpOAuthMetadata.validateAuthorizationIssuer("https://evil.example", issuer, false))
+
+        val malformed = serverMetadata() +
+            ("authorization_response_iss_parameter_supported" to "true")
+        assertFalse(McpOAuthMetadata.validateAuthorizationServerMetadata(issuer, malformed))
+        assertEquals(null, McpOAuthMetadata.authorizationResponseIssuerRequired(malformed))
+    }
+
+    @Test
     fun rejectsWrongIssuerAndMissingPkce() {
         assertFalse(
             McpOAuthMetadata.validateAuthorizationServerMetadata(
