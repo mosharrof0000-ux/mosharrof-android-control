@@ -159,3 +159,18 @@ PR #7 remains open and unmerged. No APK installation, physical-device testing, d
 At this exact PR head, the Android source includes bounded HTTPS-only protected-resource and authorization-server metadata discovery, issuer binding, redirect-disabled GET retrieval, response/content/depth/node limits, and CIMD metadata retrieval/validation. The Plugin Dashboard exposes a user-triggered metadata-only discovery action and a separate explicit CIMD validation/PKCE request preparation flow. Regression suites are present in `McpOAuthMetadataTest`, `McpOAuthMetadataFetcherTest`, and `McpOAuthAuthorizationRequestFactoryTest`; the exact-head Android unit-test task passed in run `43069263656`.
 
 **Gate 10 implementation and automated-test scope: COMPLETE.** This does not mean live authorization-server/CIMD interoperability has passed. Live OAuth, token lifecycle, provider APIs, real MCP server tests, Android Keystore physical-runtime behavior, deployment, APK installation and merge remain separately gated. Gate 9 provider/model capabilities remain UNKNOWN unless specifically verified; no vendor capability is inferred from documentation alone.
+
+
+## Latest exact-head verification — 2026-11-11 (`fb875863b1aa3a35079fe9d9f5129a3c24e27f86`)
+
+- PR #7 branch head: `fb875863b1aa3a35079fe9d9f5129a3c24e27f86`; PR remains OPEN and UNMERGED.
+- Android CI run [43072209300](https://github.com/mosharrof0000-ux/mosharrof-android-control/actions/runs/43072209300): SUCCESS. Exact Gradle command ran `:app:testDebugUnitTest`, `:app:cyclonedxDirectBom`, and `:app:assembleDebug` with `--dependency-verification=strict`; Gradle reported BUILD SUCCESSFUL. The binary notice audit covered 34/34 runtime SBOM components with zero reported failures, APK license/notice validation passed, and dependency evidence was uploaded.
+- Worker CI run [43072209559](https://github.com/mosharrof0000-ux/mosharrof-android-control/actions/runs/43072209559): SUCCESS; locked dependency installation, audit, SBOM, typecheck/tests, dependency evidence upload and OSV scan completed successfully.
+- Android debug artifact ID: `13879111294` (2,586,035 bytes; uploaded artifact ZIP SHA-256 `d7754fd64b419eb4210353624b759a398208aaf413ab66522cc8cc308ac01892`). Gradle dependency evidence artifact ID: `13878632831`.
+- The exact-head Android tests include OAuth refresh commit-gate cases: successful Bearer persistence before release, rejected refresh, non-Bearer response, failed/thrown encrypted persistence, blank access token, and missing token type. Raw OAuth exception causes are no longer retained in refresh exceptions; safe reason-only errors are asserted by regression tests.
+
+### OAuth refresh failure redaction
+
+The refresh failure model now retains only a typed safe reason and user-facing message. The original authorization-server/storage exception is not attached as a cause, avoiding accidental propagation through stack traces or crash reporting. The refresh commit gate rejects authorization errors, blank access tokens and non-Bearer token types before persistence, and releases a Bearer token only after encrypted AuthState persistence succeeds.
+
+This exact-head CI verifies JVM unit tests and build behavior, not live OAuth server interoperability, actual encrypted Android Keystore behavior on a device, token rotation/revocation against a real server, or crash-reporting behavior in production. The debug artifact is CI-only and was not installed or launched on a physical Android device. No deployment or merge was performed.
