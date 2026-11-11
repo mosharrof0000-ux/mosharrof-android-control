@@ -29,11 +29,18 @@ internal object McpOAuthTokenExchange {
         connectorId: String,
         callbackIntent: android.content.Intent?,
         pendingRequest: AuthorizationRequest?,
+        expectedIssuer: String,
+        issuerRequired: Boolean,
         authorizationService: AuthorizationService,
         onComplete: (Result<Outcome>) -> Unit
     ) {
         val response = McpOAuthAuthorizationCallbackHandler
-            .validateAuthorizationResponse(callbackIntent, pendingRequest)
+            .validateAuthorizationResponse(
+                callbackIntent,
+                pendingRequest,
+                expectedIssuer,
+                issuerRequired
+            )
             .getOrElse {
                 onComplete(Result.failure(IllegalStateException(
                     "OAuth callback যাচাই ব্যর্থ হয়েছে; token exchange করা হয়নি।"
