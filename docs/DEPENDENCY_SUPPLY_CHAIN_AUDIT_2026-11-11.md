@@ -439,3 +439,18 @@ The official OSV-Scanner documentation lists Gradle lockfiles, Gradle verificati
 - This verifies the targeted Jackson alignment for this scanned head only; it does not imply zero remaining vulnerabilities or prove every reported build/test dependency ships in the app runtime.
 - Next triage: map protobuf 3.24.4 and Bouncy Castle 1.79 to exact root build/test configurations and fixed compatible versions before applying narrow constraints. Avoid blind global upgrades.
 - Gate 16 remains **Partial**. PR #7 remains open/unmerged. No merge, deployment, APK installation, live OAuth/provider operation or physical Android QA was performed.
+
+
+### Exact-head dependency remediation verification — 2026-11-11
+
+- Final source commit: `4005205eb9410a65943be5f84441e724eb9a3264`.
+- Android CI run `43039329342`: SUCCESS. Dependency-lock/verification generation, dependency-path capture, Android unit tests, CycloneDX SBOM generation, debug APK assembly and both artifact uploads completed successfully.
+- Worker CI run `43039328953`: SUCCESS. npm lockfile generation, `npm ci`, npm audit, CycloneDX SBOM, type-check/tests and evidence upload passed.
+- Generated app lockfile artifact `13864786770`, 136,925 bytes, archive SHA-256 `e4428296c07e1c3502112cae55c26dba0bfa38cbad8330890264ac7fcd0ae303`. It resolves `protobuf-java`, `protobuf-kotlin` and `protobuf-java-util` to 3.25.5; no 3.24.4 protobuf lock entries remain.
+- Root build-environment evidence in the same artifact shows the audited requests resolving as follows: `bcprov-jdk18on`, `bcpkix-jdk18on` and `bcutil-jdk18on` → 1.86; `jdom2` 2.0.6 → 2.0.6.1; `jose4j` 0.9.5 → 0.9.6; `commons-compress` 1.21 → 1.28.0.
+- OSV SARIF artifact `13864068911`, 589 bytes, archive SHA-256 `774356f142f3e30507d6008a5d98bc9b5ff6cc9ab8957dc86295bef2d8a19e27`: one SARIF run, **0 result records** for the submitted app lockfile and Gradle verification metadata.
+- Debug APK artifact `13864891604`, archive 2,576,961 bytes, archive SHA-256 `f9827a5c58d4ef0e4cb916d2f3a571984e9c67c1cdee61e586c75756521a0402`; extracted APK 2,847,955 bytes, SHA-256 `fdb14d90e0c14fcb4b2579db039fa944655ae7c82393f33f6aecaeddc54bac23`. CI artifact only; not installed or physically tested.
+- Scope qualification: zero SARIF findings means no advisories were reported for the dependency evidence submitted to this exact-head scan. It is not a whole-repository/history audit, not proof that every dependency is shipped in app runtime, and not a guarantee against unknown vulnerabilities.
+- Source commits: Protobuf subproject alignment `709813a6ad13ec2aaa0a73d13f24ba0d27f13ea9`; Bouncy Castle alignment `e00da6045bc6ad709e58a9435e3d401f561fa233`; JDOM2/jose4j/Commons Compress alignment `4005205eb9410a65943be5f84441e724eb9a3264`.
+- Gate 16 remains **Partial**: generated `app/gradle.lockfile` and verification metadata are CI artifacts and are not yet committed as reviewed source lock state; root buildscript dependency locking, checksum provenance review, license/notice review, complete applicability analysis and final APK provenance gates remain open.
+- PR #7 remains open/unmerged. No merge, deployment, APK installation, live OAuth/provider operation or physical Android QA was performed.
