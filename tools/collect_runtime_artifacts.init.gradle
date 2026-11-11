@@ -1,0 +1,26 @@
+gradle.projectsEvaluated {
+    def appProject = gradle.rootProject.findProject(":app")
+    if (appProject == null) throw new GradleException("Android :app project was not found")
+    appProject.tasks.register("collectReleaseRuntimeArtifacts") {
+        group = "verification"
+        description = "Copies releaseRuntimeClasspath AAR/JAR files for license auditing."
+        doLast {
+            def configuration = appProject.configurations.getByName("releaseRuntimeClasspath")
+            def outputDir = new File(appProject.buildDir, "reports/license-review/runtime-artifacts")
+            if (outputDir.exists() && !outputDir.deleteDir()) throw new GradleException("Could not clear " + outputDir)
+            if (!outputDir.mkdirs() && !outputDir.isDirectory()) throw new GradleException("Could not create " + outputDir)
+            def copied = 0
+            configuration.resolvedConfiguration.resolvedArtifacts.each { artifact ->
+                def module = artifact.moduleVersion.id
+                def relativeDir = module.group.replace(".", "/") + "/" + module.name + "/" + module.version
+                def destinationDir = new File(outputDir, relativeDir)
+                if (!destinationDir.mkdirs() && !destinationDir.isDirectory()) throw new GradleException("Could not create " + destinationDir)
+                def destination = new File(destinationDir, artifact.file.name)
+                java.nio.file.Files.copy(artifact.file.toPath(), destination.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                copied++
+            }
+            if (copied == 0) throw new GradleException("releaseRuntimeClasspath resolved no binary artifacts")
+            println("Collected " + copied + " release runtime binary artifact(s) into " + outputDir)
+        }
+    }
+}
