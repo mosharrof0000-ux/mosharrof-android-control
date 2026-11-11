@@ -1055,7 +1055,7 @@ class MainActivity : Activity() {
 
                 worker.execute {
                     runCatching {
-                        val client = McpHttpClient(endpoint = endpoint)
+                        val client = McpHttpClient(endpoint = endpoint, allowSynchronousRequests = false)
                         val taskPreferences = getSharedPreferences(
                             "mosharrof_mcp_tasks",
                             MODE_PRIVATE
