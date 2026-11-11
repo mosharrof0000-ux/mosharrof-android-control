@@ -15,8 +15,8 @@ import net.openid.appauth.AuthorizationService
 internal class McpOAuthAccessTokenProvider(
     private val context: Context,
     private val authorizationService: AuthorizationService
-) {
-    fun resolve(
+) : McpAccessTokenResolver {
+    override fun resolve(
         connectorId: String,
         expectedEndpoint: String,
         onComplete: (Result<McpOAuthTokenRefresher.FreshBearerToken>) -> Unit
