@@ -20,6 +20,10 @@ internal object McpOAuthTokenExchange {
         val pendingRequestCleared: Boolean
     )
 
+    /** Fail closed unless exchange succeeded and one-time PKCE state was removed. */
+    internal fun isReadyForMcpConnection(result: Result<Outcome>): Boolean =
+        result.getOrNull()?.pendingRequestCleared == true
+
     fun exchange(
         context: Context,
         connectorId: String,
