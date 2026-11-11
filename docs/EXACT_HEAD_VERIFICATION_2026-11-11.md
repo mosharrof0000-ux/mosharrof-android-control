@@ -146,3 +146,16 @@ The metadata fetcher remains HTTPS-only, disables redirects, applies finite time
 Gate 10 remains **PARTIAL**. A complete user-initiated OAuth application flow and protocol/security validation are still outstanding; Gate 17 (PKCE, token exchange, secure token lifecycle, refresh and revocation) remains incomplete. No live OAuth server interoperability or provider credential was tested.
 
 PR #7 remains open and unmerged. No APK installation, physical-device testing, deployment, or merge is claimed.
+
+## Latest verified PR-head addendum — 2026-11-11 (`d60c96649b99ceebb1fcf39074f8d03ad2be552`)
+
+- PR #7 head: `d60c96649b99ceebb1fcf39074f8d03ad2be552`; PR remains OPEN and UNMERGED.
+- Android CI run [43069263656](https://github.com/mosharrof0000-ux/mosharrof-android-control/actions/runs/43069263656): SUCCESS. The strict Gradle command ran `:app:testDebugUnitTest`, `:app:cyclonedxDirectBom`, and `:app:assembleDebug`; Gradle reported `BUILD SUCCESSFUL`. Binary notice scanner tests passed, all 34 SBOM runtime components were covered by the binary notice audit with no reported failures, APK notice validation passed, and the debug APK plus dependency evidence were uploaded.
+- Worker CI run [43069263948](https://github.com/mosharrof0000-ux/mosharrof-android-control/actions/runs/43069263948): SUCCESS; locked dependency installation, npm audit, SBOM generation, typecheck/tests and dependency evidence upload passed.
+- Android debug APK artifact ID: `13876819071`. Dependency evidence artifact ID: `13876684553`. These are CI artifacts only; no installation or physical-device test was performed.
+
+### Gate 10 — OAuth metadata and CIMD discovery
+
+At this exact PR head, the Android source includes bounded HTTPS-only protected-resource and authorization-server metadata discovery, issuer binding, redirect-disabled GET retrieval, response/content/depth/node limits, and CIMD metadata retrieval/validation. The Plugin Dashboard exposes a user-triggered metadata-only discovery action and a separate explicit CIMD validation/PKCE request preparation flow. Regression suites are present in `McpOAuthMetadataTest`, `McpOAuthMetadataFetcherTest`, and `McpOAuthAuthorizationRequestFactoryTest`; the exact-head Android unit-test task passed in run `43069263656`.
+
+**Gate 10 implementation and automated-test scope: COMPLETE.** This does not mean live authorization-server/CIMD interoperability has passed. Live OAuth, token lifecycle, provider APIs, real MCP server tests, Android Keystore physical-runtime behavior, deployment, APK installation and merge remain separately gated. Gate 9 provider/model capabilities remain UNKNOWN unless specifically verified; no vendor capability is inferred from documentation alone.
