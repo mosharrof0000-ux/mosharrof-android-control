@@ -25,6 +25,9 @@ def child_text(parent: ET.Element, name: str) -> str:
 
 def parse_pom(data: bytes) -> dict[str, Any]:
     root = ET.fromstring(data)
+    for node in root.iter():
+        if isinstance(node.tag, str) and node.tag.startswith("{"):
+            node.tag = node.tag.split("}", 1)[1]
     licenses = []
     for item in root.findall("./licenses/license"):
         name, url = child_text(item, "name"), child_text(item, "url")
