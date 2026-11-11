@@ -100,7 +100,7 @@ def resolve_license_metadata(data: bytes, source_url: str, depth: int = 0,
             "license_pom_sha256": resolved["license_pom_sha256"],
             "parent_pom_url": parent_url,
             "parent_pom_sha256": hashlib.sha256(parent_data).hexdigest(),
-            "inherited_licenses": resolved["metadata"]["licenses"]}
+            "inherited_licenses": resolved.get("inherited_licenses", resolved["metadata"]["licenses"])}
 
 
 def sbom_licenses(component: dict[str, Any]) -> list[str]:
