@@ -599,12 +599,13 @@ class MainActivity : Activity() {
                 val selected = profiles[index]
                 AlertDialog.Builder(this)
                     .setTitle(selected.id)
-                    .setItems(arrayOf("এই Profile Active করুন", "Profile মুছে ফেলুন")) { _, action ->
+                    .setItems(arrayOf("এই Profile Active করুন", "Credential বদলান", "Profile মুছে ফেলুন")) { _, action ->
                         when (action) {
                             0 -> runCatching { AiEngine.setActiveProviderProfile(this, selected.id) }
                                 .onSuccess { status.text = "Active Provider: ${selected.id}"; report.text = providerProfilesReport() }
                                 .onFailure { status.text = "Active নির্বাচন ব্যর্থ: ${it.message}" }
-                            1 -> AlertDialog.Builder(this)
+                            1 -> replaceProviderCredential(selected)
+                            2 -> AlertDialog.Builder(this)
                                 .setTitle("Profile মুছে ফেলবেন?")
                                 .setMessage("Profile metadata ও encrypted credential মুছে যাবে।")
                                 .setNegativeButton("না", null)
