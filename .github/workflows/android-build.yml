@@ -44,6 +44,9 @@ jobs:
       - name: Run Android unit tests
         run: gradle -p android :app:testDebugUnitTest
 
+      - name: Generate Android CycloneDX SBOM
+        run: gradle -p android :app:cyclonedxDirectBom
+
       - name: Assemble debug APK
         run: gradle -p android :app:assembleDebug
 
@@ -61,4 +64,5 @@ jobs:
           path: |
             android/app/gradle.lockfile
             android/gradle/verification-metadata.xml
+            android/app/build/reports/cyclonedx-direct/bom.json
           if-no-files-found: error
