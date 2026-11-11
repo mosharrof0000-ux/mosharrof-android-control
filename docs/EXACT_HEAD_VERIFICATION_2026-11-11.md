@@ -114,3 +114,35 @@ Added an HTTPS-only, bounded metadata fetcher with redirects disabled, finite co
 This implements metadata retrieval and validation only. It does **not** implement OAuth authorization, PKCE, token exchange, token storage, refresh, revocation, or live OAuth interoperability. Gate 10 remains **PARTIAL** pending a complete user-initiated application flow and further protocol/security validation; Gate 17 remains incomplete.
 
 This artifact is CI-produced only and has not been installed or launched on a physical Android device. PR #7 remains open and unmerged. No live provider credentials, live MCP servers, deployment, or merge were used/performed.
+
+
+## Latest exact-head verification — 2026-11-11 (`f10b0f9a14da79cacc65311c29b2cd31006e32e2`)
+
+This section records the OAuth metadata discovery UI integration and exact-head CI evidence. It supersedes earlier branch-head status sections above.
+
+- Branch: `fix/mcp-pagination-20261110`
+- Exact source head: `f10b0f9a14da79cacc65311c29b2cd31006e32e2`
+- Android workflow: [42983020001](https://github.com/mosharrof0000-ux/mosharrof-android-control/actions/runs/42983020001) — PASS; Android unit tests, Debug APK assembly, and artifact upload all succeeded.
+- Worker workflow: [42983020293](https://github.com/mosharrof0000-ux/mosharrof-android-control/actions/runs/42983020293) — PASS; Worker typecheck succeeded.
+- PR #7 remains OPEN and UNMERGED.
+
+### Exact-head CI artifact
+
+- Name: `mosharrof-android-control-debug`
+- Artifact ID: `13838138671`
+- Size: `2,423,681` bytes
+- GitHub artifact digest: `sha256:f31933b7dc305d285cd2d855ebc7e42d36ef5cdc8cc3c1d00fd0b0edd63abb16`
+- Expiry: 2027-02-09
+- GitHub workflow metadata binds the artifact to branch `fix/mcp-pagination-20261110` and exact head `f10b0f9a14da79cacc65311c29b2cd31006e32e2`.
+
+This is a CI-produced debug artifact only. It has not been installed, launched, or tested on a physical Android device.
+
+### Gate 10 — OAuth metadata discovery UI
+
+The Plugin Dashboard now exposes an explicit **OAuth Metadata যাচাই (শুধু GET)** action before MCP Connect. It can register/use the configured MCP Streamable HTTP endpoint for metadata discovery, checks that an existing connector has the same endpoint and transport, avoids overlapping discovery requests, and scopes reuse of a connected service to the matching connector session. The operation performs metadata GET discovery only; it does not launch a browser/login, authorize a user, perform PKCE or token exchange, or store credentials.
+
+The metadata fetcher remains HTTPS-only, disables redirects, applies finite timeouts and bounded JSON parsing, validates protected-resource and authorization-server metadata including issuer binding, and validates retrieved CIMD metadata. Unit and service regression tests passed in the exact-head Android CI run above.
+
+Gate 10 remains **PARTIAL**. A complete user-initiated OAuth application flow and protocol/security validation are still outstanding; Gate 17 (PKCE, token exchange, secure token lifecycle, refresh and revocation) remains incomplete. No live OAuth server interoperability or provider credential was tested.
+
+PR #7 remains open and unmerged. No APK installation, physical-device testing, deployment, or merge is claimed.
