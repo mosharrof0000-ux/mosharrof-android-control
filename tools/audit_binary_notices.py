@@ -22,17 +22,22 @@ def scan_zip(data: bytes, source: str, depth: int = 0):
     try:
         with zipfile.ZipFile(BytesIO(data)) as archive:
             for info in archive.infolist():
-                if info.is_dir() or info.file_size > MAX_TEXT_BYTES: continue
+                if info.is_dir(): continue
                 name = info.filename.replace("\\", "/")
+                is_nested_archive = name.lower().endswith((".jar", ".zip"))
+                # Nested archives need a larger limit than plain text notices:
+                # otherwise ordinary multi-megabyte classes.jar files are skipped.
+                size_limit = MAX_ARCHIVE_BYTES if is_nested_archive else MAX_TEXT_BYTES
+                if info.file_size > size_limit: continue
                 try: payload = archive.read(info)
                 except (OSError, RuntimeError, zipfile.BadZipFile): continue
-                if LICENSE_NAME.search(name):
+                if LICENSE_NAME.search(name) and len(payload) <= MAX_TEXT_BYTES:
                     value = safe_text(payload)
                     if value:
                         found.append({"path": source + "!/" + name,
                                       "sha256": hashlib.sha256(payload).hexdigest(),
                                       "content": value})
-                if name.lower().endswith((".jar", ".zip")) and len(payload) <= MAX_ARCHIVE_BYTES:
+                if is_nested_archive and len(payload) <= MAX_ARCHIVE_BYTES:
                     found.extend(scan_zip(payload, source + "!/" + name, depth + 1))
     except (OSError, zipfile.BadZipFile):
         return []
