@@ -7,6 +7,15 @@ class MavenMetadataAuditTest(unittest.TestCase):
         self.assertEqual(normalize_license("The Apache License, Version 2.0"), "Apache-2.0")
         self.assertEqual(normalize_license("http://www.apache.org/licenses/LICENSE-2.0.txt"), "Apache-2.0")
 
+    def test_preserves_distinct_bsd_license_variants(self):
+        self.assertEqual(normalize_license("BSD-2-Clause"), "BSD-2-Clause")
+        self.assertEqual(normalize_license("BSD 2-Clause License"), "BSD-2-Clause")
+        self.assertEqual(normalize_license("BSD-3-Clause"), "BSD-3-Clause")
+        self.assertEqual(normalize_license("The 3-Clause BSD License"), "BSD-3-Clause")
+        self.assertEqual(normalize_license("BSD-4-Clause"), "BSD-4-Clause")
+        self.assertEqual(normalize_license("BSD"), "BSD")
+        self.assertNotEqual(normalize_license("BSD-2-Clause"), normalize_license("BSD-3-Clause"))
+
     def test_sbom_and_pom_license_sets_must_match_exactly(self):
         from audit_maven_metadata import licenses_match
         self.assertTrue(licenses_match(["Apache-2.0", "MIT"], ["Apache-2.0", "MIT"]))
