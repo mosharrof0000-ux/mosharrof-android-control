@@ -39,6 +39,7 @@ class PluginDashboardPage(
     private lateinit var tokenInput: EditText
     private lateinit var toolsContainer: LinearLayout
     private lateinit var resultView: TextView
+    private lateinit var oauthMetadataView: TextView
 
     fun render(parent: LinearLayout) {
         val prefs = activity.getSharedPreferences("plugin_dashboard_v1", Activity.MODE_PRIVATE)
@@ -66,6 +67,16 @@ class PluginDashboardPage(
         button(parent, "Disconnect") {
             disconnect()
         }
+        button(parent, "OAuth Metadata যাচাই (শুধু GET)") {
+            discoverOAuthMetadata()
+        }
+        oauthMetadataView = TextView(activity).apply {
+            text = "OAuth metadata এখনো যাচাই করা হয়নি।"
+            textSize = 12f
+            setTextColor(Color.GRAY)
+            setPadding(8, 8, 8, 12)
+        }
+        parent.addView(oauthMetadataView, matchParams())
         button(parent, "সংরক্ষিত MCP Task পুনরুদ্ধার / যাচাই") {
             loadPendingTasks()
         }
@@ -176,6 +187,48 @@ class PluginDashboardPage(
         }
     }
 
+    /**
+     * User-initiated, metadata-only OAuth discovery. This performs bounded HTTPS
+     * GET requests; it never opens a browser or starts authorization/token flows.
+     */
+    private fun discoverOAuthMetadata() {
+        val connectorId = PluginDashboardSession.connectorId
+        val service = PluginDashboardSession.service
+        if (connectorId == null || service == null) {
+            onStatus("আগে MCP Connector সংযুক্ত করুন; OAuth discovery চালানো হয়নি।")
+            return
+        }
+        oauthMetadataView.text = "OAuth metadata যাচাই চলছে…"
+        worker.execute {
+            service.discoverOAuthMetadata(connectorId)
+                .onSuccess { discovery ->
+                    val issuer = discovery.authorizationServerIssuer
+                    val authorizationEndpoint =
+                        discovery.authorizationServerMetadata["authorization_endpoint"] as? String
+                    val tokenEndpoint =
+                        discovery.authorizationServerMetadata["token_endpoint"] as? String
+                    activity.runOnUiThread {
+                        oauthMetadataView.text = buildString {
+                            append("OAuth metadata যাচাইকৃত\n")
+                            append("Authorization Server: ").append(issuer)
+                            append("\nAuthorization endpoint: ")
+                                .append(authorizationEndpoint ?: "অনুপস্থিত")
+                            append("\nToken endpoint: ")
+                                .append(tokenEndpoint ?: "অনুপস্থিত")
+                            append("\n\nএটি শুধু metadata discovery। কোনো login, browser redirect, ")
+                            append("PKCE, token exchange বা credential সংরক্ষণ করা হয়নি।")
+                        }
+                        onStatus("OAuth metadata যাচাই সফল; authorization শুরু হয়নি।")
+                    }
+                }
+                .onFailure { failure ->
+                    activity.runOnUiThread {
+                        oauthMetadataView.text = "OAuth metadata যাচাই ব্যর্থ।"
+                        onStatus("OAuth metadata যাচাই ব্যর্থ: " + safeUiErrorMessage(failure))
+                    }
+                }
+        }
+    }
     private fun disconnect() {
         val id = PluginDashboardSession.connectorId
         val service = PluginDashboardSession.service
