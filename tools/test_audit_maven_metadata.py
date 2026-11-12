@@ -103,5 +103,20 @@ class MavenMetadataAuditTest(unittest.TestCase):
         self.assertEqual(result["license_mismatch_count"], 1)
         self.assertEqual(result["license_mismatch_components"], ["example:sample:1.0"])
 
+
+    def test_sanitizes_all_pom_source_urls_before_report(self):
+        xml = b"""<project>
+          <licenses><license><name>Apache License, Version 2.0</name><url>https://alice:secret@example.test/license?token=secret#terms</url></license></licenses>
+          <organization><name>Example</name><url>https://bob:secret@example.test/org?key=secret</url></organization>
+          <developers><developer><organizationUrl>https://dev:secret@example.test/team?token=secret</organizationUrl></developer></developers>
+        </project>"""
+        result = parse_pom(xml)
+        self.assertEqual(result["licenses"][0]["url"], "https://example.test/license")
+        self.assertEqual(result["organization"]["url"], "https://example.test/org")
+        self.assertEqual(result["developers"][0]["organizationUrl"], "https://example.test/team")
+        serialized = str(result)
+        for secret in ("alice", "bob", "dev:", "secret", "token", "key="):
+            self.assertNotIn(secret, serialized)
+
 if __name__ == "__main__":
     unittest.main()
