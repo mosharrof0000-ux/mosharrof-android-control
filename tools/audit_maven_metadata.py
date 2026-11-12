@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 MAX_POM_BYTES = 4 * 1024 * 1024
 SAFE = re.compile(r"^[A-Za-z0-9_.+-]+$")
 ALLOWED_SCM_SCHEMES = {"http", "https", "ssh", "git"}
-SCP_SCM = re.compile(r"^(?:[^@/:\\s]+@)?(?P<host>[A-Za-z0-9.-]+):(?P<path>[^\\s]+)$")
+SCP_SCM = re.compile(r"^(?:[^@/:\s]+@)?(?P<host>[A-Za-z0-9.-]+):(?P<path>[^\s]+)$")
 
 
 def sanitize_scm_reference(value: str) -> str:
