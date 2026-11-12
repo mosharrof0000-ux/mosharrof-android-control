@@ -121,39 +121,145 @@ jobs:
       - name: Verify APK packages generated license inventory and audit evidence
         run: |
           python3 - <<'PY'
+          import json
           import zipfile
+
+          EXPECTED_RUNTIME_COMPONENTS = 34
+          REPORT_DIR = "android/build/reports/license-review"
+
+          def fail(message):
+              raise SystemExit(message)
+
+          def coordinates(items):
+              values = []
+              for item in items:
+                  group = str(item.get("group") or "")
+                  name = str(item.get("name") or "")
+                  version = str(item.get("version") or "")
+                  if not all((group, name, version)):
+                      fail("Runtime SBOM contains a component without a complete Maven coordinate")
+                  values.append(group + ":" + name + ":" + version)
+              if len(values) != len(set(values)):
+                  fail("Runtime inventory contains duplicate Maven coordinates")
+              return set(values)
+
+          with open("android/app/build/reports/cyclonedx-direct/bom.json", encoding="utf-8") as stream:
+              sbom = json.load(stream)
+          sbom_components = sbom.get("components") or []
+          sbom_coordinates = coordinates(sbom_components)
+          if len(sbom_components) != EXPECTED_RUNTIME_COMPONENTS:
+              fail("Expected exactly 34 releaseRuntimeClasspath components; found " + str(len(sbom_components)))
+
+          with open(REPORT_DIR + "/binary-notice-audit.json", encoding="utf-8") as stream:
+              audit = json.load(stream)
+          audit_components = audit.get("components") or []
+          audit_coordinates = {item.get("coordinate", "") for item in audit_components}
+          if (audit.get("component_count") != EXPECTED_RUNTIME_COMPONENTS
+                  or len(audit_components) != EXPECTED_RUNTIME_COMPONENTS
+                  or audit_coordinates != sbom_coordinates
+                  or len(audit_coordinates) != EXPECTED_RUNTIME_COMPONENTS):
+              fail("Binary notice audit component inventory does not exactly match the 34-component SBOM")
+          if (audit.get("binary_component_count") != EXPECTED_RUNTIME_COMPONENTS
+                  or audit.get("binary_file_count", 0) < EXPECTED_RUNTIME_COMPONENTS
+                  or any(item.get("binary_count", 0) < 1 for item in audit_components)
+                  or audit.get("failures")):
+              fail("Binary notice audit did not inspect every runtime component without failures")
+
+          notice_components = {item["coordinate"] for item in audit_components if item.get("notice_found")}
+          expected_manual = sbom_coordinates - notice_components
+          manual_list = audit.get("manual_review_components") or []
+          if (audit.get("archive_notice_component_count") != len(notice_components)
+                  or audit.get("manual_review_component_count") != len(expected_manual)
+                  or len(manual_list) != len(set(manual_list))
+                  or set(manual_list) != expected_manual
+                  or len(notice_components) + len(expected_manual) != EXPECTED_RUNTIME_COMPONENTS):
+              fail("Archive-notice and manual-review component accounting is inconsistent")
+          for item in audit_components:
+              expected_evidence = ("ARCHIVE_LICENSE_OR_NOTICE" if item.get("notice_found")
+                                   else "SBOM_DECLARED_LICENSE_ONLY" if item.get("declared_licenses")
+                                   else "NO_LICENSE_EVIDENCE")
+              if item.get("evidence_level") != expected_evidence or not item.get("declared_licenses"):
+                  fail("Runtime component has inconsistent or missing license evidence: " + item.get("coordinate", "UNKNOWN"))
+
+          with open(REPORT_DIR + "/maven-metadata-audit.json", encoding="utf-8") as stream:
+              metadata = json.load(stream)
+          metadata_components = metadata.get("components") or []
+          metadata_coordinates = {item.get("coordinate", "") for item in metadata_components}
+          if (metadata.get("component_count") != EXPECTED_RUNTIME_COMPONENTS
+                  or metadata.get("pom_component_count") != EXPECTED_RUNTIME_COMPONENTS
+                  or metadata_coordinates != sbom_coordinates
+                  or metadata.get("license_match_count") != EXPECTED_RUNTIME_COMPONENTS
+                  or metadata.get("license_mismatch_count") != 0
+                  or metadata.get("failures")):
+              fail("Maven POM/SBOM license comparison did not produce 34 exact matches and zero mismatches")
+
+          with open(REPORT_DIR + "/maven-source-metadata-audit.json", encoding="utf-8") as stream:
+              source_report = json.load(stream)
+          source_components = source_report.get("components") or []
+          source_coordinates = {item.get("coordinate", "") for item in source_components}
+          if (source_report.get("component_count") != EXPECTED_RUNTIME_COMPONENTS
+                  or source_coordinates != sbom_coordinates):
+              fail("Sanitized SCM report does not cover the exact runtime component inventory")
+          for item in source_components:
+              for value in (item.get("scm") or {}).values():
+                  if any(character in value for character in ("@", "?", "#")):
+                      fail("SCM report contains userinfo, query or fragment data: " + item.get("coordinate", "UNKNOWN"))
+          for item in metadata_components:
+              for value in (item.get("scm") or {}).values():
+                  if any(character in value for character in ("@", "?", "#")):
+                      fail("Maven metadata report contains unsanitized SCM data: " + item.get("coordinate", "UNKNOWN"))
+
           apk = "android/app/build/outputs/apk/debug/app-debug.apk"
           with zipfile.ZipFile(apk) as archive:
               names = set(archive.namelist())
               required = {
                   "assets/THIRD_PARTY_NOTICES.md",
                   "assets/UPSTREAM_THIRD_PARTY_NOTICES.txt",
+                  "assets/POM_THIRD_PARTY_ATTRIBUTIONS.txt",
                   "assets/licenses/Apache-2.0.txt",
               }
               missing = sorted(required - names)
               if missing:
-                  raise SystemExit(f"APK is missing required notice assets: {missing}")
+                  fail("APK is missing required notice assets: " + str(missing))
               license_text = archive.read("assets/licenses/Apache-2.0.txt").decode("utf-8")
               notices = archive.read("assets/THIRD_PARTY_NOTICES.md").decode("utf-8")
               upstream = archive.read("assets/UPSTREAM_THIRD_PARTY_NOTICES.txt").decode("utf-8")
               pom_attributions = archive.read("assets/POM_THIRD_PARTY_ATTRIBUTIONS.txt").decode("utf-8")
-              if ("Version 2.0" not in license_text or "appauth" not in notices
-                      or "UPSTREAM THIRD-PARTY LICENSE AND ATTRIBUTION EVIDENCE" not in upstream
-                      or not pom_attributions.strip()):
-                  raise SystemExit("APK license inventory/audit report packaging validation failed")
-          import json
-          audit = json.load(open("android/build/reports/license-review/binary-notice-audit.json", encoding="utf-8"))
-          if audit["component_count"] == 0 or audit["binary_component_count"] != audit["component_count"] or audit["failures"]:
-              raise SystemExit("Binary notice audit did not cover every SBOM component")
-          expected_manual_review = audit["component_count"] - audit["archive_notice_component_count"]
-          if audit.get("manual_review_component_count") != expected_manual_review or len(audit.get("manual_review_components", [])) != expected_manual_review:
-              raise SystemExit("Binary notice manual-review accounting is inconsistent")
-          metadata = json.load(open("android/build/reports/license-review/maven-metadata-audit.json", encoding="utf-8"))
-          if metadata["pom_component_count"] != metadata["component_count"] or metadata["license_match_count"] != metadata["component_count"] or metadata["failures"]:
-              raise SystemExit("Maven POM license metadata audit did not verify every SBOM component")
-          print("APK contains license inventory and POM metadata for " + str(metadata["pom_component_count"]) + " runtime components.")
-          print("Archive notice texts found for " + str(audit["archive_notice_component_count"]) + "/" + str(audit["component_count"]) + " runtime components.")
-          print("MANUAL NOTICE REVIEW REQUIRED for " + str(audit["manual_review_component_count"]) + " runtime components; see BINARY_NOTICE_AUDIT.md.")
+              if ("Apache License" not in license_text
+                      or "Version 2.0" not in license_text
+                      or "TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION" not in license_text
+                      or "UPSTREAM THIRD-PARTY LICENSE AND ATTRIBUTION EVIDENCE" not in upstream):
+                  fail("APK is missing the full Apache-2.0 text or upstream notice evidence header")
+              for item in sbom_components:
+                  group, name, version = item["group"], item["name"], item["version"]
+                  labels = sorted({
+                      (entry.get("license") or {}).get("id")
+                      or (entry.get("license") or {}).get("name")
+                      or "UNIDENTIFIED"
+                      for entry in (item.get("licenses") or [])
+                  })
+                  row = "| " + " | ".join((group, name, version, " OR ".join(labels))) + " |"
+                  coordinate = group + ":" + name + ":" + version
+                  if row not in notices:
+                      fail("APK third-party inventory is missing the exact component/version/license row: " + coordinate)
+                  if "## " + coordinate not in upstream or "## " + coordinate not in pom_attributions:
+                      fail("APK upstream/POM attribution assets do not cover component: " + coordinate)
+              for item in audit_components:
+                  coordinate = item["coordinate"]
+                  if item.get("notice_found"):
+                      for source in item.get("archive_notice_files") or []:
+                          if "Source: " + source not in upstream:
+                              fail("APK upstream notice asset is missing an extracted source path: " + coordinate)
+                  elif "No matching LICENSE/NOTICE/COPYING/COPYRIGHT text file found in this binary archive." not in upstream:
+                      fail("APK upstream notice asset does not disclose a missing archive notice: " + coordinate)
+              if not pom_attributions.strip():
+                  fail("APK POM attribution asset is empty")
+
+          print("APK inventory and POM metadata validated for 34/34 runtime components.")
+          print("POM/SBOM license matches: " + str(metadata["license_match_count"]) + "/34; mismatches: " + str(metadata["license_mismatch_count"]) + ".")
+          print("Archive notice texts found for " + str(audit["archive_notice_component_count"]) + "/34 runtime components.")
+          print("MANUAL NOTICE REVIEW REQUIRED for " + str(audit["manual_review_component_count"]) + "/34 runtime components; see BINARY_NOTICE_AUDIT.md.")
+          print("Upstream copyright/NOTICE clearance is not inferred from SBOM or POM metadata.")
           PY
 
       - name: Upload debug APK
