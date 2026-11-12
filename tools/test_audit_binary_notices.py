@@ -128,7 +128,7 @@ class BinaryNoticeAuditTest(unittest.TestCase):
             d = root / "artifacts/example/vendor/invalid-text/1.0"
             d.mkdir(parents=True)
             with zipfile.ZipFile(d / "invalid-text-1.0.aar", "w") as z:
-                z.writestr("META-INF/LICENSE", b"\\xff\\xfe\\x00\\x81")
+                z.writestr("META-INF/LICENSE", b"\xff\xfe\x00\x81")
             sbom = root / "bom.json"
             sbom.write_text(json.dumps({"components": [{"group": "example.vendor", "name": "invalid-text",
                 "version": "1.0", "licenses": [{"license": {"id": "Apache-2.0"}}]}]}), encoding="utf-8")
@@ -141,7 +141,7 @@ class BinaryNoticeAuditTest(unittest.TestCase):
             root = Path(tmp)
             d = root / "artifacts/example/vendor/whitespace/1.0"
             d.mkdir(parents=True)
-            exact_text = "  Exact upstream text.\\n\\n"
+            exact_text = "  Exact upstream text.\n\n"
             with zipfile.ZipFile(d / "whitespace-1.0.aar", "w") as z:
                 z.writestr("META-INF/LICENSE", exact_text)
             sbom = root / "bom.json"
@@ -149,7 +149,7 @@ class BinaryNoticeAuditTest(unittest.TestCase):
                 "version": "1.0", "licenses": [{"license": {"id": "Apache-2.0"}}]}]}), encoding="utf-8")
             audit(sbom, root / "artifacts", root / "out/notices.txt")
             report = (root / "out/notices.txt").read_text(encoding="utf-8")
-            self.assertIn("Source: example.vendor:whitespace:1.0/whitespace-1.0.aar!/META-INF/LICENSE\\n\\n  Exact upstream text.\\n\\n", report)
+            self.assertIn("Source: example.vendor:whitespace:1.0/whitespace-1.0.aar!/META-INF/LICENSE\n\n  Exact upstream text.\n\n", report)
 
     def test_embedded_nul_after_text_prefix_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -157,7 +157,7 @@ class BinaryNoticeAuditTest(unittest.TestCase):
             d = root / "artifacts/example/vendor/embedded-nul/1.0"
             d.mkdir(parents=True)
             with zipfile.ZipFile(d / "embedded-nul-1.0.aar", "w") as z:
-                z.writestr("META-INF/LICENSE", b"A" * 4096 + b"\\x00" + b"B")
+                z.writestr("META-INF/LICENSE", b"A" * 4096 + b"\x00" + b"B")
             sbom = root / "bom.json"
             sbom.write_text(json.dumps({"components": [{"group": "example.vendor", "name": "embedded-nul",
                 "version": "1.0", "licenses": [{"license": {"id": "Apache-2.0"}}]}]}), encoding="utf-8")
