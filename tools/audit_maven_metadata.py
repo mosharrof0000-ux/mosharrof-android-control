@@ -79,6 +79,7 @@ def parse_pom(data: bytes) -> dict[str, Any]:
     licenses = []
     for item in root.findall("./licenses/license"):
         name, url = child_text(item, "name"), child_text(item, "url")
+        url = sanitize_scm_reference(url) if url else ""
         if name or url:
             licenses.append({"name": name, "url": url,
                              "distribution": child_text(item, "distribution"),
@@ -89,9 +90,13 @@ def parse_pom(data: bytes) -> dict[str, Any]:
     developers = []
     for item in root.findall("./developers/developer"):
         developer = {k: child_text(item, k) for k in ("name", "organization", "organizationUrl")}
+        if developer["organizationUrl"]:
+            developer["organizationUrl"] = sanitize_scm_reference(developer["organizationUrl"])
         if any(developer.values()): developers.append(developer)
     organization = root.find("./organization")
     org = {k: child_text(organization, k) for k in ("name", "url")} if organization is not None else {}
+    if org.get("url"):
+        org["url"] = sanitize_scm_reference(org["url"])
     parent = root.find("./parent")
     parent_data = {k: child_text(parent, k) for k in ("groupId", "artifactId", "version")} if parent is not None else {}
     return {"licenses": licenses, "scm": scm_data, "developers": developers, "organization": org, "parent": parent_data}
