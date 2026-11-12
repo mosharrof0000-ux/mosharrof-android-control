@@ -23,6 +23,7 @@ class BinaryNoticeAuditTest(unittest.TestCase):
             self.assertEqual(result["archive_notice_component_count"], 1)
             text=(root/"out/notices.txt").read_text()
             self.assertIn("Sample upstream notice.", text); self.assertIn("Nested license text.", text)
+            self.assertIn("\n## example.vendor:sample:1.2.3\n", text)
     def test_missing_archive_notice_is_not_fabricated(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp); sbom, artifacts=self.fixture(root, outer_notice=False, nested_license=False)
