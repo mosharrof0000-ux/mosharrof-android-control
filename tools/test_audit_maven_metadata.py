@@ -1,4 +1,7 @@
+import json
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 from audit_maven_metadata import normalize_license, parse_pom, pom_urls, resolve_license_metadata, sanitize_scm_reference, licenses_match, audit
 
