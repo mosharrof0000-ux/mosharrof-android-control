@@ -8,6 +8,8 @@ import re
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from audit_maven_metadata import sanitize_scm_reference
+
 
 ALLOWED_SCHEMES = {"http", "https", "ssh", "git"}
 SCP_LIKE = re.compile(r"^(?:[^@/:\s]+@)?[A-Za-z0-9.-]+:[^\s]+$")
@@ -35,14 +37,15 @@ def valid_scm_reference(value: str, *, allow_scp: bool = True) -> bool:
 
 
 def assess_component(component: dict) -> dict:
-    scm = component.get("scm") or {}
-    populated = {key: str(scm.get(key) or "").strip()
-                 for key in ("url", "connection", "developerConnection")}
-    populated = {key: value for key, value in populated.items() if value}
-    invalid = [key for key, value in populated.items()
+    scm_raw = component.get("scm") or {}
+    raw_fields = {key: str(scm_raw.get(key) or "").strip()
+                  for key in ("url", "connection", "developerConnection")}
+    raw_fields = {key: value for key, value in raw_fields.items() if value}
+    invalid = [key for key, value in raw_fields.items()
                if not valid_scm_reference(value, allow_scp=(key != "url"))]
-    valid = [key for key, value in populated.items()
+    valid = [key for key, value in raw_fields.items()
              if valid_scm_reference(value, allow_scp=(key != "url"))]
+    sanitized = {key: sanitize_scm_reference(value) for key, value in raw_fields.items()}
     if invalid:
         status = "INVALID_OR_MIXED_REFERENCE"
     elif valid:
@@ -53,7 +56,7 @@ def assess_component(component: dict) -> dict:
         "coordinate": component.get("coordinate", ""),
         "pom_url": component.get("pom_url", ""),
         "pom_sha256": component.get("pom_sha256", ""),
-        "scm": populated,
+        "scm": sanitized,
         "valid_fields": valid,
         "invalid_fields": invalid,
         "developer_metadata_present": bool(component.get("developers")),
@@ -64,7 +67,6 @@ def assess_component(component: dict) -> dict:
         "release_tag_verified": False,
         "publisher_identity_verified": False,
     }
-
 
 def audit(source: dict) -> dict:
     components = [assess_component(item) for item in source.get("components", [])]
