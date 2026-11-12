@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Inspect resolved Android AAR/JAR archives and preserve upstream license/notice text."""
 from __future__ import annotations
-import argparse, hashlib, json, re, sys, zipfile
+import argparse, hashlib, json, re, sys, zipfile, zlib
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -11,37 +11,67 @@ MAX_TEXT_BYTES = 2 * 1024 * 1024
 MAX_ARCHIVE_BYTES = 64 * 1024 * 1024
 
 def safe_text(data: bytes):
-    if not data or len(data) > MAX_TEXT_BYTES or b"\x00" in data[:4096]: return None
-    value = data.decode("utf-8", errors="replace").strip()
-    return value or None
+    """Return the exact UTF-8 text, or None when bytes are not safe text."""
+    if not data or len(data) > MAX_TEXT_BYTES or b"\x00" in data[:4096]:
+        return None
+    try:
+        value = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    return value if value.strip() else None
+
 
 def scan_zip(data: bytes, source: str, depth: int = 0):
-    if depth > 4 or len(data) > MAX_ARCHIVE_BYTES: return []
+    """Extract exact notice text and report every archive that could not be inspected."""
     from io import BytesIO
-    found = []
+
+    if depth > 4:
+        return [], [source + ": nested archive depth exceeds 4"]
+    if len(data) > MAX_ARCHIVE_BYTES:
+        return [], [source + ": archive exceeds 64 MiB scan limit"]
+
+    found, failures = [], []
     try:
         with zipfile.ZipFile(BytesIO(data)) as archive:
             for info in archive.infolist():
-                if info.is_dir(): continue
+                if info.is_dir():
+                    continue
                 name = info.filename.replace("\\", "/")
-                is_nested_archive = name.lower().endswith((".jar", ".zip"))
-                # Nested archives need a larger limit than plain text notices:
-                # otherwise ordinary multi-megabyte classes.jar files are skipped.
-                size_limit = MAX_ARCHIVE_BYTES if is_nested_archive else MAX_TEXT_BYTES
-                if info.file_size > size_limit: continue
-                try: payload = archive.read(info)
-                except (OSError, RuntimeError, zipfile.BadZipFile): continue
-                if LICENSE_NAME.search(name) and len(payload) <= MAX_TEXT_BYTES:
+                is_notice = bool(LICENSE_NAME.search(name))
+                is_nested_archive = name.lower().endswith((".aar", ".jar", ".zip"))
+
+                if is_nested_archive and info.file_size > MAX_ARCHIVE_BYTES:
+                    failures.append(source + "!/" + name + ": nested archive exceeds 64 MiB scan limit")
+                    continue
+                if is_notice and info.file_size > MAX_TEXT_BYTES:
+                    failures.append(source + "!/" + name + ": notice text exceeds 2 MiB scan limit")
+                    continue
+                if not is_nested_archive and not is_notice and info.file_size > MAX_TEXT_BYTES:
+                    continue
+
+                try:
+                    payload = archive.read(info)
+                except (OSError, RuntimeError, zipfile.BadZipFile, zlib.error, EOFError) as exc:
+                    failures.append(source + "!/" + name + ": archive entry could not be read: " + str(exc))
+                    continue
+
+                if is_notice:
                     value = safe_text(payload)
-                    if value:
+                    if value is None:
+                        failures.append(source + "!/" + name + ": notice entry is not valid bounded UTF-8 text")
+                    else:
                         found.append({"path": source + "!/" + name,
                                       "sha256": hashlib.sha256(payload).hexdigest(),
                                       "content": value})
-                if is_nested_archive and len(payload) <= MAX_ARCHIVE_BYTES:
-                    found.extend(scan_zip(payload, source + "!/" + name, depth + 1))
-    except (OSError, zipfile.BadZipFile):
-        return []
-    return found
+
+                if is_nested_archive:
+                    nested_found, nested_failures = scan_zip(payload, source + "!/" + name, depth + 1)
+                    found.extend(nested_found)
+                    failures.extend(nested_failures)
+    except (OSError, zipfile.BadZipFile) as exc:
+        failures.append(source + ": archive could not be inspected: " + str(exc))
+
+    return found, failures
 
 def licenses_for(component: dict[str, Any]):
     labels = set()
@@ -57,7 +87,7 @@ def audit(sbom_path: Path, artifact_dir: Path, notice_output: Path):
     bom = json.loads(sbom_path.read_text(encoding="utf-8"))
     components = bom.get("components") or []
     if not components: raise ValueError("SBOM contains no components")
-    results, failures, unique_text = [], [], {}
+    results, failures, extracted_text = [], [], []
     for component in components:
         group, name, version = (str(component.get(k) or "") for k in ("group", "name", "version"))
         if not all((group, name, version)):
@@ -69,9 +99,16 @@ def audit(sbom_path: Path, artifact_dir: Path, notice_output: Path):
         extracted = []
         if not binaries: failures.append(coordinate + ": resolved AAR/JAR binary not collected")
         for binary in binaries:
-            try: extracted.extend(scan_zip(binary.read_bytes(), coordinate + "/" + binary.name))
-            except OSError as exc: failures.append(coordinate + ": cannot read " + binary.name + ": " + str(exc))
-        for entry in extracted: unique_text.setdefault(entry["sha256"], entry)
+            try:
+                if binary.stat().st_size > MAX_ARCHIVE_BYTES:
+                    failures.append(coordinate + "/" + binary.name + ": top-level archive exceeds 64 MiB scan limit")
+                    continue
+                found, scan_failures = scan_zip(binary.read_bytes(), coordinate + "/" + binary.name)
+                extracted.extend(found)
+                failures.extend(coordinate + ": " + item for item in scan_failures)
+            except OSError as exc:
+                failures.append(coordinate + ": cannot read " + binary.name + ": " + str(exc))
+        extracted_text.extend(extracted)
         evidence = "ARCHIVE_LICENSE_OR_NOTICE" if extracted else ("SBOM_DECLARED_LICENSE_ONLY" if declared else "NO_LICENSE_EVIDENCE")
         if evidence == "NO_LICENSE_EVIDENCE": failures.append(coordinate + ": no archive notice/license and no SBOM license declaration")
         results.append({"coordinate": coordinate, "binary_files": [p.name for p in binaries],
@@ -87,7 +124,7 @@ def audit(sbom_path: Path, artifact_dir: Path, notice_output: Path):
         lines += ["## " + item["coordinate"],
                   "Declared SBOM license(s): " + (", ".join(item["declared_licenses"]) or "UNIDENTIFIED"),
                   "Evidence: " + item["evidence_level"]]
-        matching = [unique_text[e["sha256"]] for e in (e for e in unique_text.values() if e["path"] in item["archive_notice_files"])]
+        matching = [entry for entry in extracted_text if entry["path"] in item["archive_notice_files"]]
         if matching:
             for entry in matching: lines += ["", "Source: " + entry["path"], "", entry["content"], ""]
         else: lines.append("No matching LICENSE/NOTICE/COPYING/COPYRIGHT text file found in this binary archive.")
