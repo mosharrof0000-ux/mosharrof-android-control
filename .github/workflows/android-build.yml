@@ -162,7 +162,7 @@ jobs:
           if (audit.get("binary_component_count") != EXPECTED_RUNTIME_COMPONENTS
                   or audit.get("binary_file_count", 0) < EXPECTED_RUNTIME_COMPONENTS
                   or any(item.get("binary_count", 0) < 1 for item in audit_components)
-                  or audit.get("failures")):
+                  or audit.get("failures") != []):
               fail("Binary notice audit did not inspect every runtime component without failures")
 
           notice_components = {item["coordinate"] for item in audit_components if item.get("notice_found")}
@@ -190,7 +190,7 @@ jobs:
                   or metadata_coordinates != sbom_coordinates
                   or metadata.get("license_match_count") != EXPECTED_RUNTIME_COMPONENTS
                   or metadata.get("license_mismatch_count") != 0
-                  or metadata.get("failures")):
+                  or metadata.get("failures") != []):
               fail("Maven POM/SBOM license comparison did not produce 34 exact matches and zero mismatches")
 
           with open(REPORT_DIR + "/maven-source-metadata-audit.json", encoding="utf-8") as stream:
@@ -257,12 +257,25 @@ jobs:
                       fail("APK upstream/POM attribution assets do not cover component: " + coordinate)
               for item in audit_components:
                   coordinate = item["coordinate"]
+                  section_start = upstream.find("## " + coordinate)
+                  if section_start < 0:
+                      fail("APK upstream notice asset is missing a component section: " + coordinate)
+                  section_end = len(upstream)
+                  for other in audit_components:
+                      if other["coordinate"] == coordinate:
+                          continue
+                      next_heading = upstream.find("\\n## " + other["coordinate"], section_start + 1)
+                      if next_heading >= 0:
+                          section_end = min(section_end, next_heading)
+                  section = upstream[section_start:section_end]
+                  if "Evidence: " + item["evidence_level"] not in section:
+                      fail("APK upstream notice evidence label is inconsistent: " + coordinate)
                   if item.get("notice_found"):
                       for source in item.get("archive_notice_files") or []:
-                          if "Source: " + source not in upstream:
+                          if "Source: " + source not in section:
                               fail("APK upstream notice asset is missing an extracted source path: " + coordinate)
-                  elif "No matching LICENSE/NOTICE/COPYING/COPYRIGHT text file found in this binary archive." not in upstream:
-                      fail("APK upstream notice asset does not disclose a missing archive notice: " + coordinate)
+                  elif "No matching LICENSE/NOTICE/COPYING/COPYRIGHT text file found in this binary archive." not in section:
+                      fail("APK upstream notice asset does not disclose this component's missing archive notice: " + coordinate)
               if not pom_attributions.strip():
                   fail("APK POM attribution asset is empty")
 
