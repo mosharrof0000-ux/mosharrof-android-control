@@ -208,6 +208,17 @@ jobs:
               for value in (item.get("scm") or {}).values():
                   if any(character in value for character in ("@", "?", "#")):
                       fail("Maven metadata report contains unsanitized SCM data: " + item.get("coordinate", "UNKNOWN"))
+              for license_item in (item.get("pom_licenses") or []):
+                  value = license_item.get("url") or ""
+                  if any(character in value for character in ("@", "?", "#")):
+                      fail("Maven metadata report contains an unsanitized license URL: " + item.get("coordinate", "UNKNOWN"))
+              for developer in (item.get("developers") or []):
+                  value = developer.get("organizationUrl") or ""
+                  if any(character in value for character in ("@", "?", "#")):
+                      fail("Maven metadata report contains an unsanitized developer URL: " + item.get("coordinate", "UNKNOWN"))
+              organization_url = (item.get("organization") or {}).get("url") or ""
+              if any(character in organization_url for character in ("@", "?", "#")):
+                  fail("Maven metadata report contains an unsanitized organization URL: " + item.get("coordinate", "UNKNOWN"))
 
           apk = "android/app/build/outputs/apk/debug/app-debug.apk"
           with zipfile.ZipFile(apk) as archive:
