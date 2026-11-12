@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import patch
-from audit_maven_metadata import normalize_license, parse_pom, pom_urls, resolve_license_metadata
+from audit_maven_metadata import normalize_license, parse_pom, pom_urls, resolve_license_metadata, sanitize_scm_reference, licenses_match, audit
 
 class MavenMetadataAuditTest(unittest.TestCase):
     def test_normalizes_apache_license_name_and_url(self):
@@ -73,6 +73,35 @@ class MavenMetadataAuditTest(unittest.TestCase):
         with patch("audit_maven_metadata.fetch_pom", return_value=(parent, "https://repo.example/p.pom")):
             with self.assertRaisesRegex(ValueError, "cycle"):
                 resolve_license_metadata(child, "https://repo.example/child.pom")
+
+
+    def test_sanitizes_scm_userinfo_query_fragment_and_scp_user(self):
+        xml = b"""<project><scm><url>https://alice:secret@example.test/source?token=secret#frag</url><connection>scm:git:ssh://git@github.com/example/project.git?access_token=secret#readme</connection><developerConnection>scm:git:git@github.com:example/project.git</developerConnection></scm></project>"""
+        scm = parse_pom(xml)["scm"]
+        self.assertEqual(scm["url"], "https://example.test/source")
+        self.assertEqual(scm["connection"], "scm:git:ssh://github.com/example/project.git")
+        self.assertEqual(scm["developerConnection"], "scm:git:github.com:example/project.git")
+        serialized = str(scm)
+        for secret in ("alice", "secret", "token", "access_token", "git@"):
+            self.assertNotIn(secret, serialized)
+
+    def test_unparseable_scm_is_redacted(self):
+        self.assertEqual(sanitize_scm_reference("bad value?token=secret"), "[unparseable SCM reference]")
+
+    def test_audit_reports_exact_license_mismatch_count(self):
+        pom = b"""<project><licenses><license><name>Apache License, Version 2.0</name></license></licenses></project>"""
+        sbom = {"components": [{"group": "example", "name": "sample", "version": "1.0",
+                                "licenses": [{"license": {"id": "Apache-2.0"}},
+                                             {"license": {"id": "MIT"}}]}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "bom.json"
+            path.write_text(json.dumps(sbom), encoding="utf-8")
+            with patch("audit_maven_metadata.fetch_pom", return_value=(pom, "https://repo.example/sample.pom")):
+                result = audit(path)
+        self.assertEqual(result["pom_component_count"], 1)
+        self.assertEqual(result["license_match_count"], 0)
+        self.assertEqual(result["license_mismatch_count"], 1)
+        self.assertEqual(result["license_mismatch_components"], ["example:sample:1.0"])
 
 if __name__ == "__main__":
     unittest.main()
