@@ -135,4 +135,33 @@ class BinaryNoticeAuditTest(unittest.TestCase):
             result = audit(sbom, root / "artifacts", root / "out/notices.txt")
             self.assertTrue(any("not valid bounded UTF-8 text" in item for item in result["failures"]))
 
+
+    def test_preserves_exact_notice_whitespace(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            d = root / "artifacts/example/vendor/whitespace/1.0"
+            d.mkdir(parents=True)
+            exact_text = "  Exact upstream text.\\n\\n"
+            with zipfile.ZipFile(d / "whitespace-1.0.aar", "w") as z:
+                z.writestr("META-INF/LICENSE", exact_text)
+            sbom = root / "bom.json"
+            sbom.write_text(json.dumps({"components": [{"group": "example.vendor", "name": "whitespace",
+                "version": "1.0", "licenses": [{"license": {"id": "Apache-2.0"}}]}]}), encoding="utf-8")
+            audit(sbom, root / "artifacts", root / "out/notices.txt")
+            report = (root / "out/notices.txt").read_text(encoding="utf-8")
+            self.assertIn("Source: example.vendor:whitespace:1.0/whitespace-1.0.aar!/META-INF/LICENSE\\n\\n  Exact upstream text.\\n\\n", report)
+
+    def test_embedded_nul_after_text_prefix_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            d = root / "artifacts/example/vendor/embedded-nul/1.0"
+            d.mkdir(parents=True)
+            with zipfile.ZipFile(d / "embedded-nul-1.0.aar", "w") as z:
+                z.writestr("META-INF/LICENSE", b"A" * 4096 + b"\\x00" + b"B")
+            sbom = root / "bom.json"
+            sbom.write_text(json.dumps({"components": [{"group": "example.vendor", "name": "embedded-nul",
+                "version": "1.0", "licenses": [{"license": {"id": "Apache-2.0"}}]}]}), encoding="utf-8")
+            result = audit(sbom, root / "artifacts", root / "out/notices.txt")
+            self.assertTrue(any("not valid bounded UTF-8 text" in item for item in result["failures"]))
+
 if __name__ == "__main__": unittest.main()
