@@ -5,9 +5,40 @@ import argparse, hashlib, json, re, sys, urllib.error, urllib.request
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 MAX_POM_BYTES = 4 * 1024 * 1024
 SAFE = re.compile(r"^[A-Za-z0-9_.+-]+$")
+ALLOWED_SCM_SCHEMES = {"http", "https", "ssh", "git"}
+SCP_SCM = re.compile(r"^(?:[^@/:\\s]+@)?(?P<host>[A-Za-z0-9.-]+):(?P<path>[^\\s]+)$")
+
+
+def sanitize_scm_reference(value: str) -> str:
+    """Remove userinfo, query and fragment from SCM references before persistence."""
+    value = (value or "").strip()
+    if not value:
+        return ""
+    prefix = ""
+    if value.startswith("scm:"):
+        parts = value.split(":", 2)
+        if len(parts) != 3 or not parts[2].strip():
+            return "[unparseable SCM reference]"
+        prefix = parts[0] + ":" + parts[1] + ":"
+        value = parts[2].strip()
+    if value.startswith("git+"):
+        prefix += "git+"
+        value = value[4:]
+    try:
+        parsed = urlsplit(value)
+        if parsed.scheme.lower() in ALLOWED_SCM_SCHEMES and parsed.hostname:
+            port = f":{parsed.port}" if parsed.port else ""
+            return prefix + f"{parsed.scheme.lower()}://{parsed.hostname}{port}{parsed.path}"
+    except ValueError:
+        pass
+    match = SCP_SCM.fullmatch(value)
+    if match:
+        return prefix + match.group("host") + ":" + match.group("path").split("?", 1)[0].split("#", 1)[0]
+    return "[unparseable SCM reference]"
 
 def normalize_license(value: str) -> str:
     """Normalize common POM labels without collapsing distinct SPDX licenses."""
@@ -53,7 +84,8 @@ def parse_pom(data: bytes) -> dict[str, Any]:
                              "distribution": child_text(item, "distribution"),
                              "normalized": normalize_license(name + " " + url)})
     scm = root.find("./scm")
-    scm_data = {k: child_text(scm, k) for k in ("url", "connection", "developerConnection")} if scm is not None else {}
+    scm_data = {k: sanitize_scm_reference(child_text(scm, k))
+                for k in ("url", "connection", "developerConnection")} if scm is not None else {}
     developers = []
     for item in root.findall("./developers/developer"):
         developer = {k: child_text(item, k) for k in ("name", "organization", "organizationUrl")}
@@ -138,12 +170,13 @@ def audit(sbom_path: Path) -> dict[str, Any]:
     bom = json.loads(sbom_path.read_text(encoding="utf-8"))
     components = bom.get("components") or []
     if not components: raise ValueError("SBOM contains no components")
-    results, failures = [], []
+    results, failures, mismatches = [], [], []
     for component in components:
         group, name, version = (str(component.get(k) or "") for k in ("group", "name", "version"))
         coordinate = f"{group}:{name}:{version}"
         if not all((group, name, version)):
             failures.append(coordinate + ": incomplete Maven coordinate")
+            mismatches.append(coordinate)
             continue
         try:
             data, source_url = fetch_pom(pom_urls(group, name, version))
@@ -153,6 +186,8 @@ def audit(sbom_path: Path) -> dict[str, Any]:
             pom_licenses = sorted({x["normalized"] for x in license_entries if x["normalized"]})
             declared = sbom_licenses(component)
             mismatch = not licenses_match(declared, pom_licenses)
+            if mismatch:
+                mismatches.append(coordinate)
             if resolved["license_source"] == "missing":
                 failures.append(coordinate + ": POM and bounded parent chain have no license declaration")
             elif mismatch:
@@ -170,9 +205,12 @@ def audit(sbom_path: Path) -> dict[str, Any]:
                             "license_match": bool(declared and pom_licenses and not mismatch)})
         except (OSError, RuntimeError, ValueError, ET.ParseError) as exc:
             failures.append(coordinate + ": " + str(exc))
+            mismatches.append(coordinate)
     return {"schema_version": 1, "component_count": len(components),
             "pom_component_count": len(results),
             "license_match_count": sum(x["license_match"] for x in results),
+            "license_mismatch_count": len(mismatches),
+            "license_mismatch_components": mismatches,
             "components": results, "failures": failures}
 
 def main() -> int:
@@ -191,9 +229,10 @@ def main() -> int:
     lines = ["# Upstream Maven POM license metadata audit", "",
              f"- SBOM components: **{report['component_count']}**",
              f"- POMs retrieved: **{report['pom_component_count']}**",
-             f"- POM/SBOM license matches: **{report['license_match_count']}**", "",
+             f"- POM/SBOM license matches: **{report['license_match_count']}**",
+             f"- POM/SBOM license mismatches or unresolved entries: **{report['license_mismatch_count']}**", "",
              "| Component | SBOM license | POM license | Source | Match | POM SHA-256 |",
-             "|---|---|---|---|---|"]
+             "|---|---|---|---|---|---|"]
     attribution = ["UPSTREAM MAVEN POM LICENSE AND SOURCE ATTRIBUTIONS",
                    "Metadata is copied from the exact Maven POM for each resolved coordinate.",
                    "This report is POM metadata evidence, not extracted binary LICENSE/NOTICE text.", ""]
@@ -223,7 +262,7 @@ def main() -> int:
     if report["failures"]: lines += ["", "## Failures", ""] + ["- " + x for x in report["failures"]]
     args.markdown_report.write_text("\n".join(lines) + "\n", encoding="utf-8")
     args.attributions.write_text("\n".join(attribution).rstrip() + "\n", encoding="utf-8")
-    print(f"Maven POM audit: {report['pom_component_count']}/{report['component_count']} POMs; {report['license_match_count']} license matches.")
+    print(f"Maven POM audit: {report['pom_component_count']}/{report['component_count']} POMs; {report['license_match_count']} license matches; {report['license_mismatch_count']} mismatches.")
     for failure in report["failures"]:
         print("AUDIT_FAILURE: " + failure, file=sys.stderr)
     return 1 if report["failures"] or report["pom_component_count"] != report["component_count"] else 0
