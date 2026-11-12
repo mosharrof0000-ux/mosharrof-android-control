@@ -49,5 +49,17 @@ class MavenSourceMetadataTest(unittest.TestCase):
         self.assertEqual(result["assessment_counts"]["MISSING_REFERENCE"], 1)
 
 
+
+    def test_scm_json_report_redacts_userinfo_query_and_fragment(self):
+        result = assess_component({"coordinate": "g:a:1", "scm": {
+            "url": "https://alice:secret@example.test/source?token=secret#frag",
+            "connection": "scm:git:ssh://git@github.com/example/project.git?access_token=secret#readme",
+        }})
+        self.assertEqual(result["scm"]["url"], "https://example.test/source")
+        self.assertEqual(result["scm"]["connection"], "scm:git:ssh://github.com/example/project.git")
+        serialized = str(result["scm"])
+        for secret in ("alice", "secret", "token", "access_token", "git@"):
+            self.assertNotIn(secret, serialized)
+
 if __name__ == "__main__":
     unittest.main()
