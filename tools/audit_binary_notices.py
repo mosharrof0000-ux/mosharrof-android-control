@@ -12,7 +12,7 @@ MAX_ARCHIVE_BYTES = 64 * 1024 * 1024
 
 def safe_text(data: bytes):
     """Return the exact UTF-8 text, or None when bytes are not safe text."""
-    if not data or len(data) > MAX_TEXT_BYTES or b"\x00" in data[:4096]:
+    if not data or len(data) > MAX_TEXT_BYTES or b"\x00" in data:
         return None
     try:
         value = data.decode("utf-8")
@@ -129,7 +129,7 @@ def audit(sbom_path: Path, artifact_dir: Path, notice_output: Path):
             for entry in matching: lines += ["", "Source: " + entry["path"], "", entry["content"], ""]
         else: lines.append("No matching LICENSE/NOTICE/COPYING/COPYRIGHT text file found in this binary archive.")
         lines.append("")
-    notice_output.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    notice_output.write_text("\n".join(lines) + "\n", encoding="utf-8")
     manual_review = [x["coordinate"] for x in results if not x["notice_found"]]
     return {"schema_version": 1, "component_count": len(results),
             "binary_component_count": sum(bool(x["binary_files"]) for x in results),
