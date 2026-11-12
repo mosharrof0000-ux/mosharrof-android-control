@@ -253,19 +253,19 @@ jobs:
                   coordinate = group + ":" + name + ":" + version
                   if row not in notices:
                       fail("APK third-party inventory is missing the exact component/version/license row: " + coordinate)
-                  component_heading = "\\n## " + coordinate + "\\n"
+                  component_heading = "\n## " + coordinate + "\n"
                   if component_heading not in upstream or component_heading not in pom_attributions:
                       fail("APK upstream/POM attribution assets do not cover component: " + coordinate)
               for item in audit_components:
                   coordinate = item["coordinate"]
-                  section_start = upstream.find("\\n## " + coordinate + "\\n")
+                  section_start = upstream.find("\n## " + coordinate + "\n")
                   if section_start < 0:
                       fail("APK upstream notice asset is missing a component section: " + coordinate)
                   section_end = len(upstream)
                   for other in audit_components:
                       if other["coordinate"] == coordinate:
                           continue
-                      next_heading = upstream.find("\\n## " + other["coordinate"] + "\\n", section_start + 1)
+                      next_heading = upstream.find("\n## " + other["coordinate"] + "\n", section_start + 1)
                       if next_heading >= 0:
                           section_end = min(section_end, next_heading)
                   section = upstream[section_start:section_end]
