@@ -37,8 +37,10 @@ def scan_zip(data: bytes, source: str, depth: int = 0):
                 if info.is_dir():
                     continue
                 name = info.filename.replace("\\", "/")
-                is_notice = bool(LICENSE_NAME.search(name))
                 is_nested_archive = name.lower().endswith((".aar", ".jar", ".zip"))
+                # A nested archive named NOTICE.zip/LICENSE.jar is a container,
+                # not a text notice entry. Recurse into it without UTF-8 decoding.
+                is_notice = not is_nested_archive and bool(LICENSE_NAME.search(name))
 
                 if is_nested_archive and info.file_size > MAX_ARCHIVE_BYTES:
                     failures.append(source + "!/" + name + ": nested archive exceeds 64 MiB scan limit")
