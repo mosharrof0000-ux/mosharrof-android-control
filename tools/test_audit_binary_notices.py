@@ -165,4 +165,27 @@ class BinaryNoticeAuditTest(unittest.TestCase):
             result = audit(sbom, root / "artifacts", root / "out/notices.txt")
             self.assertTrue(any("not valid bounded UTF-8 text" in item for item in result["failures"]))
 
+
+    def test_scans_nested_zip_named_notice_zip_without_treating_archive_as_text(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            d = root / "artifacts/example/vendor/notice-zip/1.0"
+            d.mkdir(parents=True)
+            nested = io.BytesIO()
+            with zipfile.ZipFile(nested, "w") as z:
+                z.writestr("META-INF/NOTICE", "Nested ZIP notice text.")
+            with zipfile.ZipFile(d / "notice-zip-1.0.aar", "w") as z:
+                z.writestr("META-INF/NOTICE.zip", nested.getvalue())
+            sbom = root / "bom.json"
+            sbom.write_text(json.dumps({"components": [{
+                "group": "example.vendor", "name": "notice-zip", "version": "1.0",
+                "licenses": [{"license": {"id": "Apache-2.0"}}]
+            }]}), encoding="utf-8")
+            result = audit(sbom, root / "artifacts", root / "out/notices.txt")
+            self.assertEqual(result["archive_notice_component_count"], 1)
+            self.assertEqual(result["failures"], [])
+            report = (root / "out/notices.txt").read_text(encoding="utf-8")
+            self.assertIn("Nested ZIP notice text.", report)
+            self.assertIn("NOTICE.zip!/META-INF/NOTICE", report)
+
 if __name__ == "__main__": unittest.main()
