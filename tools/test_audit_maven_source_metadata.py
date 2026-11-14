@@ -29,6 +29,24 @@ class MavenSourceMetadataTest(unittest.TestCase):
         self.assertEqual(result["assessment"], "INVALID_OR_MIXED_REFERENCE")
         self.assertEqual(result["invalid_fields"], ["connection"])
 
+    def test_parent_inherited_pom_reference_remains_unverified(self):
+        result = assess_component({
+            "coordinate": "com.google.guava:listenablefuture:1.0",
+            "pom_url": "https://repo.maven.apache.org/maven2/com/google/guava/listenablefuture/1.0/listenablefuture-1.0.pom",
+            "scm": {"url": "https://github.com/google/guava"},
+            "scm_source": "parent_pom",
+            "scm_provenance": {"url": {"source": "parent_pom", "pom_url": "https://repo.maven.apache.org/maven2/com/google/guava/guava-parent/26.0-android/guava-parent-26.0-android.pom"}},
+            "scm_parent_pom_url": "https://repo.maven.apache.org/maven2/com/google/guava/guava-parent/26.0-android/guava-parent-26.0-android.pom",
+            "developers": [{"name": "Guava Authors"}],
+            "developers_source": "parent_pom",
+        })
+        self.assertEqual(result["assessment"], "POM_REFERENCE_PRESENT_UNVERIFIED")
+        self.assertEqual(result["scm_source"], "parent_pom")
+        self.assertEqual(result["scm"]["url"], "https://github.com/google/guava")
+        self.assertFalse(result["repository_existence_verified"])
+        self.assertFalse(result["release_tag_verified"])
+        self.assertFalse(result["publisher_identity_verified"])
+
     def test_valid_pom_reference_remains_unverified(self):
         result = assess_component({"coordinate": "g:a:1", "pom_url": "https://repo.test/a.pom",
                                    "pom_sha256": "abc", "scm": {
