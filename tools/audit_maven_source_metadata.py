@@ -56,12 +56,21 @@ def assess_component(component: dict) -> dict:
         "coordinate": component.get("coordinate", ""),
         "pom_url": component.get("pom_url", ""),
         "pom_sha256": component.get("pom_sha256", ""),
+        "parent_pom_url": component.get("parent_pom_url", ""),
+        "parent_pom_sha256": component.get("parent_pom_sha256", ""),
         "scm": sanitized,
+        "scm_source": component.get("scm_source") or ("pom" if valid else "missing"),
+        "scm_provenance": component.get("scm_provenance") or {},
+        "scm_parent_pom_url": component.get("scm_parent_pom_url", ""),
+        "scm_parent_pom_sha256": component.get("scm_parent_pom_sha256", ""),
+        "metadata_inheritance_error": component.get("metadata_inheritance_error"),
         "valid_fields": valid,
         "invalid_fields": invalid,
         "developer_metadata_present": bool(component.get("developers")),
+        "developers_source": component.get("developers_source", "missing"),
         "organization_metadata_present": bool((component.get("organization") or {}).get("name")
                                                or (component.get("organization") or {}).get("url")),
+        "organization_source": component.get("organization_source", "missing"),
         "assessment": status,
         "repository_existence_verified": False,
         "release_tag_verified": False,
@@ -103,16 +112,17 @@ def main() -> int:
         f"- POM SCM reference present (syntax only): **{report['assessment_counts']['POM_REFERENCE_PRESENT_UNVERIFIED']}**",
         f"- SCM reference missing: **{report['assessment_counts']['MISSING_REFERENCE']}**",
         f"- SCM reference invalid or mixed: **{report['assessment_counts']['INVALID_OR_MIXED_REFERENCE']}**",
+        f"- SCM metadata inherited from parent POM: **{sum(item['scm_source'] == 'parent_pom' for item in report['components'])}**",
         "- Repository existence verified: **0**",
         "- Matching release tag verified: **0**",
         "- Publisher identity verified: **0**", "",
         "This report validates only the syntax/presence of POM SCM metadata. It does not contact repositories, prove repository ownership, match artifact versions to tags/commits, or authenticate publishers.", "",
-        "| Component | Assessment | POM SHA-256 | SCM URL | Connection | Developer metadata | Organization metadata |",
-        "|---|---|---|---|---|---|---|",
+        "| Component | Assessment | SCM source | POM SHA-256 | SCM URL | Connection | Developer metadata | Organization metadata |",
+        "|---|---|---|---|---|---|---|---|",
     ]
     for item in report["components"]:
         scm = item["scm"]
-        values = [item["coordinate"], item["assessment"], item["pom_sha256"],
+        values = [item["coordinate"], item["assessment"], item["scm_source"], item["pom_sha256"],
                   scm.get("url", ""), scm.get("connection", ""),
                   "yes" if item["developer_metadata_present"] else "no",
                   "yes" if item["organization_metadata_present"] else "no"]
@@ -139,7 +149,7 @@ def main() -> int:
                     safe_ref = safe_ref.split("@", 1)[-1]
         except ValueError:
             safe_ref = "[unparseable SCM reference]"
-        print(f"SCM_REF {item['coordinate']} | {item['assessment']} | {safe_ref}")
+        print(f"SCM_REF {item['coordinate']} | {item['assessment']} | source={item['scm_source']} | {safe_ref}")
     return 0
 
 
