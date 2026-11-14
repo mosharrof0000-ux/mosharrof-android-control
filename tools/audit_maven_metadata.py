@@ -122,39 +122,190 @@ def fetch_pom(urls: list[str]) -> tuple[bytes, str]:
             errors.append(url + ": " + str(exc))
     raise RuntimeError("; ".join(errors))
 
+def _source_summary(provenance: dict[str, dict[str, str]]) -> str:
+    sources = {item.get("source", "missing") for item in provenance.values()}
+    sources.discard("missing")
+    if not sources:
+        return "missing"
+    if len(sources) > 1:
+        return "mixed"
+    return next(iter(sources))
+
+
+def _merge_metadata_fields(child: dict[str, str], parent: dict[str, str],
+                           keys: tuple[str, ...], source_url: str, source_sha256: str,
+                           parent_provenance: dict[str, dict[str, str]] | None = None,
+                           parent_url: str | None = None,
+                           parent_sha256: str | None = None):
+    values, provenance = {}, {}
+    parent_provenance = parent_provenance or {}
+    for key in keys:
+        if child.get(key):
+            values[key] = child[key]
+            provenance[key] = {"source": "pom", "pom_url": source_url,
+                               "pom_sha256": source_sha256}
+        elif parent.get(key):
+            inherited = parent_provenance.get(key) or {}
+            values[key] = parent[key]
+            provenance[key] = {
+                "source": "parent_pom",
+                "pom_url": inherited.get("pom_url") or parent_url or "",
+                "pom_sha256": inherited.get("pom_sha256") or parent_sha256 or "",
+                "inherited_via_pom": parent_url or "",
+            }
+        else:
+            provenance[key] = {"source": "missing", "pom_url": "", "pom_sha256": ""}
+    return values, provenance
+
+
 def resolve_license_metadata(data: bytes, source_url: str, depth: int = 0,
                              seen: set[tuple[str, str, str]] | None = None) -> dict[str, Any]:
-    """Resolve license declarations from the artifact POM or its bounded parent chain."""
+    """Resolve license and missing source metadata from a bounded Maven parent chain."""
     if seen is None:
         seen = set()
     metadata = parse_pom(data)
-    if metadata["licenses"]:
-        return {"metadata": metadata, "license_source": "pom",
-                "license_pom_url": source_url,
-                "license_pom_sha256": hashlib.sha256(data).hexdigest(),
-                "parent_pom_url": None, "parent_pom_sha256": None}
+    data_sha256 = hashlib.sha256(data).hexdigest()
+    direct_licenses = metadata["licenses"]
+    direct_scm = metadata["scm"]
+    direct_developers = metadata["developers"]
+    direct_organization = metadata["organization"]
+
+    direct_scm_values, direct_scm_provenance = _merge_metadata_fields(
+        direct_scm, {}, ("url", "connection", "developerConnection"), source_url, data_sha256)
+    direct_org_values, direct_org_provenance = _merge_metadata_fields(
+        direct_organization, {}, ("name", "url"), source_url, data_sha256)
+    base = {
+        "metadata": metadata,
+        "license_source": "pom" if direct_licenses else "missing",
+        "license_pom_url": source_url if direct_licenses else None,
+        "license_pom_sha256": data_sha256 if direct_licenses else None,
+        "effective_licenses": direct_licenses,
+        "parent_pom_url": None,
+        "parent_pom_sha256": None,
+        "effective_scm": direct_scm_values,
+        "scm_source": _source_summary(direct_scm_provenance),
+        "scm_provenance": direct_scm_provenance,
+        "scm_pom_url": source_url if any(direct_scm_values.values()) else None,
+        "scm_pom_sha256": data_sha256 if any(direct_scm_values.values()) else None,
+        "scm_parent_pom_url": None,
+        "scm_parent_pom_sha256": None,
+        "effective_developers": direct_developers,
+        "developers_source": "pom" if direct_developers else "missing",
+        "developers_pom_url": source_url if direct_developers else None,
+        "developers_pom_sha256": data_sha256 if direct_developers else None,
+        "developers_parent_pom_url": None,
+        "effective_organization": direct_org_values,
+        "organization_source": _source_summary(direct_org_provenance),
+        "organization_provenance": direct_org_provenance,
+        "organization_pom_url": source_url if any(direct_org_values.values()) else None,
+        "organization_pom_sha256": data_sha256 if any(direct_org_values.values()) else None,
+        "organization_parent_pom_url": None,
+        "metadata_inheritance_error": None,
+        "parent_resolution_limited": False,
+    }
+
+    needs_parent = not direct_licenses or not any(direct_scm.values())
     parent = metadata.get("parent") or {}
-    if depth >= 4 or not all(parent.get(k) for k in ("groupId", "artifactId", "version")):
-        return {"metadata": metadata, "license_source": "missing",
-                "license_pom_url": None, "license_pom_sha256": None,
-                "parent_pom_url": None, "parent_pom_sha256": None}
+    if (not needs_parent
+            or not all(parent.get(key) for key in ("groupId", "artifactId", "version"))):
+        return base
+    if depth >= 4:
+        base["parent_resolution_limited"] = True
+        return base
+
     coordinate = (parent["groupId"], parent["artifactId"], parent["version"])
     if coordinate in seen:
+        if direct_licenses:
+            base["metadata_inheritance_error"] = "Maven parent POM cycle detected"
+            return base
         raise ValueError("Maven parent POM cycle detected")
     seen.add(coordinate)
-    parent_data, parent_url = fetch_pom(pom_urls(*coordinate))
+    try:
+        parent_data, parent_url = fetch_pom(pom_urls(*coordinate))
+    except (OSError, RuntimeError, ValueError) as exc:
+        if direct_licenses:
+            base["metadata_inheritance_error"] = type(exc).__name__ + ": " + str(exc)
+            return base
+        raise
+
+    parent_sha256 = hashlib.sha256(parent_data).hexdigest()
     resolved = resolve_license_metadata(parent_data, parent_url, depth + 1, seen)
-    if resolved["license_source"] == "missing":
-        return {"metadata": metadata, "license_source": "missing",
-                "license_pom_url": None, "license_pom_sha256": None,
-                "parent_pom_url": parent_url,
-                "parent_pom_sha256": hashlib.sha256(parent_data).hexdigest()}
-    return {"metadata": metadata, "license_source": "parent_pom",
-            "license_pom_url": resolved["license_pom_url"],
-            "license_pom_sha256": resolved["license_pom_sha256"],
-            "parent_pom_url": parent_url,
-            "parent_pom_sha256": hashlib.sha256(parent_data).hexdigest(),
-            "inherited_licenses": resolved.get("inherited_licenses", resolved["metadata"]["licenses"])}
+
+    if direct_licenses:
+        effective_licenses = direct_licenses
+        license_source = "pom"
+        license_pom_url, license_pom_sha256 = source_url, data_sha256
+    else:
+        effective_licenses = resolved["effective_licenses"]
+        license_source = "parent_pom" if resolved["license_source"] != "missing" else "missing"
+        license_pom_url = resolved["license_pom_url"]
+        license_pom_sha256 = resolved["license_pom_sha256"]
+
+    effective_scm, scm_provenance = _merge_metadata_fields(
+        direct_scm, resolved["effective_scm"],
+        ("url", "connection", "developerConnection"), source_url, data_sha256,
+        resolved["scm_provenance"], parent_url, parent_sha256)
+    inherited_scm = [item for item in scm_provenance.values() if item["source"] == "parent_pom"]
+    direct_scm_present = any(direct_scm.values())
+    scm_parent_pom_url = next((item["pom_url"] for item in inherited_scm if item.get("pom_url")), None)
+    scm_parent_pom_sha256 = next((item["pom_sha256"] for item in inherited_scm if item.get("pom_sha256")), None)
+
+    if direct_developers:
+        effective_developers = direct_developers
+        developers_source = "pom"
+        developers_pom_url, developers_pom_sha256 = source_url, data_sha256
+        developers_parent_pom_url = None
+    elif resolved["effective_developers"]:
+        effective_developers = resolved["effective_developers"]
+        developers_source = "parent_pom"
+        developers_pom_url = resolved["developers_pom_url"]
+        developers_pom_sha256 = resolved["developers_pom_sha256"]
+        developers_parent_pom_url = parent_url
+    else:
+        effective_developers = []
+        developers_source = "missing"
+        developers_pom_url = developers_pom_sha256 = developers_parent_pom_url = None
+
+    effective_organization, organization_provenance = _merge_metadata_fields(
+        direct_organization, resolved["effective_organization"],
+        ("name", "url"), source_url, data_sha256,
+        resolved["organization_provenance"], parent_url, parent_sha256)
+    inherited_org = [item for item in organization_provenance.values() if item["source"] == "parent_pom"]
+    direct_org_present = any(direct_organization.values())
+    organization_parent_pom_url = next((item["pom_url"] for item in inherited_org if item.get("pom_url")), None)
+    organization_pom_url = source_url if direct_org_present else organization_parent_pom_url
+    organization_pom_sha256 = data_sha256 if direct_org_present else next(
+        (item["pom_sha256"] for item in inherited_org if item.get("pom_sha256")), None)
+
+    return {
+        "metadata": metadata,
+        "license_source": license_source,
+        "license_pom_url": license_pom_url,
+        "license_pom_sha256": license_pom_sha256,
+        "effective_licenses": effective_licenses,
+        "parent_pom_url": parent_url,
+        "parent_pom_sha256": parent_sha256,
+        "effective_scm": effective_scm,
+        "scm_source": _source_summary(scm_provenance),
+        "scm_provenance": scm_provenance,
+        "scm_pom_url": source_url if direct_scm_present else scm_parent_pom_url,
+        "scm_pom_sha256": data_sha256 if direct_scm_present else scm_parent_pom_sha256,
+        "scm_parent_pom_url": scm_parent_pom_url,
+        "scm_parent_pom_sha256": scm_parent_pom_sha256,
+        "effective_developers": effective_developers,
+        "developers_source": developers_source,
+        "developers_pom_url": developers_pom_url,
+        "developers_pom_sha256": developers_pom_sha256,
+        "developers_parent_pom_url": developers_parent_pom_url,
+        "effective_organization": effective_organization,
+        "organization_source": _source_summary(organization_provenance),
+        "organization_provenance": organization_provenance,
+        "organization_pom_url": organization_pom_url,
+        "organization_pom_sha256": organization_pom_sha256,
+        "organization_parent_pom_url": organization_parent_pom_url,
+        "metadata_inheritance_error": resolved["metadata_inheritance_error"],
+        "parent_resolution_limited": resolved["parent_resolution_limited"],
+    }
 
 
 def licenses_match(sbom: list[str], pom: list[str]) -> bool:
@@ -187,7 +338,7 @@ def audit(sbom_path: Path) -> dict[str, Any]:
             data, source_url = fetch_pom(pom_urls(group, name, version))
             resolved = resolve_license_metadata(data, source_url)
             metadata = resolved["metadata"]
-            license_entries = metadata["licenses"] or resolved.get("inherited_licenses", [])
+            license_entries = resolved["effective_licenses"]
             pom_licenses = sorted({x["normalized"] for x in license_entries if x["normalized"]})
             declared = sbom_licenses(component)
             mismatch = not licenses_match(declared, pom_licenses)
@@ -205,8 +356,26 @@ def audit(sbom_path: Path) -> dict[str, Any]:
                             "parent_pom_url": resolved["parent_pom_url"],
                             "parent_pom_sha256": resolved["parent_pom_sha256"],
                             "sbom_licenses": declared, "pom_licenses": license_entries,
-                            "pom_license_ids": pom_licenses, "scm": metadata["scm"],
-                            "developers": metadata["developers"], "organization": metadata["organization"],
+                            "pom_license_ids": pom_licenses, "scm": resolved["effective_scm"],
+                            "scm_source": resolved["scm_source"],
+                            "scm_provenance": resolved["scm_provenance"],
+                            "scm_pom_url": resolved["scm_pom_url"],
+                            "scm_pom_sha256": resolved["scm_pom_sha256"],
+                            "scm_parent_pom_url": resolved["scm_parent_pom_url"],
+                            "scm_parent_pom_sha256": resolved["scm_parent_pom_sha256"],
+                            "developers": resolved["effective_developers"],
+                            "developers_source": resolved["developers_source"],
+                            "developers_pom_url": resolved["developers_pom_url"],
+                            "developers_pom_sha256": resolved["developers_pom_sha256"],
+                            "developers_parent_pom_url": resolved["developers_parent_pom_url"],
+                            "organization": resolved["effective_organization"],
+                            "organization_source": resolved["organization_source"],
+                            "organization_provenance": resolved["organization_provenance"],
+                            "organization_pom_url": resolved["organization_pom_url"],
+                            "organization_pom_sha256": resolved["organization_pom_sha256"],
+                            "organization_parent_pom_url": resolved["organization_parent_pom_url"],
+                            "metadata_inheritance_error": resolved["metadata_inheritance_error"],
+                            "parent_resolution_limited": resolved["parent_resolution_limited"],
                             "license_match": bool(declared and pom_licenses and not mismatch)})
         except (OSError, RuntimeError, ValueError, ET.ParseError) as exc:
             failures.append(coordinate + ": " + str(exc))
@@ -236,15 +405,15 @@ def main() -> int:
              f"- POMs retrieved: **{report['pom_component_count']}**",
              f"- POM/SBOM license matches: **{report['license_match_count']}**",
              f"- POM/SBOM license mismatches or unresolved entries: **{report['license_mismatch_count']}**", "",
-             "| Component | SBOM license | POM license | Source | Match | POM SHA-256 |",
-             "|---|---|---|---|---|---|"]
+             "| Component | SBOM license | POM license | License source | SCM source | Match | POM SHA-256 |",
+             "|---|---|---|---|---|---|---|"]
     attribution = ["UPSTREAM MAVEN POM LICENSE AND SOURCE ATTRIBUTIONS",
                    "Metadata is copied from the exact Maven POM for each resolved coordinate.",
                    "This report is POM metadata evidence, not extracted binary LICENSE/NOTICE text.", ""]
     for item in report["components"]:
         pom_names = ", ".join(x["name"] or x["url"] for x in item["pom_licenses"]) or "UNDECLARED"
         sbom_names = ", ".join(item["sbom_licenses"]) or "UNDECLARED"
-        lines.append(f"| {item['coordinate']} | {sbom_names} | {pom_names} | {item['license_source']} | {'YES' if item['license_match'] else 'NO'} | {item['pom_sha256']} |")
+        lines.append(f"| {item['coordinate']} | {sbom_names} | {pom_names} | {item['license_source']} | {item['scm_source']} | {'YES' if item['license_match'] else 'NO'} | {item['pom_sha256']} |")
         attribution += ["## " + item["coordinate"], "POM: " + item["pom_url"],
                         "POM SHA-256: " + item["pom_sha256"],
                         "License metadata source: " + item["license_source"],
@@ -252,6 +421,28 @@ def main() -> int:
         if item.get("parent_pom_url"):
             attribution += ["Parent POM: " + item["parent_pom_url"],
                             "Parent POM SHA-256: " + str(item["parent_pom_sha256"])]
+        if item.get("metadata_inheritance_error"):
+            attribution.append("Metadata inheritance warning: " + item["metadata_inheritance_error"])
+        if item.get("parent_resolution_limited"):
+            attribution.append("Parent metadata inheritance: depth limit reached; missing fields remain unresolved")
+        if item.get("scm_source"):
+            attribution.append("SCM metadata source: " + item["scm_source"])
+        if item.get("scm_pom_url"):
+            attribution += ["SCM source POM: " + item["scm_pom_url"],
+                            "SCM source POM SHA-256: " + str(item["scm_pom_sha256"])]
+        if item.get("scm_parent_pom_url"):
+            attribution += ["Inherited SCM source POM: " + item["scm_parent_pom_url"],
+                            "Inherited SCM source POM SHA-256: " + str(item["scm_parent_pom_sha256"])]
+        if item.get("developers_source"):
+            attribution.append("Developers metadata source: " + item["developers_source"])
+        if item.get("developers_pom_url"):
+            attribution += ["Developers source POM: " + item["developers_pom_url"],
+                            "Developers source POM SHA-256: " + str(item["developers_pom_sha256"])]
+        if item.get("organization_source"):
+            attribution.append("Organization metadata source: " + item["organization_source"])
+        if item.get("organization_pom_url"):
+            attribution += ["Organization source POM: " + item["organization_pom_url"],
+                            "Organization source POM SHA-256: " + str(item["organization_pom_sha256"])]
         if item.get("license_pom_url") and item["license_pom_url"] != item["pom_url"]:
             attribution += ["License declaration POM: " + item["license_pom_url"],
                             "License declaration POM SHA-256: " + str(item["license_pom_sha256"])]
