@@ -377,4 +377,25 @@ class McpHttpClientTest {
             McpHttpClient.selectSseResponsePayload(listOf(wrong, matching), "7")
         )
     }
+
+    @Test fun mapsTaskIdToMcpNameHeader() {
+        listOf("tasks/get", "tasks/update", "tasks/cancel").forEach { method ->
+            assertEquals(
+                "task-123",
+                McpHttpClient.standardNameHeader(method, mapOf("taskId" to "task-123"))
+            )
+        }
+    }
+
+    @Test fun rejectsTaskMethodWithoutTaskId() {
+        listOf("tasks/get", "tasks/update", "tasks/cancel").forEach { method ->
+            try {
+                McpHttpClient.standardNameHeader(method, emptyMap())
+                fail("Missing taskId must be rejected for $method")
+            } catch (_: IllegalArgumentException) {
+                // Expected
+            }
+        }
+    }
+
 }

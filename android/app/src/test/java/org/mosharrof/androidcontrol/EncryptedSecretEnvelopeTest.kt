@@ -69,6 +69,21 @@ class EncryptedSecretEnvelopeTest {
     }
 
     @Test
+    fun rejectsOversizedEnvelopeBeforeDecoding() {
+        var decoderCalled = false
+        assertThrows(IllegalArgumentException::class.java) {
+            EncryptedSecretEnvelope.parseVersioned(
+                "v1." + "x".repeat(48_000),
+                "v1"
+            ) {
+                decoderCalled = true
+                decoder(it)
+            }
+        }
+        assertEquals(false, decoderCalled)
+    }
+
+    @Test
     fun parsesValidUnversionedEnvelope() {
         val result = EncryptedSecretEnvelope.parseUnversioned(
             "$validIv.$validCiphertext", decoder

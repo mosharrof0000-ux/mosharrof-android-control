@@ -4,12 +4,10 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
-import org.json.JSONArray
 import org.json.JSONObject
-import java.net.HttpURLConnection
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import java.net.URI
-import java.net.URL
-import java.net.URLEncoder
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -21,12 +19,50 @@ import javax.crypto.spec.GCMParameterSpec
  * API keys are encrypted with an Android Keystore AES-GCM key.
  * Network requests must use HTTPS. Redirects are disabled.
  */
+internal data class LegacyAiProfileTarget(
+    val id: String,
+    val provider: AiProviderId,
+    val endpoint: String?
+)
+
+internal fun legacyAiProfileTarget(
+    provider: AiEngine.Provider,
+    endpoint: String?
+): LegacyAiProfileTarget = when (provider) {
+    AiEngine.Provider.GEMINI -> LegacyAiProfileTarget(
+        id = "legacy-gemini",
+        provider = AiProviderId.GEMINI,
+        endpoint = null
+    )
+    AiEngine.Provider.OPENAI_COMPATIBLE -> LegacyAiProfileTarget(
+        id = "legacy-openai-compatible",
+        provider = AiProviderId.CUSTOM,
+        endpoint = run {
+            val value = endpoint.orEmpty().trim()
+            val uri = runCatching { URI(value) }.getOrElse {
+                throw IllegalArgumentException("AI endpoint-এর ঠিকানা সঠিক নয়।")
+            }
+            require(
+                uri.scheme.equals("https", ignoreCase = true) &&
+                    !uri.host.isNullOrBlank() &&
+                    uri.userInfo == null &&
+                    uri.fragment == null &&
+                    uri.query == null
+            ) { "AI endpoint-এ নিরাপদ HTTPS ঠিকানা দিতে হবে।" }
+            value
+        }
+    )
+}
+
 object AiEngine {
     enum class Provider { GEMINI, OPENAI_COMPATIBLE }
 
     private const val PREFS = "android_control_ai"
     private const val KEY_ALIAS = "android_control_ai_key_v1"
     private const val KEY_API = "encrypted_api_key"
+    private const val MAX_API_KEY_CHARS = 8_192
+    private const val MAX_MODEL_CHARS = 128
+    private const val MAX_PROMPT_CHARS = 64 * 1024
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -47,6 +83,8 @@ object AiEngine {
     ) {
         require(model.isNotBlank()) { "AI মডেলের নাম লিখুন।" }
         require(apiKey.isNotBlank()) { "API key লিখুন।" }
+        require(apiKey.length <= MAX_API_KEY_CHARS) { "API key নির্ধারিত আকারের চেয়ে বড়।" }
+        require(model.trim().length <= MAX_MODEL_CHARS) { "AI মডেলের নাম অতিরিক্ত বড়।" }
         val safeEndpoint = if (provider == Provider.OPENAI_COMPATIBLE) {
             validateEndpoint(endpoint)
         } else {
@@ -79,15 +117,54 @@ object AiEngine {
             uri.scheme.equals("https", ignoreCase = true) &&
             !uri.host.isNullOrBlank() &&
             uri.userInfo == null &&
-            uri.fragment == null
+            uri.fragment == null &&
+            uri.query == null
         ) {
             "AI endpoint-এ নিরাপদ HTTPS ঠিকানা দিতে হবে।"
         }
         return endpoint
     }
 
-    fun ask(context: Context, prompt: String): String {
+    fun saveProviderProfile(context: Context, id: String, provider: AiProviderId, model: String, apiKey: String, endpoint: String? = null): AiProviderProfileSummary =
+        AiProviderProfileStore.save(context, id, provider, model, apiKey, endpoint)
+
+    fun providerProfiles(context: Context): List<AiProviderProfileSummary> =
+        AiProviderProfileStore.list(context)
+
+    fun replaceProviderCredential(context: Context, id: String, apiKey: String): AiProviderProfileSummary =
+        AiProviderProfileStore.replaceCredential(context, id, apiKey)
+
+    fun setActiveProviderProfile(context: Context, id: String) =
+        AiProviderProfileStore.setActive(context, id)
+
+    fun deleteProviderProfile(context: Context, id: String) =
+        AiProviderProfileStore.delete(context, id)
+
+    /** Explicit, idempotent migration; the legacy encrypted preference is preserved. */
+    fun migrateLegacyConfigToProfile(context: Context): Boolean {
+        if (AiProviderProfileStore.active(context) != null || !isConfigured(context)) return false
+        val p = prefs(context)
+        val legacyProvider = runCatching {
+            Provider.valueOf(p.getString("provider", "") ?: "")
+        }.getOrNull() ?: return false
+        val model = p.getString("model", null) ?: return false
+        val key = decrypt(p.getString(KEY_API, null) ?: return false)
+        val target = legacyAiProfileTarget(legacyProvider, p.getString("endpoint", null))
+        AiProviderProfileStore.save(context, target.id, target.provider, model, key, target.endpoint)
+        AiProviderProfileStore.setActive(context, target.id)
+        return true
+    }
+
+    fun ask(
+        context: Context,
+        prompt: String,
+        cancellation: AiProviderCancellation = AiProviderCancellation()
+    ): String {
         require(prompt.isNotBlank()) { "AI-কে করার প্রশ্ন লিখুন।" }
+        require(prompt.length <= MAX_PROMPT_CHARS) { "AI prompt ৬৪ KB সীমা অতিক্রম করেছে।" }
+        AiProviderProfileStore.active(context)?.let { profile ->
+            return AiProviderRuntime.askText(profile, prompt, service = null, approve = { false }, cancellation = cancellation)
+        }
         val p = prefs(context)
         val provider = runCatching {
             Provider.valueOf(p.getString("provider", "") ?: "")
@@ -113,65 +190,69 @@ object AiEngine {
             }
         }
 
-        val body = when (provider) {
-            Provider.GEMINI -> JSONObject()
-                .put("contents", JSONArray().put(
-                    JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt)))
-                ))
-            Provider.OPENAI_COMPATIBLE -> JSONObject()
-                .put("model", model)
-                .put("messages", JSONArray().put(
-                    JSONObject().put("role", "user").put("content", prompt)
-                ))
+        val headers = linkedMapOf(
+            "Content-Type" to "application/json; charset=utf-8"
+        )
+        if (provider == Provider.GEMINI) {
+            headers["x-goog-api-key"] = apiKey
+        } else {
+            headers["Authorization"] = "Bearer $apiKey"
         }
-
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = 20000
-            readTimeout = 60000
-            doOutput = true
-            useCaches = false
-            instanceFollowRedirects = false
-            setRequestProperty("Content-Type", "application/json; charset=utf-8")
-            if (provider == Provider.GEMINI) {
-                setRequestProperty("x-goog-api-key", apiKey)
-            } else {
-                setRequestProperty("Authorization", "Bearer $apiKey")
-            }
-        }
-
-        try {
-            connection.outputStream.use {
-                it.write(body.toString().toByteArray(Charsets.UTF_8))
-            }
-            val code = connection.responseCode
-            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-            val raw = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
-            if (code !in 200..299) {
-                throw IllegalStateException(
-                    "AI সার্ভার HTTP $code দিয়েছে। API key, model, quota ও endpoint পরীক্ষা করুন।"
+        val request = AiProviderHttpRequest(
+            url = url,
+            headers = headers,
+            body = when (provider) {
+                Provider.GEMINI -> mapOf(
+                    "contents" to listOf(
+                        mapOf("parts" to listOf(mapOf("text" to prompt)))
+                    )
+                )
+                Provider.OPENAI_COMPATIBLE -> mapOf(
+                    "model" to model,
+                    "messages" to listOf(mapOf("role" to "user", "content" to prompt))
                 )
             }
+        )
 
-            val json = JSONObject(raw)
-            return when (provider) {
-                Provider.GEMINI -> {
-                    val candidates = json.optJSONArray("candidates")
-                    val parts = candidates?.optJSONObject(0)
-                        ?.optJSONObject("content")?.optJSONArray("parts")
-                    parts?.optJSONObject(0)?.optString("text")
-                        ?.takeIf { it.isNotBlank() }
-                        ?: "AI উত্তর দেয়নি। Safety block বা response format পরীক্ষা করুন।"
-                }
-                Provider.OPENAI_COMPATIBLE -> {
-                    json.optJSONArray("choices")?.optJSONObject(0)
-                        ?.optJSONObject("message")?.optString("content")
-                        ?.takeIf { it.isNotBlank() }
-                        ?: "AI উত্তর পাওয়া যায়নি। Provider response format পরীক্ষা করুন।"
-                }
+        val json = try {
+            AiProviderHttpTransport().post(request, cancellation).payload
+        } catch (error: AiProviderHttpException) {
+            throw IllegalStateException(
+                "AI সার্ভার HTTP ${error.statusCode} দিয়েছে। API key, model, quota ও endpoint পরীক্ষা করুন。",
+                error
+            )
+        }
+        return when (provider) {
+            Provider.GEMINI -> {
+                val candidates = json.optJSONArray("candidates")
+                val parts = candidates?.optJSONObject(0)
+                    ?.optJSONObject("content")?.optJSONArray("parts")
+                parts?.optJSONObject(0)?.optString("text")
+                    ?.takeIf { it.isNotBlank() }
+                    ?: "AI উত্তর দেয়নি। Safety block বা response format পরীক্ষা করুন।"
             }
-        } finally {
-            connection.disconnect()
+            Provider.OPENAI_COMPATIBLE -> {
+                json.optJSONArray("choices")?.optJSONObject(0)
+                    ?.optJSONObject("message")?.optString("content")
+                    ?.takeIf { it.isNotBlank() }
+                    ?: "AI উত্তর পাওয়া যায়নি। Provider response format পরীক্ষা করুন।"
+            }
+        }
+    }
+
+    fun askWithMcpApproval(
+        context: Context,
+        prompt: String,
+        service: McpConnectorService?,
+        approve: (AiToolCallPlan.Ready) -> Boolean,
+        cancellation: AiProviderCancellation = AiProviderCancellation()
+    ): String {
+        val profile = AiProviderProfileStore.active(context)
+        return if (profile != null) {
+            AiProviderRuntime.askText(profile, prompt, service, approve, cancellation)
+        } else {
+            // Legacy profiles do not yet have provider-neutral tool-call support.
+            ask(context, prompt, cancellation)
         }
     }
 
@@ -226,3 +307,23 @@ object AiEngine {
         )
     }
 }
+
+/** Reads an AI response with a strict byte cap, including HTTP error bodies. */
+internal fun readBoundedAiResponse(input: InputStream?, maxBytes: Int = 256 * 1024): String {
+    require(maxBytes in 1..(1024 * 1024)) { "AI response byte limit is invalid." }
+    if (input == null) return ""
+    val output = ByteArrayOutputStream(minOf(maxBytes, 8 * 1024))
+    input.use { stream ->
+        val buffer = ByteArray(8 * 1024)
+        var total = 0
+        while (true) {
+            val count = stream.read(buffer)
+            if (count < 0) break
+            total += count
+            require(total <= maxBytes) { "AI response size limit exceeded." }
+            output.write(buffer, 0, count)
+        }
+    }
+    return String(output.toByteArray(), Charsets.UTF_8)
+}
+

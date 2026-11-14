@@ -12,7 +12,8 @@
 ## MCP connector boundary
 - MCP endpoints must be HTTPS; the connector rejects endpoint user-info and fragments.
 - Connector bearer tokens are encrypted with Android Keystore AES-GCM and authenticated additional data bound to the connector ID.
-- Tool definitions and input schemas are validated before registration/call.
+- Tool definitions and input schemas are validated before registration/call. Only the explicitly supported JSON Schema subset is accepted; unknown assertions, malformed constraints, and schema trees deeper than 32 levels or 2,048 nodes are rejected instead of silently ignored.
+- MCP `tools/list` follows opaque `nextCursor` values, rejects repeated cursors, and caps discovery at 100 pages / 5,000 tools. Modern list/discovery cache hints must use `public`/`private` scope and a non-negative integer `ttlMs`.
 - Tool calls display the tool risk and exact input JSON. Each call requires a deliberate user action.
 - Write-capable tool calls require a short-lived, single-use approval grant bound to the connector, tool ID, and exact arguments.
 - Disconnect unregisters connector tools and revokes outstanding approval grants.
@@ -25,12 +26,97 @@
 - Termux's own com.termux.permission.RUN_COMMAND permission and allow-external-apps setting are both required and must be enabled by the user.
 - The result receiver is private to this app; returned output is truncated before local storage.
 - Relay traffic uses HTTPS and bearer authentication. The device token is encrypted with Android Keystore AES-GCM.
-- The app-side relay accepts only the four predefined read-only Termux operation IDs. Relay deployment and server-side enforcement have not yet been verified.
+- The app-side relay accepts only the four predefined read-only Termux operation IDs. Every incoming job requires an in-app approval dialog; the app never auto-executes a polled job.
+- Relay URLs reject credentials, query strings, and fragments; redirects are disabled; response bodies are bounded; command IDs and fixed operation IDs are validated before use.
+- Android persists the active Relay command and Termux result locally before network delivery. GET polling and result submissions use bounded retries with exponential backoff; pairing is not retried. A missing Termux result callback times out after 90 seconds and reports an unknown outcome instead of silently re-running the command.
+- Relay Worker source uses 15–30 second job leases with a 60-second job expiry, requires idempotency keys, accepts identical result retries, rejects conflicting results, applies route-specific rate limits, and updates audit status when results are accepted. These are source-level controls until deployed-worker verification passes.
 
 ## Remaining threats and release gates
-- Verify relay-side job expiry, replay/idempotency protection, rate limits, and audit records in the deployed Worker.
-- Review relay command ID/path handling and bounded response parsing before production deployment.
+- Verify the deployed Worker’s lease/retry, idempotency, rate-limit, and audit behavior end-to-end; source-level implementation alone is not deployment evidence.
 - Verify credential revocation and token invalidation behavior on a physical Android device.
+- MRTR input_required handling uses a user-reviewed JSON response dialog, opaque requestState pass-through, exact request-key matching, and a bounded continuation limit. Native schema-driven elicitation/tool argument forms and HTTPS URL-mode browser handoff are implemented for supported shapes. MCP Tasks task-handle persistence/revalidation and explicit user-triggered refresh/input/cancel UI are implemented in source; no background polling is enabled. Real-server interoperability remains pending.
+- OAuth/CIMD now has source implementations for bounded metadata/CIMD discovery, AppAuth PKCE authorization request/callback validation, RFC 8707 resource-bound token exchange, encrypted AuthState/pending-request storage, per-request asynchronous token refresh, and explicit RFC 7009 revocation. OAuth-created MCP clients fail closed on synchronous/static-token transport. Live authorization-server interoperability, real token exchange/refresh/revocation, and physical-device verification remain pending.
 - Run a real HTTPS MCP server through connect, discovery, approval, tool execution, and disconnect.
-- Inspect logs and error surfaces for credential or private-data leakage.
+- Complete a whole-repository tracked-source and history audit of logs, exception/error surfaces, crash paths and generated artifacts for credential/private-data leakage. The 2026-11-11 pass scanned all 22 changed Android production Kotlin files for direct exception-message rendering, logging/stack traces, raw response-body forwarding and obvious authorization concatenation; this is still not a whole-repository/history audit.
+- Complete dependency/version/license and software-supply-chain review. The Cloudflare Worker package currently uses semver ranges for devDependencies and no package-lock.json/npm-shrinkwrap was found at the audited PR head; exact transitive dependency reproducibility and license inventory are therefore not yet established.
+- Provider HTTP POST requests are not automatically retried. If cancellation occurs after dispatch but before an HTTP response, the app records an unknown-outcome marker; that marker stores only a boolean and timestamp and does not reconcile provider-side execution.
 Until these gates pass, describe remote relay and physical-device behavior as implemented in code but not end-to-end verified.
+## 2026-11-11 current-head security implementation notes
+
+- AI provider profiles are stored separately using Android Keystore AES-GCM with profile-ID authenticated additional data. Source-level implementation and JVM tests do not substitute for Android Keystore runtime/device verification.
+- AI tool execution is routed through the exact connected MCP service session. Unknown tools, malformed arguments, disconnected tools and unsupported result types fail closed; approval-required calls require a one-time, argument-bound grant after explicit user confirmation.
+- MCP task recovery persists bounded identifiers/status/timing metadata only. Restored pending records are untrusted candidates and are revalidated with the remote server before use. Task result, input request payloads, credentials and provider responses are not persisted by the task metadata store.
+- The AI request recovery marker persists only a pending flag and timestamp. It is a review reminder, not evidence of vendor execution or a provider reconciliation mechanism.
+- Exact-head source/CI findings are recorded in docs/CURRENT_HEAD_AUDIT_2026-11-11.md. No live provider, real MCP server, physical device, or deployed Worker security verification is claimed.
+
+
+## 2026-11-11 redaction and CI follow-up
+- AI tool execution errors returned to providers use a fixed redacted message rather than arbitrary MCP/server/library exception text.
+- MainActivity and PluginDashboardPage status surfaces use a fixed UI-safe error message. The Termux bridge no longer concatenates raw SecurityException or IllegalStateException messages into operation errors.
+- Regression tests assert raw simulated MCP exception text and bearer-like values are not reflected in redacted output.
+- Exact source commit `d162a314ac0520d5511dd06ad751b9ce163e3c3b`: Android CI `42970919165` PASS (unit tests, debug APK assembly and upload); Worker CI `42970919190` PASS.
+- Artifact `13832594882`, SHA-256 `30f9dfe103e9003f6a6af8bc50d40da20d7e368b36d582064666e45150e6a76d`; CI artifact only, not installed.
+- These checks do not close live provider/MCP, physical Android, deployed Worker, OAuth/CIMD, full repository/history, dependency/license, or independent security-review gates.
+
+
+### Expanded Android source error-surface pass — 2026-11-11
+- Expanded the static pattern scan to all 35 tracked Android production Kotlin files.
+- Four additional exception-origin paths were found in the Android Keystore diagnostic, app self-test, permission settings fallback and module lifecycle failure registry.
+- Those paths now store/display the shared fixed redacted message; module lifecycle tests now assert redaction rather than the raw thrown message.
+- Source commits: `14c460e97b439ceb420bd2611c5f2f4a7611c7db`, `c76254451b91cf17c18146d33c96fb31a3990ddf`, `6222ebaa78efabb2a62a728709dc4e075af33242`, `99ce8ec7309bc417b4fa05f4948bceffc1eb5205`; test commit `b465c948d47129b6d3df1d77f6b548ad0353e7fc`.
+- Selected patterns found no remaining direct exception-message, logging, stack-trace, raw response-body or obvious authorization-concatenation matches in the newly inspected files after fixes.
+- This does not close a semantic full-repository/history audit or dependency/license, crash-report, runtime-log and deployed-service review. Android CI for the latest source/test commit is pending.
+
+
+## 2026-11-11 authoritative current-head update
+
+The latest exact PR head at this update is `8f0d2bb4a7cd0fd318e70f01cd26eb359c859afd`. The earlier note describing a scan of 22 changed Android files is historical; the later expanded pass covered all 35 tracked Android production Kotlin files with selected patterns. This remains a heuristic scan, not a complete semantic repository/history audit.
+
+Exact-head CI: Android run `42972244593` PASS (unit tests, debug APK assembly, artifact upload); Worker run `42972244607` PASS. Artifact ID `13834056036`, SHA-256 `645aca2aca037d4ae7bbaae51433cfc346a27ed0a043589dd1e504148674e0cb`; CI artifact only, not installed.
+
+Dependency inventory is preliminary: Android direct dependencies are DocumentFile 1.0.1 and AppAuth 0.11.1, plus test-only JUnit 4.13.2 and org.json 20240303. Worker direct devDependencies are workers-types ^5.20261101.1, TypeScript ^5.9.3 and Wrangler ^4.45.0. No package lock/shrinkwrap or Gradle lock/verification metadata is present in the PR changed-file inventory; no complete transitive license/SBOM/vulnerability report is available. Locking and license review remain release blockers.
+
+
+## Latest exact-head verification — 2026-11-11 (`9ec21e6ad82d95f2f060da4481ab9b6de895968c`)
+
+- Android workflow run `42973156641` (run #332): Android unit tests PASS; Debug APK assembly PASS; artifact upload PASS. Job cleanup was still running when inspected; all three build/test/upload steps completed successfully.
+- Worker workflow run `42973156667` (run #288): PASS.
+- Artifact `mosharrof-android-control-debug`, ID `13833758820`, size `2,415,482` bytes, SHA-256 `2c2acc4fcfada40c741e85e8f5cb2cf5cb3a94145dcdd8531596fc40e951e59d`. CI artifact only; not installed or physically tested.
+- Added `cancellationDuringApprovalPreventsMcpExecutionAndContinuation`: cancellation from the approval callback causes cancellation failure, exactly one initial provider request, one approval callback, and zero MCP tool calls.
+- Added `rejectsMalformedProviderHistoryBeforeBuildingContinuation`: a malformed Responses API history item is rejected before continuation request construction.
+- Remaining release blockers are unchanged: UI transition/real-device coverage, OAuth/CIMD, live MCP/provider tests, deployed Worker verification, reproducible dependency locking, full transitive SBOM/license/vulnerability review, independent security review, and explicit merge/install authorization.
+
+
+### OAuth issuer URL validation hardening — 2026-11-11
+- Authorization-server issuer validation now rejects HTTPS issuer identifiers containing query or fragment components, in addition to requiring HTTPS, a host and no user-info.
+- A JVM regression test covers a query-bearing issuer for both metadata URL derivation and metadata validation.
+- This remains a validator-only safeguard; OAuth/CIMD discovery and the PKCE/token lifecycle are not implemented or verified.
+
+- The authorization-response issuer equality helper independently applies the same issuer validation before accepting an exact match.
+
+- Regression tests also reject issuer identifiers containing fragments, in addition to query components.
+
+
+### OAuth issuer hardening CI evidence
+- Source commit `ccdff5cd4859bb0107bd318f91984b9e44e81b47`: Android CI #339 passed unit tests, debug APK assembly and artifact upload; Worker CI #295 passed. Artifact ID `13833924281` (2,415,687 bytes; SHA-256 `7206fc24f538e7e5fecbf312edcd787aa55a57ba34c828dcd14e4dbc2f06b30a`) is CI-only and was not installed.
+- The later test-only fragment coverage commit is pending its own exact-head verification.
+
+
+### Protected-resource OAuth issuer validation note — 2026-11-11
+- Authorization-server identifiers in protected-resource metadata are validated as HTTPS issuer URLs, rejecting query and fragment components as required for issuer identifiers.
+- Regression tests cover valid entries and query/fragment rejection. This does not implement metadata fetching or the OAuth authorization/token lifecycle; those remain release blockers.
+
+- MCP Task `tasks/update` input is gated by exact request-key matching and non-empty object response envelopes with bounded key names before transmission. This is structural validation only; the remote server remains authoritative for request-specific semantics.
+
+- MCP Task `tasks/update` now validates response envelopes again inside the connector service, not only in the UI: 1–16 bounded request keys, each with a non-empty object payload and bounded property count. UI also checks exact server-request key correspondence. Server-side semantic validation remains authoritative.
+
+
+## 2026-11-11 authoritative OAuth security status
+
+- Branch fix/mcp-pagination-20261110; PR #7 remains open and unmerged.
+- OAuth source includes metadata/CIMD fetch and validation, PKCE request/callback binding, RFC 8707 resource-bound authorization-code exchange and refresh, encrypted state persistence, async per-request token resolution across MCP connect/discovery/tool/task requests, and RFC 7009 revocation.
+- OAuth-only clients reject synchronous/static-token transport before network I/O; manual-token compatibility remains separate.
+- Exact source head 5faf7827f3b227d531c78e75921eb4e493829dad: Android run 43002371560 PASS; Worker run 43002371508 PASS.
+- Follow-up documentation head 3f490d133fb4a13b6b22229c3b4cf08beb3891ca: Android run 43003596437 PASS; Worker run 43003596459 PASS.
+- CI artifacts were not installed. No live OAuth browser flow, token exchange, refresh, remote revocation, real MCP server, or physical Android verification was executed.
+- Still open: live OAuth/CIMD tests, real MCP interoperability, Android Keystore/callback device tests, whole-repository semantic/history review, dependency locking/SBOM/license/vulnerability audit, deployed Worker verification, and independent security review.

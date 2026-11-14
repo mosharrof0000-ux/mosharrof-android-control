@@ -22,8 +22,41 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Install dependencies and type-check
+      - name: Generate npm lockfile from declared dependencies
         working-directory: cloudflare/worker
-        run: |
-          npm install
-          npm run check
+        run: npm install --package-lock-only --ignore-scripts
+      - name: Install exact locked dependencies
+        working-directory: cloudflare/worker
+        run: npm ci
+      - name: Audit resolved dependencies
+        working-directory: cloudflare/worker
+        run: npm audit --audit-level=high
+      - name: Generate CycloneDX SBOM
+        working-directory: cloudflare/worker
+        run: npm sbom --sbom-format=cyclonedx > worker-sbom.cdx.json
+      - name: Type-check and test
+        working-directory: cloudflare/worker
+        run: npm run check
+      - name: Upload generated dependency evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: worker-dependency-evidence
+          path: |
+            cloudflare/worker/package-lock.json
+            cloudflare/worker/worker-sbom.cdx.json
+          if-no-files-found: error
+
+  dependency-scan:
+    needs: typecheck
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.7.1
+    with:
+      download-artifact: worker-dependency-evidence
+      scan-args: |-
+        --lockfile=package-lock.json
+      # Inventory-only first pass: publish findings for review before making
+      # vulnerability presence a release-blocking policy.
+      fail-on-vuln: false
