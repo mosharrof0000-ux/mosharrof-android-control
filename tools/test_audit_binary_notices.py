@@ -173,7 +173,7 @@ class BinaryNoticeAuditTest(unittest.TestCase):
                 "version": "1.0", "licenses": [{"license": {"id": "Apache-2.0"}}]}]}), encoding="utf-8")
             audit(sbom, root / "artifacts", root / "out/notices.txt")
             report = (root / "out/notices.txt").read_text(encoding="utf-8")
-            self.assertIn("Source: example.vendor:whitespace:1.0/whitespace-1.0.aar!/META-INF/LICENSE\n\n  Exact upstream text.\n\n", report)
+            self.assertIn("Source (LICENSE): example.vendor:whitespace:1.0/whitespace-1.0.aar!/META-INF/LICENSE\n\n  Exact upstream text.\n\n", report)
 
     def test_embedded_nul_after_text_prefix_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
