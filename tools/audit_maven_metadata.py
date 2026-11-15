@@ -204,7 +204,12 @@ def resolve_license_metadata(data: bytes, source_url: str, depth: int = 0,
         "parent_resolution_limited": False,
     }
 
-    needs_parent = not direct_licenses or not any(direct_scm.values())
+    needs_parent = (
+        not direct_licenses
+        or any(not direct_scm.get(key) for key in ("url", "connection", "developerConnection"))
+        or not direct_developers
+        or any(not direct_organization.get(key) for key in ("name", "url"))
+    )
     parent = metadata.get("parent") or {}
     if (not needs_parent
             or not all(parent.get(key) for key in ("groupId", "artifactId", "version"))):
@@ -408,7 +413,7 @@ def main() -> int:
              "| Component | SBOM license | POM license | License source | SCM source | Match | POM SHA-256 |",
              "|---|---|---|---|---|---|---|"]
     attribution = ["UPSTREAM MAVEN POM LICENSE AND SOURCE ATTRIBUTIONS",
-                   "Metadata is copied from the exact Maven POM for each resolved coordinate.",
+                   "Metadata is copied from the exact Maven POM and bounded parent POM chain for each resolved coordinate.",
                    "This report is POM metadata evidence, not extracted binary LICENSE/NOTICE text.", ""]
     for item in report["components"]:
         pom_names = ", ".join(x["name"] or x["url"] for x in item["pom_licenses"]) or "UNDECLARED"
@@ -417,7 +422,8 @@ def main() -> int:
         attribution += ["## " + item["coordinate"], "POM: " + item["pom_url"],
                         "POM SHA-256: " + item["pom_sha256"],
                         "License metadata source: " + item["license_source"],
-                        "SBOM license(s): " + sbom_names, "POM license(s): " + pom_names]
+                        "SBOM license(s): " + sbom_names, "POM license(s): " + pom_names,
+                        "Copyright/NOTICE attribution status: NOT ESTABLISHED BY POM METADATA; authoritative upstream artifact/source review required."]
         if item.get("parent_pom_url"):
             attribution += ["Parent POM: " + item["parent_pom_url"],
                             "Parent POM SHA-256: " + str(item["parent_pom_sha256"])]

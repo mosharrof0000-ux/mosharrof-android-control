@@ -20,10 +20,28 @@ class BinaryNoticeAuditTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp); sbom, artifacts=self.fixture(root)
             result=audit(sbom, artifacts, root/"out/notices.txt")
+            self.assertEqual(result["archive_license_component_count"], 1)
             self.assertEqual(result["archive_notice_component_count"], 1)
+            self.assertEqual(result["manual_review_component_count"], 0)
             text=(root/"out/notices.txt").read_text()
             self.assertIn("Sample upstream notice.", text); self.assertIn("Nested license text.", text)
             self.assertIn("\n## example.vendor:sample:1.2.3\n", text)
+    def test_license_only_does_not_satisfy_missing_notice_review(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sbom, artifacts = self.fixture(root, outer_notice=False, nested_license=True)
+            result = audit(sbom, artifacts, root / "out/notices.txt")
+            item = result["components"][0]
+            self.assertTrue(item["license_found"])
+            self.assertFalse(item["notice_found"])
+            self.assertEqual(item["evidence_level"], "ARCHIVE_LICENSE_ONLY")
+            self.assertEqual(result["archive_license_component_count"], 1)
+            self.assertEqual(result["archive_notice_component_count"], 0)
+            self.assertEqual(result["manual_review_components"], ["example.vendor:sample:1.2.3"])
+            report = (root / "out/notices.txt").read_text(encoding="utf-8")
+            self.assertIn("Nested license text.", report)
+            self.assertIn("LICENSE/COPYING text alone does not resolve notice or copyright obligations", report)
+
     def test_missing_archive_notice_is_not_fabricated(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp); sbom, artifacts=self.fixture(root, outer_notice=False, nested_license=False)
@@ -52,7 +70,10 @@ class BinaryNoticeAuditTest(unittest.TestCase):
                 "licenses": [{"license": {"id": "Apache-2.0"}}]
             }]}), encoding="utf-8")
             result = audit(sbom, root / "artifacts", root / "out/notices.txt")
-            self.assertEqual(result["archive_notice_component_count"], 1)
+            self.assertEqual(result["archive_license_component_count"], 1)
+            self.assertEqual(result["archive_notice_component_count"], 0)
+            self.assertEqual(result["manual_review_component_count"], 1)
+            self.assertEqual(result["components"][0]["evidence_level"], "ARCHIVE_LICENSE_ONLY")
             self.assertIn("Large nested license text.", (root / "out/notices.txt").read_text())
 
     def test_missing_binary_fails(self):
@@ -94,7 +115,9 @@ class BinaryNoticeAuditTest(unittest.TestCase):
             sbom.write_text(json.dumps({"components": [{"group": "example.vendor", "name": "outer",
                 "version": "1.0", "licenses": [{"license": {"id": "Apache-2.0"}}]}]}), encoding="utf-8")
             result = audit(sbom, root / "artifacts", root / "out/notices.txt")
+            self.assertEqual(result["archive_license_component_count"], 0)
             self.assertEqual(result["archive_notice_component_count"], 1)
+            self.assertEqual(result["manual_review_component_count"], 0)
             self.assertIn("Nested AAR copyright text.", (root / "out/notices.txt").read_text())
 
     def test_corrupt_nested_archive_fails_closed(self):
@@ -121,7 +144,7 @@ class BinaryNoticeAuditTest(unittest.TestCase):
             sbom.write_text(json.dumps({"components": [{"group": "example.vendor", "name": "large-notice",
                 "version": "1.0", "licenses": [{"license": {"id": "Apache-2.0"}}]}]}), encoding="utf-8")
             result = audit(sbom, root / "artifacts", root / "out/notices.txt")
-            self.assertTrue(any("notice text exceeds 2 MiB" in item for item in result["failures"]))
+            self.assertTrue(any("license/notice text exceeds 2 MiB" in item for item in result["failures"]))
 
     def test_invalid_utf8_notice_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -134,7 +157,7 @@ class BinaryNoticeAuditTest(unittest.TestCase):
             sbom.write_text(json.dumps({"components": [{"group": "example.vendor", "name": "invalid-text",
                 "version": "1.0", "licenses": [{"license": {"id": "Apache-2.0"}}]}]}), encoding="utf-8")
             result = audit(sbom, root / "artifacts", root / "out/notices.txt")
-            self.assertTrue(any("not valid bounded UTF-8 text" in item for item in result["failures"]))
+            self.assertTrue(any("license/notice entry is not valid bounded UTF-8 text" in item for item in result["failures"]))
 
 
     def test_preserves_exact_notice_whitespace(self):
@@ -163,7 +186,7 @@ class BinaryNoticeAuditTest(unittest.TestCase):
             sbom.write_text(json.dumps({"components": [{"group": "example.vendor", "name": "embedded-nul",
                 "version": "1.0", "licenses": [{"license": {"id": "Apache-2.0"}}]}]}), encoding="utf-8")
             result = audit(sbom, root / "artifacts", root / "out/notices.txt")
-            self.assertTrue(any("not valid bounded UTF-8 text" in item for item in result["failures"]))
+            self.assertTrue(any("license/notice entry is not valid bounded UTF-8 text" in item for item in result["failures"]))
 
 
     def test_scans_nested_zip_named_notice_zip_without_treating_archive_as_text(self):

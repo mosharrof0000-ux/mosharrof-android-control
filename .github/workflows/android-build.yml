@@ -165,21 +165,48 @@ jobs:
                   or audit.get("failures") != []):
               fail("Binary notice audit did not inspect every runtime component without failures")
 
+          license_components = {item["coordinate"] for item in audit_components if item.get("license_found")}
           notice_components = {item["coordinate"] for item in audit_components if item.get("notice_found")}
           expected_manual = sbom_coordinates - notice_components
           manual_list = audit.get("manual_review_components") or []
-          if (audit.get("archive_notice_component_count") != len(notice_components)
+          if (audit.get("archive_license_component_count") != len(license_components)
+                  or audit.get("archive_license_file_count") != sum(len(item.get("archive_license_files") or []) for item in audit_components)
+                  or audit.get("archive_notice_component_count") != len(notice_components)
+                  or audit.get("archive_notice_file_count") != sum(len(item.get("archive_notice_files") or []) for item in audit_components)
                   or audit.get("manual_review_component_count") != len(expected_manual)
                   or len(manual_list) != len(set(manual_list))
                   or set(manual_list) != expected_manual
                   or len(notice_components) + len(expected_manual) != EXPECTED_RUNTIME_COMPONENTS):
-              fail("Archive-notice and manual-review component accounting is inconsistent")
+              fail("Archive LICENSE/NOTICE and manual-review component accounting is inconsistent")
           for item in audit_components:
-              expected_evidence = ("ARCHIVE_LICENSE_OR_NOTICE" if item.get("notice_found")
-                                   else "SBOM_DECLARED_LICENSE_ONLY" if item.get("declared_licenses")
-                                   else "NO_LICENSE_EVIDENCE")
+              license_files = item.get("archive_license_files") or []
+              notice_files = item.get("archive_notice_files") or []
+              if item.get("license_found") != bool(license_files) or item.get("notice_found") != bool(notice_files):
+                  fail("Archive LICENSE/NOTICE file lists disagree with component evidence: " + item.get("coordinate", "UNKNOWN"))
+              if license_files and notice_files:
+                  expected_evidence = "ARCHIVE_LICENSE_AND_NOTICE"
+              elif notice_files:
+                  expected_evidence = "ARCHIVE_NOTICE_OR_COPYRIGHT_ONLY"
+              elif license_files:
+                  expected_evidence = "ARCHIVE_LICENSE_ONLY"
+              else:
+                  expected_evidence = "SBOM_DECLARED_LICENSE_ONLY" if item.get("declared_licenses") else "NO_LICENSE_EVIDENCE"
               if item.get("evidence_level") != expected_evidence or not item.get("declared_licenses"):
                   fail("Runtime component has inconsistent or missing license evidence: " + item.get("coordinate", "UNKNOWN"))
+
+          with open(REPORT_DIR + "/BINARY_NOTICE_AUDIT.md", encoding="utf-8") as stream:
+              binary_markdown = stream.read()
+          expected_binary_lines = [
+              "- Components with archive LICENSE text: **" + str(audit["archive_license_component_count"]) + "**",
+              "- Archive LICENSE text files: **" + str(audit["archive_license_file_count"]) + "**",
+              "- Components with archive NOTICE/COPYRIGHT text: **" + str(audit["archive_notice_component_count"]) + "**",
+              "- Archive NOTICE/COPYRIGHT text files: **" + str(audit["archive_notice_file_count"]) + "**",
+              "- Components requiring manual notice review: **" + str(audit["manual_review_component_count"]) + "**",
+          ]
+          if any(line not in binary_markdown for line in expected_binary_lines):
+              fail("Binary NOTICE Markdown summary does not match its JSON report")
+          if any("- " + chr(96) + coordinate + chr(96) not in binary_markdown for coordinate in manual_list):
+              fail("Binary NOTICE Markdown manual-review list does not match its JSON report")
 
           with open(REPORT_DIR + "/maven-metadata-audit.json", encoding="utf-8") as stream:
               metadata = json.load(stream)
@@ -192,14 +219,29 @@ jobs:
                   or metadata.get("license_mismatch_count") != 0
                   or metadata.get("failures") != []):
               fail("Maven POM/SBOM license comparison did not produce 34 exact matches and zero mismatches")
+          with open(REPORT_DIR + "/MAVEN_METADATA_AUDIT.md", encoding="utf-8") as stream:
+              maven_markdown = stream.read()
+          if ("- POM/SBOM license matches: **34**" not in maven_markdown
+                  or "- POM/SBOM license mismatches or unresolved entries: **0**" not in maven_markdown):
+              fail("Maven POM Markdown summary does not match its JSON report")
 
           with open(REPORT_DIR + "/maven-source-metadata-audit.json", encoding="utf-8") as stream:
               source_report = json.load(stream)
           source_components = source_report.get("components") or []
           source_coordinates = {item.get("coordinate", "") for item in source_components}
+          source_counts = source_report.get("assessment_counts") or {}
           if (source_report.get("component_count") != EXPECTED_RUNTIME_COMPONENTS
-                  or source_coordinates != sbom_coordinates):
-              fail("Sanitized SCM report does not cover the exact runtime component inventory")
+                  or source_coordinates != sbom_coordinates
+                  or source_counts.get("POM_REFERENCE_PRESENT_UNVERIFIED") != EXPECTED_RUNTIME_COMPONENTS
+                  or source_counts.get("MISSING_REFERENCE") != 0
+                  or source_counts.get("INVALID_OR_MIXED_REFERENCE") != 0):
+              fail("Sanitized SCM report must contain one syntactically valid, explicitly unverified POM reference for every runtime component")
+          with open(REPORT_DIR + "/MAVEN_SOURCE_METADATA_AUDIT.md", encoding="utf-8") as stream:
+              source_markdown = stream.read()
+          if ("- POM SCM reference present (syntax only): **34**" not in source_markdown
+                  or "- SCM reference missing: **0**" not in source_markdown
+                  or "- SCM reference invalid or mixed: **0**" not in source_markdown):
+              fail("Maven SCM Markdown summary does not match its JSON report")
           for item in source_components:
               for value in (item.get("scm") or {}).values():
                   if any(character in value for character in ("@", "?", "#")):
@@ -256,6 +298,13 @@ jobs:
                   component_heading = "\n## " + coordinate + "\n"
                   if component_heading not in upstream or component_heading not in pom_attributions:
                       fail("APK upstream/POM attribution assets do not cover component: " + coordinate)
+                  attribution_start = pom_attributions.find(component_heading)
+                  attribution_end = pom_attributions.find("\n## ", attribution_start + 1)
+                  if attribution_end < 0:
+                      attribution_end = len(pom_attributions)
+                  attribution_section = pom_attributions[attribution_start:attribution_end]
+                  if "Copyright/NOTICE attribution status: NOT ESTABLISHED BY POM METADATA; authoritative upstream artifact/source review required." not in attribution_section:
+                      fail("APK POM attribution asset does not disclose unresolved copyright/NOTICE status: " + coordinate)
               for item in audit_components:
                   coordinate = item["coordinate"]
                   section_start = upstream.find("\n## " + coordinate + "\n")
@@ -271,18 +320,18 @@ jobs:
                   section = upstream[section_start:section_end]
                   if "Evidence: " + item["evidence_level"] not in section:
                       fail("APK upstream notice evidence label is inconsistent: " + coordinate)
-                  if item.get("notice_found"):
-                      for source in item.get("archive_notice_files") or []:
-                          if "Source: " + source not in section:
-                              fail("APK upstream notice asset is missing an extracted source path: " + coordinate)
-                  elif "No matching LICENSE/NOTICE/COPYING/COPYRIGHT text file found in this binary archive." not in section:
+                  for source in (item.get("archive_license_files") or []) + (item.get("archive_notice_files") or []):
+                      if source not in section:
+                          fail("APK upstream evidence asset is missing an extracted source path: " + coordinate)
+                  if not item.get("notice_found") and "No matching archive NOTICE/COPYRIGHT text file found" not in section:
                       fail("APK upstream notice asset does not disclose this component's missing archive notice: " + coordinate)
               if not pom_attributions.strip():
                   fail("APK POM attribution asset is empty")
 
           print("APK inventory and POM metadata validated for 34/34 runtime components.")
           print("POM/SBOM license matches: " + str(metadata["license_match_count"]) + "/34; mismatches: " + str(metadata["license_mismatch_count"]) + ".")
-          print("Archive notice texts found for " + str(audit["archive_notice_component_count"]) + "/34 runtime components.")
+          print("Archive LICENSE texts found for " + str(audit["archive_license_component_count"]) + "/34 runtime components.")
+          print("Archive NOTICE/COPYRIGHT texts found for " + str(audit["archive_notice_component_count"]) + "/34 runtime components.")
           print("MANUAL NOTICE REVIEW REQUIRED for " + str(audit["manual_review_component_count"]) + "/34 runtime components; see BINARY_NOTICE_AUDIT.md.")
           print("Upstream copyright/NOTICE clearance is not inferred from SBOM or POM metadata.")
           PY

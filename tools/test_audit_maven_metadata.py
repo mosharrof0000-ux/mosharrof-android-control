@@ -109,6 +109,7 @@ class MavenMetadataAuditTest(unittest.TestCase):
 
     def test_child_scm_fields_override_parent_and_record_mixed_provenance(self):
         child = b"""<project>
+          <licenses><license><name>Apache License, Version 2.0</name></license></licenses>
           <scm><url>https://child.test/project</url></scm>
           <parent><groupId>x</groupId><artifactId>parent</artifactId><version>1</version></parent>
         </project>"""
@@ -123,6 +124,24 @@ class MavenMetadataAuditTest(unittest.TestCase):
         self.assertEqual(result["effective_scm"]["connection"], "scm:git:https://parent.test/project.git")
         self.assertEqual(result["scm_provenance"]["url"]["source"], "pom")
         self.assertEqual(result["scm_provenance"]["connection"]["source"], "parent_pom")
+
+    def test_complete_scm_still_inherits_parent_developer_and_organization_metadata(self):
+        child = b"""<project>
+          <licenses><license><name>Apache License, Version 2.0</name></license></licenses>
+          <scm><url>https://child.test/project</url><connection>scm:git:https://child.test/project.git</connection><developerConnection>scm:git:https://child.test/project.git</developerConnection></scm>
+          <parent><groupId>x</groupId><artifactId>parent</artifactId><version>1</version></parent>
+        </project>"""
+        parent = b"""<project>
+          <developers><developer><name>Parent Dev</name></developer></developers>
+          <organization><name>Parent Org</name><url>https://parent.test/org</url></organization>
+        </project>"""
+        with patch("audit_maven_metadata.fetch_pom", return_value=(parent, "https://repo.example/parent.pom")):
+            result = resolve_license_metadata(child, "https://repo.example/child.pom")
+        self.assertEqual(result["scm_source"], "pom")
+        self.assertEqual(result["developers_source"], "parent_pom")
+        self.assertEqual(result["effective_developers"][0]["name"], "Parent Dev")
+        self.assertEqual(result["organization_source"], "parent_pom")
+        self.assertEqual(result["effective_organization"]["name"], "Parent Org")
 
     def test_audit_uses_parent_inherited_scm_and_keeps_license_match_exact(self):
         child = b"""<project>

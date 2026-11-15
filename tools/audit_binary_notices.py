@@ -6,7 +6,8 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-LICENSE_NAME = re.compile(r"(^|/)(?:LICENSE|LICENCE|NOTICE|COPYING|COPYRIGHT)(?:[._-].*)?$", re.I)
+LICENSE_NAME = re.compile(r"(^|/)(?:LICENSE|LICENCE|COPYING)(?:[._-].*)?$", re.I)
+NOTICE_NAME = re.compile(r"(^|/)(?:NOTICE|COPYRIGHT)(?:[._-].*)?$", re.I)
 MAX_TEXT_BYTES = 2 * 1024 * 1024
 MAX_ARCHIVE_BYTES = 64 * 1024 * 1024
 
@@ -22,7 +23,7 @@ def safe_text(data: bytes):
 
 
 def scan_zip(data: bytes, source: str, depth: int = 0):
-    """Extract exact notice text and report every archive that could not be inspected."""
+    """Extract exact license/notice text and report every archive that could not be inspected."""
     from io import BytesIO
 
     if depth > 4:
@@ -39,16 +40,18 @@ def scan_zip(data: bytes, source: str, depth: int = 0):
                 name = info.filename.replace("\\", "/")
                 is_nested_archive = name.lower().endswith((".aar", ".jar", ".zip"))
                 # A nested archive named NOTICE.zip/LICENSE.jar is a container,
-                # not a text notice entry. Recurse into it without UTF-8 decoding.
-                is_notice = not is_nested_archive and bool(LICENSE_NAME.search(name))
+                # not a text license/notice entry. Recurse into it without UTF-8 decoding.
+                is_license = not is_nested_archive and bool(LICENSE_NAME.search(name))
+                is_notice = not is_nested_archive and bool(NOTICE_NAME.search(name))
+                is_evidence = is_license or is_notice
 
                 if is_nested_archive and info.file_size > MAX_ARCHIVE_BYTES:
                     failures.append(source + "!/" + name + ": nested archive exceeds 64 MiB scan limit")
                     continue
-                if is_notice and info.file_size > MAX_TEXT_BYTES:
-                    failures.append(source + "!/" + name + ": notice text exceeds 2 MiB scan limit")
+                if is_evidence and info.file_size > MAX_TEXT_BYTES:
+                    failures.append(source + "!/" + name + ": license/notice text exceeds 2 MiB scan limit")
                     continue
-                if not is_nested_archive and not is_notice and info.file_size > MAX_TEXT_BYTES:
+                if not is_nested_archive and not is_evidence and info.file_size > MAX_TEXT_BYTES:
                     continue
 
                 try:
@@ -57,12 +60,14 @@ def scan_zip(data: bytes, source: str, depth: int = 0):
                     failures.append(source + "!/" + name + ": archive entry could not be read: " + str(exc))
                     continue
 
-                if is_notice:
+                if is_evidence:
                     value = safe_text(payload)
                     if value is None:
-                        failures.append(source + "!/" + name + ": notice entry is not valid bounded UTF-8 text")
+                        failures.append(source + "!/" + name + ": license/notice entry is not valid bounded UTF-8 text")
                     else:
-                        found.append({"path": source + "!/" + name,
+                        kind = ("COPYRIGHT" if re.search(r"(^|/)COPYRIGHT(?:[._-].*)?$", name, re.I)
+                                else "NOTICE" if is_notice else "LICENSE")
+                        found.append({"path": source + "!/" + name, "kind": kind,
                                       "sha256": hashlib.sha256(payload).hexdigest(),
                                       "content": value})
 
@@ -111,12 +116,25 @@ def audit(sbom_path: Path, artifact_dir: Path, notice_output: Path):
             except OSError as exc:
                 failures.append(coordinate + ": cannot read " + binary.name + ": " + str(exc))
         extracted_text.extend(extracted)
-        evidence = "ARCHIVE_LICENSE_OR_NOTICE" if extracted else ("SBOM_DECLARED_LICENSE_ONLY" if declared else "NO_LICENSE_EVIDENCE")
-        if evidence == "NO_LICENSE_EVIDENCE": failures.append(coordinate + ": no archive notice/license and no SBOM license declaration")
+        license_entries = [entry for entry in extracted if entry["kind"] == "LICENSE"]
+        notice_entries = [entry for entry in extracted if entry["kind"] in {"NOTICE", "COPYRIGHT"}]
+        license_found, notice_found = bool(license_entries), bool(notice_entries)
+        if license_found and notice_found:
+            evidence = "ARCHIVE_LICENSE_AND_NOTICE"
+        elif notice_found:
+            evidence = "ARCHIVE_NOTICE_OR_COPYRIGHT_ONLY"
+        elif license_found:
+            evidence = "ARCHIVE_LICENSE_ONLY"
+        else:
+            evidence = "SBOM_DECLARED_LICENSE_ONLY" if declared else "NO_LICENSE_EVIDENCE"
+        if evidence == "NO_LICENSE_EVIDENCE":
+            failures.append(coordinate + ": no archive license/notice and no SBOM license declaration")
         results.append({"coordinate": coordinate, "binary_files": [p.name for p in binaries],
                         "binary_count": len(binaries), "declared_licenses": declared,
-                        "archive_notice_files": [e["path"] for e in extracted],
-                        "evidence_level": evidence, "notice_found": bool(extracted)})
+                        "archive_license_files": [entry["path"] for entry in license_entries],
+                        "archive_notice_files": [entry["path"] for entry in notice_entries],
+                        "evidence_level": evidence, "license_found": license_found,
+                        "notice_found": notice_found})
     notice_output.parent.mkdir(parents=True, exist_ok=True)
     lines = ["UPSTREAM THIRD-PARTY LICENSE AND ATTRIBUTION EVIDENCE",
              "Generated from releaseRuntimeClasspath AAR/JAR files.",
@@ -125,18 +143,26 @@ def audit(sbom_path: Path, artifact_dir: Path, notice_output: Path):
     for item in results:
         lines += ["## " + item["coordinate"],
                   "Declared SBOM license(s): " + (", ".join(item["declared_licenses"]) or "UNIDENTIFIED"),
+                  "Archive LICENSE text files: " + (", ".join(item["archive_license_files"]) or "NONE"),
+                  "Archive NOTICE/COPYRIGHT text files: " + (", ".join(item["archive_notice_files"]) or "NONE"),
                   "Evidence: " + item["evidence_level"]]
-        matching = [entry for entry in extracted_text if entry["path"] in item["archive_notice_files"]]
+        matching = [entry for entry in extracted_text
+                    if entry["path"] in item["archive_license_files"] + item["archive_notice_files"]]
         if matching:
-            for entry in matching: lines += ["", "Source: " + entry["path"], "", entry["content"], ""]
-        else: lines.append("No matching LICENSE/NOTICE/COPYING/COPYRIGHT text file found in this binary archive.")
+            for entry in matching:
+                lines += ["", "Source (" + entry["kind"] + "): " + entry["path"], "", entry["content"], ""]
+        if not item["notice_found"]:
+            lines.append("No matching archive NOTICE/COPYRIGHT text file found; LICENSE/COPYING text alone does not resolve notice or copyright obligations. Manual review required.")
         lines.append("")
     notice_output.write_text("\n".join(lines) + "\n", encoding="utf-8")
     manual_review = [x["coordinate"] for x in results if not x["notice_found"]]
     return {"schema_version": 1, "component_count": len(results),
             "binary_component_count": sum(bool(x["binary_files"]) for x in results),
             "binary_file_count": sum(x["binary_count"] for x in results),
+            "archive_license_component_count": sum(x["license_found"] for x in results),
+            "archive_license_file_count": sum(len(x["archive_license_files"]) for x in results),
             "archive_notice_component_count": sum(x["notice_found"] for x in results),
+            "archive_notice_file_count": sum(len(x["archive_notice_files"]) for x in results),
             "manual_review_component_count": len(manual_review),
             "manual_review_components": manual_review,
             "evidence_counts": dict(Counter(x["evidence_level"] for x in results)),
@@ -159,7 +185,11 @@ def main():
              f"- SBOM components: **{report['component_count']}**",
              f"- Components with collected AAR/JAR binaries: **{report['binary_component_count']}**",
              f"- Binary files inspected: **{report['binary_file_count']}**",
-             f"- Components with archive LICENSE/NOTICE text: **{report['archive_notice_component_count']}**", "",
+             f"- Components with archive LICENSE text: **{report['archive_license_component_count']}**",
+             f"- Archive LICENSE text files: **{report['archive_license_file_count']}**",
+             f"- Components with archive NOTICE/COPYRIGHT text: **{report['archive_notice_component_count']}**",
+             f"- Archive NOTICE/COPYRIGHT text files: **{report['archive_notice_file_count']}**",
+             f"- Components requiring manual notice review: **{report['manual_review_component_count']}**", "",
              "| Evidence level | Components |", "|---|---:|"]
     for label, count in sorted(report["evidence_counts"].items()): lines.append(f"| {label} | {count} |")
     lines += ["", "## Component details", "", "| Component | Binary files | Declared license(s) | Evidence |", "|---|---|---|---|"]
@@ -168,15 +198,15 @@ def main():
                      " | " + (", ".join(item["declared_licenses"]) or "UNIDENTIFIED") + " | " + item["evidence_level"] + " |")
     lines += ["", "## Manual notice review required", ""]
     if report["manual_review_components"]:
-        lines += ["The following components contain no matching archive LICENSE/NOTICE/COPYING/COPYRIGHT text. Their upstream attribution obligations require manual review; an SBOM license declaration is not a substitute for this review.", ""]
+        lines += ["The following components contain no matching archive NOTICE/COPYRIGHT text. Archive LICENSE/COPYING text and SBOM declarations do not substitute for review of upstream notice/copyright obligations.", ""]
         lines += ["- `" + item + "`" for item in report["manual_review_components"]]
     else:
-        lines.append("Every inspected component contained at least one matching archive notice/license text file.")
+        lines.append("Every inspected component contained at least one matching archive NOTICE/COPYRIGHT text file; provenance and legal review may still be required.")
     if report["failures"]: lines += ["", "## Failures", ""] + ["- " + x for x in report["failures"]]
     else: lines += ["", "No missing runtime binaries or unidentified license declarations detected."]
     args.markdown_report.parent.mkdir(parents=True, exist_ok=True)
     args.markdown_report.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    print(f"Binary notice audit: {report['binary_component_count']}/{report['component_count']} components; {report['archive_notice_component_count']} have archive notices.")
+    print(f"Binary notice audit: {report['binary_component_count']}/{report['component_count']} components; {report['archive_license_component_count']} have archive LICENSE text; {report['archive_notice_component_count']} have archive NOTICE/COPYRIGHT text; {report['manual_review_component_count']} require manual notice review.")
     return 1 if report["failures"] else 0
 
 if __name__ == "__main__": raise SystemExit(main())

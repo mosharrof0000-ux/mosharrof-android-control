@@ -64,8 +64,24 @@ class MavenSourceMetadataTest(unittest.TestCase):
         self.assertEqual(result["component_count"], 2)
         self.assertEqual(result["repository_existence_verified_count"], 0)
         self.assertEqual(result["release_tag_verified_count"], 0)
+        self.assertEqual(result["assessment_counts"]["POM_REFERENCE_PRESENT_UNVERIFIED"], 1)
         self.assertEqual(result["assessment_counts"]["MISSING_REFERENCE"], 1)
+        self.assertEqual(result["assessment_counts"]["INVALID_OR_MIXED_REFERENCE"], 0)
 
+    def test_audit_counts_invalid_and_missing_scm_without_claiming_verification(self):
+        result = audit({"components": [
+            {"coordinate": "g:valid:1", "scm": {"url": "https://github.com/a/b"}},
+            {"coordinate": "g:missing:1"},
+            {"coordinate": "g:invalid:1", "scm": {"url": "not a repository URL"}},
+        ]})
+        self.assertEqual(result["assessment_counts"], {
+            "POM_REFERENCE_PRESENT_UNVERIFIED": 1,
+            "MISSING_REFERENCE": 1,
+            "INVALID_OR_MIXED_REFERENCE": 1,
+        })
+        self.assertEqual(result["repository_existence_verified_count"], 0)
+        self.assertEqual(result["release_tag_verified_count"], 0)
+        self.assertEqual(result["publisher_identity_verified_count"], 0)
 
 
     def test_scm_json_report_redacts_userinfo_query_and_fragment(self):
