@@ -339,6 +339,17 @@ class MavenMetadataAuditTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Git blob SHA"):
                 load_upstream_evidence(path, [component])
 
+    def test_upstream_manifest_rejects_short_source_commit(self):
+        from audit_maven_metadata import load_upstream_evidence
+        component = {"group": "example", "name": "sample", "version": "1.0",
+                     "licenses": [{"license": {"id": "Apache-2.0"}}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            record = self._partial_upstream_record()
+            record["source_commit"] = "a" * 39
+            path = self._write_manifest_fixture(tmp, record)
+            with self.assertRaisesRegex(ValueError, "full 40-character Git SHA"):
+                load_upstream_evidence(path, [component])
+
     def test_upstream_manifest_license_must_match_sbom_exactly(self):
         from audit_maven_metadata import load_upstream_evidence
         with tempfile.TemporaryDirectory() as tmp:

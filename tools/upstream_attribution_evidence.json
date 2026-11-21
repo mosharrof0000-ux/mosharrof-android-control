@@ -858,35 +858,35 @@
       "review_status": "PARTIAL",
       "license_id": "Apache-2.0",
       "source_repository": "https://github.com/JetBrains/intellij-community",
-      "source_ref": "candidate source commit f92ce9af0629ee8dcc8743dcc2c1ca297aaacc7 (no exact 13.0 release tag found)",
-      "source_commit": "f92ce9af0629ee8dcc8743dcc2c1ca297aaacc7",
+      "source_ref": "candidate source commit f92ce9af0629ee8dcc8743dcc2c1ca297aaacc7c (no exact 13.0 release tag found)",
+      "source_commit": "f92ce9af0629ee8dcc8743dcc2c1ca297aaacc7c",
       "source_revision_resolution": "The candidate source commit is in the annotation-source history before the 2013-12-17 secondary Maven repository publication date; no exact 13.0 release tag was found, and GitHub identifies the candidate commit as unsigned.",
       "source_mapping_status": "PARTIAL: the downstream Android prebuilts POM at the exact 13.0 coordinate declares Apache-2.0 and JetBrains SCM, but no exact 13.0 source tag or artifact build attestation ties the published JAR to this candidate commit.",
       "source_files": [
         {
           "path": "platform/annotations/src/org/jetbrains/annotations/Contract.java",
           "git_blob_sha": "360bf5923d91693ecbac0780ae228645f4c91b13",
-          "url": "https://github.com/JetBrains/intellij-community/blob/f92ce9af0629ee8dcc8743dcc2c1ca297aaacc7/platform/annotations/src/org/jetbrains/annotations/Contract.java"
+          "url": "https://github.com/JetBrains/intellij-community/blob/f92ce9af0629ee8dcc8743dcc2c1ca297aaacc7c/platform/annotations/src/org/jetbrains/annotations/Contract.java"
         },
         {
           "path": "platform/annotations/src/org/jetbrains/annotations/NotNull.java",
           "git_blob_sha": "aa7c78b3d225abbcc40f254fc15bce5e3bd7ba47",
-          "url": "https://github.com/JetBrains/intellij-community/blob/f92ce9af0629ee8dcc8743dcc2c1ca297aaacc7/platform/annotations/src/org/jetbrains/annotations/NotNull.java"
+          "url": "https://github.com/JetBrains/intellij-community/blob/f92ce9af0629ee8dcc8743dcc2c1ca297aaacc7c/platform/annotations/src/org/jetbrains/annotations/NotNull.java"
         },
         {
           "path": "platform/annotations/src/org/jetbrains/annotations/Nullable.java",
           "git_blob_sha": "1618621ad319e0fc003caa45419e6a35d90b11c7",
-          "url": "https://github.com/JetBrains/intellij-community/blob/f92ce9af0629ee8dcc8743dcc2c1ca297aaacc7/platform/annotations/src/org/jetbrains/annotations/Nullable.java"
+          "url": "https://github.com/JetBrains/intellij-community/blob/f92ce9af0629ee8dcc8743dcc2c1ca297aaacc7c/platform/annotations/src/org/jetbrains/annotations/Nullable.java"
         },
         {
           "path": "platform/annotations/src/org/jetbrains/annotations/NonNls.java",
           "git_blob_sha": "f067a87de1f30e19a55238eddd14ad1a0260f330",
-          "url": "https://github.com/JetBrains/intellij-community/blob/f92ce9af0629ee8dcc8743dcc2c1ca297aaacc7/platform/annotations/src/org/jetbrains/annotations/NonNls.java"
+          "url": "https://github.com/JetBrains/intellij-community/blob/f92ce9af0629ee8dcc8743dcc2c1ca297aaacc7c/platform/annotations/src/org/jetbrains/annotations/NonNls.java"
         },
         {
           "path": "platform/annotations/src/org/jetbrains/annotations/Nls.java",
           "git_blob_sha": "cdd7ba724b1ec4a3fa84e663df179216d4552afe",
-          "url": "https://github.com/JetBrains/intellij-community/blob/f92ce9af0629ee8dcc8743dcc2c1ca297aaacc7/platform/annotations/src/org/jetbrains/annotations/Nls.java"
+          "url": "https://github.com/JetBrains/intellij-community/blob/f92ce9af0629ee8dcc8743dcc2c1ca297aaacc7c/platform/annotations/src/org/jetbrains/annotations/Nls.java"
         }
       ],
       "supporting_evidence": [
