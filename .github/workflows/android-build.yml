@@ -72,7 +72,7 @@ jobs:
 
       - name: Audit upstream Maven POM license and source metadata
         run: |
-          python3 tools/audit_maven_metadata.py --sbom android/app/build/reports/cyclonedx-direct/bom.json --json-report android/build/reports/license-review/maven-metadata-audit.json --markdown-report android/build/reports/license-review/MAVEN_METADATA_AUDIT.md --attributions android/app/src/main/assets/POM_THIRD_PARTY_ATTRIBUTIONS.txt
+          python3 tools/audit_maven_metadata.py --sbom android/app/build/reports/cyclonedx-direct/bom.json --upstream-evidence tools/upstream_attribution_evidence.json --json-report android/build/reports/license-review/maven-metadata-audit.json --markdown-report android/build/reports/license-review/MAVEN_METADATA_AUDIT.md --attributions android/app/src/main/assets/POM_THIRD_PARTY_ATTRIBUTIONS.txt
 
       - name: Assess Maven POM SCM source references (syntax only)
         run: |
@@ -123,6 +123,7 @@ jobs:
           python3 - <<'PY'
           import json
           import zipfile
+          from pathlib import Path
 
           EXPECTED_RUNTIME_COMPONENTS = 34
           REPORT_DIR = "android/build/reports/license-review"
@@ -149,6 +150,38 @@ jobs:
           sbom_coordinates = coordinates(sbom_components)
           if len(sbom_components) != EXPECTED_RUNTIME_COMPONENTS:
               fail("Expected exactly 34 releaseRuntimeClasspath components; found " + str(len(sbom_components)))
+
+          lock_coordinates = set()
+          with open("android/app/gradle.lockfile", encoding="utf-8") as stream:
+              for raw_line in stream:
+                  if "=" not in raw_line:
+                      continue
+                  coordinate, configurations = raw_line.rstrip("\n").split("=", 1)
+                  if "releaseRuntimeClasspath" in configurations.split(","):
+                      lock_coordinates.add(coordinate)
+          if lock_coordinates != sbom_coordinates or len(lock_coordinates) != EXPECTED_RUNTIME_COMPONENTS:
+              fail("Gradle releaseRuntimeClasspath lock coordinates do not exactly match the 34-component SBOM")
+
+          with open("tools/upstream_attribution_evidence.json", encoding="utf-8") as stream:
+              upstream_manifest = json.load(stream)
+          if not isinstance(upstream_manifest, dict):
+              fail("Upstream attribution manifest root must be an object")
+          manifest_components = upstream_manifest.get("components") or []
+          if not isinstance(manifest_components, list) or any(not isinstance(item, dict) for item in manifest_components):
+              fail("Upstream attribution manifest components must be an array of objects")
+          manifest_coordinates = [item.get("coordinate", "") for item in manifest_components]
+          if any(not isinstance(value, str) or not value for value in manifest_coordinates):
+              fail("Upstream attribution manifest contains an invalid coordinate")
+          if (upstream_manifest.get("schema_version") != 2
+                  or len(manifest_components) != EXPECTED_RUNTIME_COMPONENTS
+                  or len(manifest_coordinates) != len(set(manifest_coordinates))
+                  or set(manifest_coordinates) != lock_coordinates):
+              fail("Upstream attribution manifest must cover the lockfile/SBOM exactly with no missing, duplicate or unknown coordinates")
+          manifest_by_coordinate = {item["coordinate"]: item for item in manifest_components}
+          if any(item.get("review_status") not in {"PARTIAL", "NOT_REVIEWED"}
+                 or item.get("artifact_signature_status") != "UNVERIFIED"
+                 for item in manifest_components):
+              fail("Upstream manifest contains an unsupported review or artifact-signature status")
 
           with open(REPORT_DIR + "/binary-notice-audit.json", encoding="utf-8") as stream:
               audit = json.load(stream)
@@ -212,18 +245,51 @@ jobs:
               metadata = json.load(stream)
           metadata_components = metadata.get("components") or []
           metadata_coordinates = {item.get("coordinate", "") for item in metadata_components}
-          if (metadata.get("component_count") != EXPECTED_RUNTIME_COMPONENTS
+          if (metadata.get("schema_version") != 2
+                  or metadata.get("component_count") != EXPECTED_RUNTIME_COMPONENTS
                   or metadata.get("pom_component_count") != EXPECTED_RUNTIME_COMPONENTS
                   or metadata_coordinates != sbom_coordinates
                   or metadata.get("license_match_count") != EXPECTED_RUNTIME_COMPONENTS
                   or metadata.get("license_mismatch_count") != 0
+                  or metadata.get("upstream_source_mismatch_count") != 0
+                  or metadata.get("upstream_source_mismatch_components") != []
                   or metadata.get("failures") != []):
-              fail("Maven POM/SBOM license comparison did not produce 34 exact matches and zero mismatches")
+              fail("Maven POM/SBOM license comparison or upstream source reconciliation did not pass")
+          metadata_by_coordinate = {item["coordinate"]: item for item in metadata_components}
+          source_partial = 0
+          source_not_reviewed = 0
+          for coordinate, manifest_item in manifest_by_coordinate.items():
+              metadata_item = metadata_by_coordinate.get(coordinate)
+              if metadata_item is None:
+                  fail("Maven metadata report is missing manifest coordinate: " + coordinate)
+              if (metadata_item.get("upstream_source_review_status") != manifest_item.get("review_status")
+                      or metadata_item.get("upstream_source_evidence") != manifest_item):
+                  fail("Maven metadata report does not preserve exact manifest evidence/status: " + coordinate)
+              if manifest_item["review_status"] == "PARTIAL":
+                  source_partial += 1
+              else:
+                  source_not_reviewed += 1
+          if (metadata.get("upstream_source_review_count") != source_partial
+                  or metadata.get("upstream_source_not_reviewed_count") != source_not_reviewed):
+              fail("Upstream source review counts do not match the exact 34-coordinate manifest")
           with open(REPORT_DIR + "/MAVEN_METADATA_AUDIT.md", encoding="utf-8") as stream:
               maven_markdown = stream.read()
           if ("- POM/SBOM license matches: **34**" not in maven_markdown
-                  or "- POM/SBOM license mismatches or unresolved entries: **0**" not in maven_markdown):
-              fail("Maven POM Markdown summary does not match its JSON report")
+                  or "- POM/SBOM license mismatches or unresolved entries: **0**" not in maven_markdown
+                  or "- Coordinate-specific upstream source records (PARTIAL): **" + str(source_partial) + "**" not in maven_markdown
+                  or "- Components without coordinate-specific source review: **" + str(source_not_reviewed) + "**" not in maven_markdown
+                  or "- Upstream source/POM/SBOM license mismatches: **0**" not in maven_markdown):
+              fail("Maven POM Markdown summary does not match its JSON/manifest report")
+          for item in metadata_components:
+              pom_names = " OR ".join(value.get("name") or value.get("url") for value in item.get("pom_licenses") or []) or "UNDECLARED"
+              sbom_names = " OR ".join(item.get("sbom_licenses") or []) or "UNDECLARED"
+              expected_row = "| " + " | ".join((
+                  item["coordinate"], sbom_names, pom_names, item["license_source"],
+                  item["scm_source"], item["upstream_source_review_status"],
+                  "YES" if item["license_match"] else "NO", item["pom_sha256"]
+              )) + " |"
+              if expected_row not in maven_markdown:
+                  fail("Maven POM Markdown row does not match its JSON evidence: " + item["coordinate"])
 
           with open(REPORT_DIR + "/maven-source-metadata-audit.json", encoding="utf-8") as stream:
               source_report = json.load(stream)
@@ -274,6 +340,15 @@ jobs:
               missing = sorted(required - names)
               if missing:
                   fail("APK is missing required notice assets: " + str(missing))
+              source_assets = {
+                  "assets/THIRD_PARTY_NOTICES.md": "android/app/src/main/assets/THIRD_PARTY_NOTICES.md",
+                  "assets/UPSTREAM_THIRD_PARTY_NOTICES.txt": "android/app/src/main/assets/UPSTREAM_THIRD_PARTY_NOTICES.txt",
+                  "assets/POM_THIRD_PARTY_ATTRIBUTIONS.txt": "android/app/src/main/assets/POM_THIRD_PARTY_ATTRIBUTIONS.txt",
+                  "assets/licenses/Apache-2.0.txt": "android/app/src/main/assets/licenses/Apache-2.0.txt",
+              }
+              for asset_name, source_path in source_assets.items():
+                  if archive.read(asset_name) != Path(source_path).read_bytes():
+                      fail("APK asset bytes do not exactly match generated source asset: " + asset_name)
               license_text = archive.read("assets/licenses/Apache-2.0.txt").decode("utf-8")
               notices = archive.read("assets/THIRD_PARTY_NOTICES.md").decode("utf-8")
               upstream = archive.read("assets/UPSTREAM_THIRD_PARTY_NOTICES.txt").decode("utf-8")
@@ -305,6 +380,56 @@ jobs:
                   attribution_section = pom_attributions[attribution_start:attribution_end]
                   if "Copyright/NOTICE attribution status: NOT ESTABLISHED BY POM METADATA; authoritative upstream artifact/source review required." not in attribution_section:
                       fail("APK POM attribution asset does not disclose unresolved copyright/NOTICE status: " + coordinate)
+                  manifest_item = manifest_by_coordinate[coordinate]
+                  source_status = manifest_item["review_status"]
+                  if source_status == "PARTIAL":
+                      if "Upstream source review status: PARTIAL" not in attribution_section:
+                          fail("APK POM attribution asset changed a PARTIAL source status: " + coordinate)
+                      required_source_values = [
+                          "Upstream source license identifier (not archive text): " + manifest_item["license_id"],
+                          "Upstream source repository: " + manifest_item["source_repository"],
+                          "Upstream source ref: " + manifest_item["source_ref"],
+                          "Upstream source commit: " + manifest_item["source_commit"],
+                          "Upstream source revision assessment: " + manifest_item["source_revision_resolution"],
+                          "Upstream artifact/source mapping assessment: " + manifest_item["source_mapping_status"],
+                          "Upstream NOTICE review status: " + manifest_item["notice_review_status"]
+                          + "; paths checked: " + ", ".join(manifest_item["notice_paths_checked"]),
+                          "Artifact signature status: UNVERIFIED",
+                      ]
+                      required_source_values.extend(
+                          "Source-derived copyright attribution (not archive-extracted): " + value
+                          for value in manifest_item["copyright_attributions"]
+                      )
+                      required_source_values.extend(
+                          "Source file (Git blob SHA-1 " + value["git_blob_sha"] + "): " + value["url"]
+                          for value in manifest_item["source_files"]
+                      )
+                      required_source_values.extend(
+                          "Supporting source/POM evidence (Git blob SHA-1 " + value["git_blob_sha"] + "): " + value["url"]
+                          for value in manifest_item.get("supporting_evidence") or []
+                      )
+                      required_source_values.extend(
+                          "Unresolved upstream review: " + value for value in manifest_item["unresolved"]
+                      )
+                      for required_value in required_source_values:
+                          if required_value not in attribution_section:
+                              fail("APK POM attribution asset is missing exact source evidence: " + coordinate)
+                      signature_evidence = manifest_item.get("signature_evidence")
+                      if signature_evidence:
+                          expected_signature_note = ("Historical signature evidence only (not current verification): "
+                                                      + signature_evidence["url"] + " — " + signature_evidence["summary"])
+                          if expected_signature_note not in attribution_section:
+                              fail("APK POM attribution asset omits historical-only signature context: " + coordinate)
+                  else:
+                      if ("Upstream source review status: NOT_REVIEWED; no coordinate-specific authoritative source record is available." not in attribution_section
+                              or "Upstream source mapping status: " + manifest_item["source_mapping_status"] not in attribution_section
+                              or "Copyright attribution: NOT_REVIEWED; manual upstream review required." not in attribution_section
+                              or "Upstream NOTICE review status: NOT_REVIEWED." not in attribution_section
+                              or "Artifact signature status: UNVERIFIED" not in attribution_section):
+                          fail("APK POM attribution asset does not keep unreviewed source/copyright status explicit: " + coordinate)
+                      for unresolved in manifest_item["unresolved"]:
+                          if "Unresolved upstream review: " + unresolved not in attribution_section:
+                              fail("APK POM attribution asset omits an unreviewed source blocker: " + coordinate)
               for item in audit_components:
                   coordinate = item["coordinate"]
                   section_start = upstream.find("\n## " + coordinate + "\n")
@@ -333,6 +458,7 @@ jobs:
           print("Archive LICENSE texts found for " + str(audit["archive_license_component_count"]) + "/34 runtime components.")
           print("Archive NOTICE/COPYRIGHT texts found for " + str(audit["archive_notice_component_count"]) + "/34 runtime components.")
           print("MANUAL NOTICE REVIEW REQUIRED for " + str(audit["manual_review_component_count"]) + "/34 runtime components; see BINARY_NOTICE_AUDIT.md.")
+          print("Upstream source review: " + str(source_partial) + " PARTIAL; " + str(source_not_reviewed) + " NOT_REVIEWED; 0 mismatches.")
           print("Upstream copyright/NOTICE clearance is not inferred from SBOM or POM metadata.")
           PY
 
@@ -358,6 +484,7 @@ jobs:
             android/app/src/main/assets/POM_THIRD_PARTY_ATTRIBUTIONS.txt
             android/build/reports/license-review/maven-metadata-audit.json
             android/build/reports/license-review/MAVEN_METADATA_AUDIT.md
+            tools/upstream_attribution_evidence.json
             android/build/reports/dependency-triage/**
           if-no-files-found: warn
 

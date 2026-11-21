@@ -3,7 +3,10 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
-from audit_maven_metadata import normalize_license, parse_pom, pom_urls, resolve_license_metadata, sanitize_scm_reference, licenses_match, audit
+from audit_maven_metadata import (
+    normalize_license, parse_pom, pom_urls, resolve_license_metadata,
+    sanitize_scm_reference, licenses_match, audit, render_attributions, sbom_licenses,
+)
 
 class MavenMetadataAuditTest(unittest.TestCase):
     def test_normalizes_apache_license_name_and_url(self):
@@ -226,6 +229,237 @@ class MavenMetadataAuditTest(unittest.TestCase):
         serialized = str(result)
         for secret in ("alice", "bob", "dev:", "secret", "token", "key="):
             self.assertNotIn(secret, serialized)
+
+
+
+    def _partial_upstream_record(self, coordinate="example:sample:1.0", license_id="Apache-2.0"):
+        repository = "https://github.com/example/sample"
+        commit = "a" * 40
+        path = "src/main/java/Sample.java"
+        return {
+            "coordinate": coordinate,
+            "review_status": "PARTIAL",
+            "license_id": license_id,
+            "source_repository": repository,
+            "source_ref": "v1.0",
+            "source_commit": commit,
+            "source_revision_resolution": "Candidate tag resolves to the recorded source commit.",
+            "source_mapping_status": "Source mapping is partial; no published artifact build attestation is present.",
+            "source_files": [{
+                "path": path,
+                "git_blob_sha": "b" * 40,
+                "url": repository + "/blob/" + commit + "/" + path,
+            }],
+            "supporting_evidence": [],
+            "copyright_attributions": ["Copyright 2024 Example Authors"],
+            "notice_review_status": "NOT_FOUND_AT_REVIEWED_PATHS",
+            "notice_paths_checked": ["NOTICE"],
+            "notice_exclusions": [],
+            "artifact_signature_status": "UNVERIFIED",
+            "signature_evidence": None,
+            "unresolved": [
+                "The published artifact has not been attested against this source commit.",
+                "The published artifact signature has not been independently verified.",
+            ],
+        }
+
+    def _not_reviewed_record(self, coordinate="example:sample:1.0"):
+        return {
+            "coordinate": coordinate,
+            "review_status": "NOT_REVIEWED",
+            "license_id": None,
+            "source_repository": None,
+            "source_ref": None,
+            "source_commit": None,
+            "source_revision_resolution": None,
+            "source_mapping_status": "No coordinate-specific source review has been completed.",
+            "source_files": [],
+            "supporting_evidence": [],
+            "copyright_attributions": [],
+            "notice_review_status": "NOT_REVIEWED",
+            "notice_paths_checked": [],
+            "notice_exclusions": [],
+            "artifact_signature_status": "UNVERIFIED",
+            "signature_evidence": None,
+            "unresolved": [
+                "Coordinate-specific source, copyright and NOTICE review remains pending.",
+                "No artifact signature verification evidence is recorded.",
+            ],
+        }
+
+    def _write_manifest_fixture(self, directory, record):
+        manifest_path = Path(directory) / "upstream-evidence.json"
+        manifest_path.write_text(json.dumps({
+            "schema_version": 2,
+            "components": [record],
+        }), encoding="utf-8")
+        return manifest_path
+
+    def test_upstream_manifest_must_cover_exact_sbom_coordinates(self):
+        from audit_maven_metadata import load_upstream_evidence
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_manifest_fixture(tmp, self._partial_upstream_record())
+            components = [
+                {"group": "example", "name": "sample", "version": "1.0",
+                 "licenses": [{"license": {"id": "Apache-2.0"}}]},
+                {"group": "example", "name": "other", "version": "1.0",
+                 "licenses": [{"license": {"id": "Apache-2.0"}}]},
+            ]
+            with self.assertRaisesRegex(ValueError, "missing=.*example:other:1.0"):
+                load_upstream_evidence(path, components)
+
+    def test_upstream_manifest_rejects_duplicate_and_unknown_coordinates(self):
+        from audit_maven_metadata import load_upstream_evidence
+        component = {"group": "example", "name": "sample", "version": "1.0",
+                     "licenses": [{"license": {"id": "Apache-2.0"}}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            record = self._partial_upstream_record()
+            path = Path(tmp) / "upstream.json"
+            path.write_text(json.dumps({"schema_version": 2, "components": [record, record]}), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "Duplicate upstream attribution coordinate"):
+                load_upstream_evidence(path, [component])
+            unknown = self._partial_upstream_record(coordinate="example:unknown:1.0")
+            path.write_text(json.dumps({"schema_version": 2, "components": [unknown]}), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "Unknown upstream attribution coordinate"):
+                load_upstream_evidence(path, [component])
+
+    def test_upstream_manifest_rejects_unpinned_source_url_and_bad_blob(self):
+        from audit_maven_metadata import load_upstream_evidence
+        component = {"group": "example", "name": "sample", "version": "1.0",
+                     "licenses": [{"license": {"id": "Apache-2.0"}}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            record = self._partial_upstream_record()
+            record["source_files"][0]["url"] = "https://github.com/example/sample/blob/main/src/main/java/Sample.java"
+            path = self._write_manifest_fixture(tmp, record)
+            with self.assertRaisesRegex(ValueError, "not pinned"):
+                load_upstream_evidence(path, [component])
+            record = self._partial_upstream_record()
+            record["source_files"][0]["git_blob_sha"] = "bad"
+            path = self._write_manifest_fixture(tmp, record)
+            with self.assertRaisesRegex(ValueError, "Git blob SHA"):
+                load_upstream_evidence(path, [component])
+
+    def test_upstream_manifest_license_must_match_sbom_exactly(self):
+        from audit_maven_metadata import load_upstream_evidence
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_manifest_fixture(tmp, self._partial_upstream_record(license_id="MIT"))
+            component = {"group": "example", "name": "sample", "version": "1.0",
+                         "licenses": [{"license": {"id": "Apache-2.0"}}]}
+            with self.assertRaisesRegex(ValueError, "does not exactly match the SBOM"):
+                load_upstream_evidence(path, [component])
+
+    def test_upstream_manifest_cannot_claim_artifact_signature_verified(self):
+        from audit_maven_metadata import load_upstream_evidence
+        with tempfile.TemporaryDirectory() as tmp:
+            record = self._partial_upstream_record()
+            record["artifact_signature_status"] = "VERIFIED"
+            path = self._write_manifest_fixture(tmp, record)
+            component = {"group": "example", "name": "sample", "version": "1.0",
+                         "licenses": [{"license": {"id": "Apache-2.0"}}]}
+            with self.assertRaisesRegex(ValueError, "must remain UNVERIFIED"):
+                load_upstream_evidence(path, [component])
+
+    def test_upstream_manifest_accepts_gitiles_and_cross_repository_evidence(self):
+        from audit_maven_metadata import load_upstream_evidence
+        repository = "https://android.googlesource.com/platform/frameworks/support"
+        commit = "a" * 40
+        record = self._partial_upstream_record()
+        record.update({
+            "source_repository": repository,
+            "source_commit": commit,
+            "source_files": [{
+                "path": "module/Source.java",
+                "git_blob_sha": "b" * 40,
+                "url": repository + "/+/" + commit + "/module/Source.java",
+            }],
+            "supporting_evidence": [{
+                "repository": "https://android.googlesource.com/platform/prebuilts/tools",
+                "commit": "c" * 40,
+                "path": "maven/sample.pom",
+                "git_blob_sha": "d" * 40,
+                "url": "https://android.googlesource.com/platform/prebuilts/tools/+/"+("c"*40)+"/maven/sample.pom",
+                "description": "Exact-coordinate mirror POM.",
+            }],
+        })
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_manifest_fixture(tmp, record)
+            component = {"group": "example", "name": "sample", "version": "1.0",
+                         "licenses": [{"license": {"id": "Apache-2.0"}}]}
+            loaded = load_upstream_evidence(path, [component])
+        self.assertEqual(loaded["example:sample:1.0"]["source_repository"], repository)
+
+    def test_audit_and_attribution_keep_partial_and_unreviewed_distinct(self):
+        sbom = {"components": [
+            {"group": "example", "name": "sample", "version": "1.0",
+             "licenses": [{"license": {"id": "Apache-2.0"}}]},
+            {"group": "example", "name": "pending", "version": "2.0",
+             "licenses": [{"license": {"id": "Apache-2.0"}}]},
+        ]}
+        pom = b"<project><licenses><license><name>Apache License, Version 2.0</name></license></licenses></project>"
+        partial = self._partial_upstream_record()
+        pending = self._not_reviewed_record("example:pending:2.0")
+        with tempfile.TemporaryDirectory() as tmp:
+            sbom_path = Path(tmp) / "bom.json"
+            manifest_path = Path(tmp) / "upstream-evidence.json"
+            sbom_path.write_text(json.dumps(sbom), encoding="utf-8")
+            manifest_path.write_text(json.dumps({
+                "schema_version": 2,
+                "components": [partial, pending],
+            }), encoding="utf-8")
+            with patch("audit_maven_metadata.fetch_pom",
+                       return_value=(pom, "https://repo.example/sample.pom")):
+                report = audit(sbom_path, manifest_path)
+        self.assertEqual(report["upstream_source_review_count"], 1)
+        self.assertEqual(report["upstream_source_not_reviewed_count"], 1)
+        self.assertEqual(report["upstream_source_mismatch_count"], 0)
+        partial_result = next(x for x in report["components"] if x["coordinate"] == "example:sample:1.0")
+        pending_result = next(x for x in report["components"] if x["coordinate"] == "example:pending:2.0")
+        self.assertEqual(partial_result["upstream_source_review_status"], "PARTIAL")
+        self.assertEqual(pending_result["upstream_source_review_status"], "NOT_REVIEWED")
+        attribution = render_attributions(report)
+        self.assertIn("Source-derived copyright attribution (not archive-extracted): Copyright 2024 Example Authors", attribution)
+        self.assertIn("Artifact signature status: UNVERIFIED", attribution)
+        self.assertIn("Upstream source review status: NOT_REVIEWED; no coordinate-specific authoritative source record is available.", attribution)
+        self.assertIn("Upstream source mapping status: No coordinate-specific source review has been completed.", attribution)
+        self.assertIn("Unresolved upstream review: Coordinate-specific source, copyright and NOTICE review remains pending.", attribution)
+
+    def test_source_license_mismatch_with_pom_fails_closed(self):
+        sbom = {"components": [
+            {"group": "example", "name": "sample", "version": "1.0",
+             "licenses": [{"license": {"id": "Apache-2.0"}}]},
+        ]}
+        pom = b"<project><licenses><license><name>MIT</name></license></licenses></project>"
+        record = self._partial_upstream_record()
+        with tempfile.TemporaryDirectory() as tmp:
+            sbom_path = Path(tmp) / "bom.json"
+            manifest_path = Path(tmp) / "upstream-evidence.json"
+            sbom_path.write_text(json.dumps(sbom), encoding="utf-8")
+            manifest_path.write_text(json.dumps({"schema_version": 2, "components": [record]}), encoding="utf-8")
+            with patch("audit_maven_metadata.fetch_pom",
+                       return_value=(pom, "https://repo.example/sample.pom")):
+                report = audit(sbom_path, manifest_path)
+        self.assertEqual(report["upstream_source_mismatch_count"], 1)
+        self.assertEqual(report["components"][0]["upstream_source_review_status"], "INVALID_LICENSE_MISMATCH")
+        self.assertTrue(any("upstream source evidence license" in failure for failure in report["failures"]))
+
+    def test_sbom_spdx_expression_is_preserved_as_a_license_declaration(self):
+        self.assertEqual(
+            sbom_licenses({"licenses": [{"expression": "Apache-2.0"}]}),
+            ["Apache-2.0"],
+        )
+
+
+
+    def test_compound_spdx_expression_is_not_collapsed_to_one_license(self):
+        self.assertEqual(
+            normalize_license("Apache-2.0 OR MIT"),
+            "SPDX-EXPRESSION:Apache-2.0 OR MIT",
+        )
+        self.assertEqual(
+            sbom_licenses({"licenses": [{"expression": "Apache-2.0 OR MIT"}]}),
+            ["SPDX-EXPRESSION:Apache-2.0 OR MIT"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
