@@ -3,6 +3,10 @@
 ## Product boundary
 This is a standalone Android companion intended to expose user-authorized capabilities through a controlled interface. It does not require the Mosharrof AI app. MCP support is provider-neutral at the protocol/tool layer; an AI provider still needs a compatible MCP client or separately configured connector.
 
+## AI-provider-neutral integration direction
+
+The plugin contract and safety runtime are intended to be independent of any AI vendor. Each AI provider/model/API version must connect through its own adapter translating native tool/function/MCP requests into the same canonical plugin contract. Capability support must be documented and verified per provider; unsupported features must fail closed rather than be simulated. See [AI Provider Adapter Architecture](AI_PROVIDER_ADAPTER_ARCHITECTURE.md). This is an architectural requirement, not a claim that Grok, Gemini, Claude, Copilot or OpenAI adapters are already implemented or live-tested.
+
 ## Implemented local capabilities
 - Read-only storage and RAM diagnostics.
 - User-selected Storage Access Framework tree, bounded inventory, SHA-256 duplicate detection, and audio metadata.

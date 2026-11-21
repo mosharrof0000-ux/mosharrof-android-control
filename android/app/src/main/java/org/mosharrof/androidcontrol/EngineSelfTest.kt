@@ -14,7 +14,7 @@ object EngineSelfTest {
             }
             results.add("PASS: Module Registry — ${modules.size}টি মডিউল, ID অনন্য")
         }.onFailure {
-            results.add("FAIL: Module Registry — ${it.message}")
+            results.add("FAIL: Module Registry — ${safeUiErrorMessage(it)}")
         }
 
         runCatching {
@@ -26,21 +26,21 @@ object EngineSelfTest {
             check(apis.all { it.introducedApi > 0 }) { "Invalid API level" }
             results.add("PASS: Android API Registry — ${apis.size}টি API entry")
         }.onFailure {
-            results.add("FAIL: Android API Registry — ${it.message}")
+            results.add("FAIL: Android API Registry — ${safeUiErrorMessage(it)}")
         }
 
         runCatching {
             check(Build.VERSION.SDK_INT >= 26) { "Device below app minimum SDK" }
             results.add("PASS: Android SDK — API ${Build.VERSION.SDK_INT}")
         }.onFailure {
-            results.add("FAIL: Android SDK — ${it.message}")
+            results.add("FAIL: Android SDK — ${safeUiErrorMessage(it)}")
         }
 
         runCatching {
             check(AiEngine.cryptoSelfTest()) { "Keystore encryption round-trip failed" }
             results.add("PASS: AI Key Vault — Android Keystore AES-GCM encryption")
         }.onFailure {
-            results.add("FAIL: AI Key Vault — ${it.message}")
+            results.add("FAIL: AI Key Vault — ${safeUiErrorMessage(it)}")
         }
 
         results.add(

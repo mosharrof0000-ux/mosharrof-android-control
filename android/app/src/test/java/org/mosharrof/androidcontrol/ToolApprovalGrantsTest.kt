@@ -199,4 +199,22 @@ class ToolApprovalGrantsTest {
         }
     }
 
+
+    @Test
+    fun rejectsApprovalFingerprintWithExcessiveNesting() {
+        var nested: Any? = "leaf"
+        repeat(40) {
+            nested = mapOf("child" to nested)
+        }
+        val result = runCatching {
+            ToolApprovalGrants.issue(
+                "connector.a",
+                "tool.write",
+                mapOf("root" to nested),
+                1000
+            )
+        }
+        assertFalse("Deeply nested input must fail closed", result.isSuccess)
+    }
+
 }

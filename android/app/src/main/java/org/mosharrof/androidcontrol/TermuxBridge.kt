@@ -60,15 +60,22 @@ object TermuxBridge {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putString(LAST_RESULT, operation.label + " অনুরোধ পাঠানো হয়েছে। Termux-এর ফলাফলের অপেক্ষায়…")
             .apply()
+        if (commandId != null) RelayClient.beginCommand(context, commandId)
         try {
             context.startService(intent)
         } catch (error: SecurityException) {
-            error("Android/Termux অনুমতি দিয়ে অনুরোধ প্রত্যাখ্যান করেছে: " + (error.message ?: "SecurityException"))
+            error("Android/Termux অনুমতি দিয়ে অনুরোধ প্রত্যাখ্যান করেছে।")
         } catch (error: IllegalStateException) {
-            error("Android service চালু করতে দেয়নি: " + (error.message ?: "IllegalStateException"))
+            error("Android service চালু করতে দেয়নি।")
         }
         "Android Termux service-এ অনুরোধ পাঠিয়েছে; এটি এখনো execution-এর প্রমাণ নয়। ‘Termux ফলাফল’ চাপুন।"
     }
+
+    internal fun effectiveExitCode(shellExitCode: Int, termuxError: Int): Int =
+        if (termuxError != -1) termuxError else shellExitCode
+
+    internal fun supportsOperation(operationId: String): Boolean =
+        operations.containsKey(operationId)
 
     fun lastResult(context: Context): String =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -90,8 +97,9 @@ class TermuxResultReceiver : BroadcastReceiver() {
         } else {
             val stdout = bundle.getString("stdout").orEmpty()
             val stderr = bundle.getString("stderr").orEmpty()
-            val exitCode = bundle.getInt("exitCode", -999)
-            val termuxError = bundle.getInt("err", -999)
+            val shellExitCode = bundle.getInt("exitCode", -1)
+            val termuxError = bundle.getInt("err", -1)
+            val exitCode = TermuxBridge.effectiveExitCode(shellExitCode, termuxError)
             val errorMessage = bundle.getString("errmsg").orEmpty()
             buildString {
                 append("Exit code: ").append(exitCode)
@@ -108,8 +116,11 @@ class TermuxResultReceiver : BroadcastReceiver() {
         val commandId = intent.getStringExtra("relay_command_id")
         if (!commandId.isNullOrBlank()) {
             val exitCode = bundle?.getInt("exitCode", -1) ?: -1
+            // Commit the result before network I/O so process death or a transient
+            // outage cannot discard the only copy of the Termux output.
+            runCatching { RelayClient.savePendingResult(context, commandId, result, exitCode) }
             Thread {
-                runCatching { RelayClient.postResult(context, commandId, result, exitCode) }
+                runCatching { RelayClient.retryPendingResult(context) }
             }.start()
         }
     }

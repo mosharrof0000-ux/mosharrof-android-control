@@ -6,11 +6,13 @@ on:
     paths:
       - "android/**"
       - ".github/workflows/android-build.yml"
+      - "tools/**"
 
   pull_request:
     paths:
       - "android/**"
       - ".github/workflows/android-build.yml"
+      - "tools/**"
 
   workflow_dispatch:
 
@@ -36,12 +38,430 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.9"
+          gradle-version: "8.14.6"
 
-      - name: Run Android unit tests
-        run: gradle -p android :app:testDebugUnitTest
+      # Strict mode consumes the committed lock state and SHA-256 verification
+      # metadata. It must not rewrite or bootstrap dependency state in CI.
+      - name: Verify committed dependency locks and checksums
+        run: |
+          test -s android/app/gradle.lockfile
+          test -s android/buildscript-gradle.lockfile
+          test -s android/gradle/verification-metadata.xml
+          gradle -p android --dependency-verification=strict :app:testDebugUnitTest :app:cyclonedxDirectBom :app:assembleDebug
+          git diff --exit-code -- android/app/gradle.lockfile android/buildscript-gradle.lockfile android/gradle/verification-metadata.xml
+
+      - name: Capture dependency paths for OSV triage
+        run: |
+          mkdir -p android/build/reports/dependency-triage
+          gradle -p android --dependency-verification=strict :app:dependencies > android/build/reports/dependency-triage/app-dependencies.txt
+          gradle -p android --dependency-verification=strict buildEnvironment > android/build/reports/dependency-triage/root-build-environment.txt
+          gradle -p android --dependency-verification=strict :app:buildEnvironment > android/build/reports/dependency-triage/app-build-environment.txt
+
+      - name: Generate Android CycloneDX SBOM
+        run: gradle -p android --dependency-verification=strict :app:cyclonedxDirectBom
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Test license and notice audit tools
+        run: |
+          python3 -m unittest discover -s tools -p 'test_audit_binary_notices.py' -v
+          python3 -m unittest discover -s tools -p 'test_audit_maven_metadata.py' -v
+          python3 -m unittest discover -s tools -p 'test_audit_maven_source_metadata.py' -v
+          python3 -m unittest discover -s tools -p 'test_android_build_workflow.py' -v
+
+      - name: Audit upstream Maven POM license and source metadata
+        run: |
+          python3 tools/audit_maven_metadata.py --sbom android/app/build/reports/cyclonedx-direct/bom.json --upstream-evidence tools/upstream_attribution_evidence.json --json-report android/build/reports/license-review/maven-metadata-audit.json --markdown-report android/build/reports/license-review/MAVEN_METADATA_AUDIT.md --attributions android/app/src/main/assets/POM_THIRD_PARTY_ATTRIBUTIONS.txt
+
+      - name: Assess Maven POM SCM source references (syntax only)
+        run: |
+          python3 tools/audit_maven_source_metadata.py \
+            --input android/build/reports/license-review/maven-metadata-audit.json \
+            --json-report android/build/reports/license-review/maven-source-metadata-audit.json \
+            --markdown-report android/build/reports/license-review/MAVEN_SOURCE_METADATA_AUDIT.md
+
+      - name: Build license inventory and enrich reviewed SBOM metadata
+        run: |
+          python3 tools/audit_sbom_licenses.py \
+            --sbom android/app/build/reports/cyclonedx-direct/bom.json \
+            --reviewed-sbom android/build/reports/license-review/bom-reviewed.json \
+            --report android/build/reports/license-review/THIRD_PARTY_LICENSE_REVIEW.md \
+            --app-notices android/app/src/main/assets/THIRD_PARTY_NOTICES.md
+
+      - name: Collect resolved release runtime AAR/JAR artifacts
+        run: |
+          gradle -p android --dependency-verification=strict \
+            --init-script "$GITHUB_WORKSPACE/tools/collect_runtime_artifacts.init.gradle" \
+            :app:collectReleaseRuntimeArtifacts
+          test -d android/app/build/reports/license-review/runtime-artifacts
+
+      - name: Audit binary-level licenses and preserve upstream notices
+        run: |
+          python3 tools/audit_binary_notices.py \
+            --sbom android/app/build/reports/cyclonedx-direct/bom.json \
+            --artifact-dir android/app/build/reports/license-review/runtime-artifacts \
+            --notice-output android/app/src/main/assets/UPSTREAM_THIRD_PARTY_NOTICES.txt \
+            --json-report android/build/reports/license-review/binary-notice-audit.json \
+            --markdown-report android/build/reports/license-review/BINARY_NOTICE_AUDIT.md
+
+      - name: Package Apache License 2.0 text for runtime dependencies
+        run: |
+          mkdir -p android/app/src/main/assets/licenses
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            https://www.apache.org/licenses/LICENSE-2.0.txt \
+            --output android/app/src/main/assets/licenses/Apache-2.0.txt
+          grep -q "Apache License" android/app/src/main/assets/licenses/Apache-2.0.txt
+          grep -q "Version 2.0" android/app/src/main/assets/licenses/Apache-2.0.txt
+
+
       - name: Assemble debug APK
-        run: gradle -p android :app:assembleDebug
+        run: gradle -p android --dependency-verification=strict :app:assembleDebug
+
+      - name: Verify APK packages generated license inventory and audit evidence
+        run: |
+          python3 - <<'PY'
+          import json
+          import zipfile
+          from pathlib import Path
+
+          EXPECTED_RUNTIME_COMPONENTS = 34
+          REPORT_DIR = "android/build/reports/license-review"
+
+          def fail(message):
+              raise SystemExit(message)
+
+          def coordinates(items):
+              values = []
+              for item in items:
+                  group = str(item.get("group") or "")
+                  name = str(item.get("name") or "")
+                  version = str(item.get("version") or "")
+                  if not all((group, name, version)):
+                      fail("Runtime SBOM contains a component without a complete Maven coordinate")
+                  values.append(group + ":" + name + ":" + version)
+              if len(values) != len(set(values)):
+                  fail("Runtime inventory contains duplicate Maven coordinates")
+              return set(values)
+
+          with open("android/app/build/reports/cyclonedx-direct/bom.json", encoding="utf-8") as stream:
+              sbom = json.load(stream)
+          sbom_components = sbom.get("components") or []
+          sbom_coordinates = coordinates(sbom_components)
+          if len(sbom_components) != EXPECTED_RUNTIME_COMPONENTS:
+              fail("Expected exactly 34 releaseRuntimeClasspath components; found " + str(len(sbom_components)))
+
+          lock_coordinates = set()
+          with open("android/app/gradle.lockfile", encoding="utf-8") as stream:
+              for raw_line in stream:
+                  if "=" not in raw_line:
+                      continue
+                  coordinate, configurations = raw_line.rstrip("\n").split("=", 1)
+                  if "releaseRuntimeClasspath" in configurations.split(","):
+                      lock_coordinates.add(coordinate)
+          if lock_coordinates != sbom_coordinates or len(lock_coordinates) != EXPECTED_RUNTIME_COMPONENTS:
+              fail("Gradle releaseRuntimeClasspath lock coordinates do not exactly match the 34-component SBOM")
+
+          with open("tools/upstream_attribution_evidence.json", encoding="utf-8") as stream:
+              upstream_manifest = json.load(stream)
+          if not isinstance(upstream_manifest, dict):
+              fail("Upstream attribution manifest root must be an object")
+          manifest_components = upstream_manifest.get("components") or []
+          if not isinstance(manifest_components, list) or any(not isinstance(item, dict) for item in manifest_components):
+              fail("Upstream attribution manifest components must be an array of objects")
+          manifest_coordinates = [item.get("coordinate", "") for item in manifest_components]
+          if any(not isinstance(value, str) or not value for value in manifest_coordinates):
+              fail("Upstream attribution manifest contains an invalid coordinate")
+          if (upstream_manifest.get("schema_version") != 2
+                  or len(manifest_components) != EXPECTED_RUNTIME_COMPONENTS
+                  or len(manifest_coordinates) != len(set(manifest_coordinates))
+                  or set(manifest_coordinates) != lock_coordinates):
+              fail("Upstream attribution manifest must cover the lockfile/SBOM exactly with no missing, duplicate or unknown coordinates")
+          manifest_by_coordinate = {item["coordinate"]: item for item in manifest_components}
+          if any(item.get("review_status") not in {"PARTIAL", "NOT_REVIEWED"}
+                 or item.get("artifact_signature_status") != "UNVERIFIED"
+                 for item in manifest_components):
+              fail("Upstream manifest contains an unsupported review or artifact-signature status")
+
+          with open(REPORT_DIR + "/binary-notice-audit.json", encoding="utf-8") as stream:
+              audit = json.load(stream)
+          audit_components = audit.get("components") or []
+          audit_coordinates = {item.get("coordinate", "") for item in audit_components}
+          if (audit.get("component_count") != EXPECTED_RUNTIME_COMPONENTS
+                  or len(audit_components) != EXPECTED_RUNTIME_COMPONENTS
+                  or audit_coordinates != sbom_coordinates
+                  or len(audit_coordinates) != EXPECTED_RUNTIME_COMPONENTS):
+              fail("Binary notice audit component inventory does not exactly match the 34-component SBOM")
+          if (audit.get("binary_component_count") != EXPECTED_RUNTIME_COMPONENTS
+                  or audit.get("binary_file_count", 0) < EXPECTED_RUNTIME_COMPONENTS
+                  or any(item.get("binary_count", 0) < 1 for item in audit_components)
+                  or audit.get("failures") != []):
+              fail("Binary notice audit did not inspect every runtime component without failures")
+
+          license_components = {item["coordinate"] for item in audit_components if item.get("license_found")}
+          notice_components = {item["coordinate"] for item in audit_components if item.get("notice_found")}
+          expected_manual = sbom_coordinates - notice_components
+          manual_list = audit.get("manual_review_components") or []
+          if (audit.get("archive_license_component_count") != len(license_components)
+                  or audit.get("archive_license_file_count") != sum(len(item.get("archive_license_files") or []) for item in audit_components)
+                  or audit.get("archive_notice_component_count") != len(notice_components)
+                  or audit.get("archive_notice_file_count") != sum(len(item.get("archive_notice_files") or []) for item in audit_components)
+                  or audit.get("manual_review_component_count") != len(expected_manual)
+                  or len(manual_list) != len(set(manual_list))
+                  or set(manual_list) != expected_manual
+                  or len(notice_components) + len(expected_manual) != EXPECTED_RUNTIME_COMPONENTS):
+              fail("Archive LICENSE/NOTICE and manual-review component accounting is inconsistent")
+          for item in audit_components:
+              license_files = item.get("archive_license_files") or []
+              notice_files = item.get("archive_notice_files") or []
+              if item.get("license_found") != bool(license_files) or item.get("notice_found") != bool(notice_files):
+                  fail("Archive LICENSE/NOTICE file lists disagree with component evidence: " + item.get("coordinate", "UNKNOWN"))
+              if license_files and notice_files:
+                  expected_evidence = "ARCHIVE_LICENSE_AND_NOTICE"
+              elif notice_files:
+                  expected_evidence = "ARCHIVE_NOTICE_OR_COPYRIGHT_ONLY"
+              elif license_files:
+                  expected_evidence = "ARCHIVE_LICENSE_ONLY"
+              else:
+                  expected_evidence = "SBOM_DECLARED_LICENSE_ONLY" if item.get("declared_licenses") else "NO_LICENSE_EVIDENCE"
+              if item.get("evidence_level") != expected_evidence or not item.get("declared_licenses"):
+                  fail("Runtime component has inconsistent or missing license evidence: " + item.get("coordinate", "UNKNOWN"))
+
+          with open(REPORT_DIR + "/BINARY_NOTICE_AUDIT.md", encoding="utf-8") as stream:
+              binary_markdown = stream.read()
+          expected_binary_lines = [
+              "- Components with archive LICENSE text: **" + str(audit["archive_license_component_count"]) + "**",
+              "- Archive LICENSE text files: **" + str(audit["archive_license_file_count"]) + "**",
+              "- Components with archive NOTICE/COPYRIGHT text: **" + str(audit["archive_notice_component_count"]) + "**",
+              "- Archive NOTICE/COPYRIGHT text files: **" + str(audit["archive_notice_file_count"]) + "**",
+              "- Components requiring manual notice review: **" + str(audit["manual_review_component_count"]) + "**",
+          ]
+          if any(line not in binary_markdown for line in expected_binary_lines):
+              fail("Binary NOTICE Markdown summary does not match its JSON report")
+          if any("- " + chr(96) + coordinate + chr(96) not in binary_markdown for coordinate in manual_list):
+              fail("Binary NOTICE Markdown manual-review list does not match its JSON report")
+
+          with open(REPORT_DIR + "/maven-metadata-audit.json", encoding="utf-8") as stream:
+              metadata = json.load(stream)
+          metadata_components = metadata.get("components") or []
+          metadata_coordinates = {item.get("coordinate", "") for item in metadata_components}
+          if (metadata.get("schema_version") != 2
+                  or metadata.get("component_count") != EXPECTED_RUNTIME_COMPONENTS
+                  or metadata.get("pom_component_count") != EXPECTED_RUNTIME_COMPONENTS
+                  or metadata_coordinates != sbom_coordinates
+                  or metadata.get("license_match_count") != EXPECTED_RUNTIME_COMPONENTS
+                  or metadata.get("license_mismatch_count") != 0
+                  or metadata.get("upstream_source_mismatch_count") != 0
+                  or metadata.get("upstream_source_mismatch_components") != []
+                  or metadata.get("failures") != []):
+              fail("Maven POM/SBOM license comparison or upstream source reconciliation did not pass")
+          metadata_by_coordinate = {item["coordinate"]: item for item in metadata_components}
+          source_partial = 0
+          source_not_reviewed = 0
+          for coordinate, manifest_item in manifest_by_coordinate.items():
+              metadata_item = metadata_by_coordinate.get(coordinate)
+              if metadata_item is None:
+                  fail("Maven metadata report is missing manifest coordinate: " + coordinate)
+              if (metadata_item.get("upstream_source_review_status") != manifest_item.get("review_status")
+                      or metadata_item.get("upstream_source_evidence") != manifest_item):
+                  fail("Maven metadata report does not preserve exact manifest evidence/status: " + coordinate)
+              if manifest_item["review_status"] == "PARTIAL":
+                  source_partial += 1
+              else:
+                  source_not_reviewed += 1
+          if (metadata.get("upstream_source_review_count") != source_partial
+                  or metadata.get("upstream_source_not_reviewed_count") != source_not_reviewed):
+              fail("Upstream source review counts do not match the exact 34-coordinate manifest")
+          with open(REPORT_DIR + "/MAVEN_METADATA_AUDIT.md", encoding="utf-8") as stream:
+              maven_markdown = stream.read()
+          if ("- POM/SBOM license matches: **34**" not in maven_markdown
+                  or "- POM/SBOM license mismatches or unresolved entries: **0**" not in maven_markdown
+                  or "- Coordinate-specific upstream source records (PARTIAL): **" + str(source_partial) + "**" not in maven_markdown
+                  or "- Components without coordinate-specific source review: **" + str(source_not_reviewed) + "**" not in maven_markdown
+                  or "- Upstream source/POM/SBOM license mismatches: **0**" not in maven_markdown):
+              fail("Maven POM Markdown summary does not match its JSON/manifest report")
+          for item in metadata_components:
+              pom_names = " OR ".join(value.get("name") or value.get("url") for value in item.get("pom_licenses") or []) or "UNDECLARED"
+              sbom_names = " OR ".join(item.get("sbom_licenses") or []) or "UNDECLARED"
+              expected_row = "| " + " | ".join((
+                  item["coordinate"], sbom_names, pom_names, item["license_source"],
+                  item["scm_source"], item["upstream_source_review_status"],
+                  "YES" if item["license_match"] else "NO", item["pom_sha256"]
+              )) + " |"
+              if expected_row not in maven_markdown:
+                  fail("Maven POM Markdown row does not match its JSON evidence: " + item["coordinate"])
+
+          with open(REPORT_DIR + "/maven-source-metadata-audit.json", encoding="utf-8") as stream:
+              source_report = json.load(stream)
+          source_components = source_report.get("components") or []
+          source_coordinates = {item.get("coordinate", "") for item in source_components}
+          source_counts = source_report.get("assessment_counts") or {}
+          if (source_report.get("component_count") != EXPECTED_RUNTIME_COMPONENTS
+                  or source_coordinates != sbom_coordinates
+                  or source_counts.get("POM_REFERENCE_PRESENT_UNVERIFIED") != EXPECTED_RUNTIME_COMPONENTS
+                  or source_counts.get("MISSING_REFERENCE") != 0
+                  or source_counts.get("INVALID_OR_MIXED_REFERENCE") != 0):
+              fail("Sanitized SCM report must contain one syntactically valid, explicitly unverified POM reference for every runtime component")
+          with open(REPORT_DIR + "/MAVEN_SOURCE_METADATA_AUDIT.md", encoding="utf-8") as stream:
+              source_markdown = stream.read()
+          if ("- POM SCM reference present (syntax only): **34**" not in source_markdown
+                  or "- SCM reference missing: **0**" not in source_markdown
+                  or "- SCM reference invalid or mixed: **0**" not in source_markdown):
+              fail("Maven SCM Markdown summary does not match its JSON report")
+          for item in source_components:
+              for value in (item.get("scm") or {}).values():
+                  if any(character in value for character in ("@", "?", "#")):
+                      fail("SCM report contains userinfo, query or fragment data: " + item.get("coordinate", "UNKNOWN"))
+          for item in metadata_components:
+              for value in (item.get("scm") or {}).values():
+                  if any(character in value for character in ("@", "?", "#")):
+                      fail("Maven metadata report contains unsanitized SCM data: " + item.get("coordinate", "UNKNOWN"))
+              for license_item in (item.get("pom_licenses") or []):
+                  value = license_item.get("url") or ""
+                  if any(character in value for character in ("@", "?", "#")):
+                      fail("Maven metadata report contains an unsanitized license URL: " + item.get("coordinate", "UNKNOWN"))
+              for developer in (item.get("developers") or []):
+                  value = developer.get("organizationUrl") or ""
+                  if any(character in value for character in ("@", "?", "#")):
+                      fail("Maven metadata report contains an unsanitized developer URL: " + item.get("coordinate", "UNKNOWN"))
+              organization_url = (item.get("organization") or {}).get("url") or ""
+              if any(character in organization_url for character in ("@", "?", "#")):
+                  fail("Maven metadata report contains an unsanitized organization URL: " + item.get("coordinate", "UNKNOWN"))
+
+          apk = "android/app/build/outputs/apk/debug/app-debug.apk"
+          with zipfile.ZipFile(apk) as archive:
+              names = set(archive.namelist())
+              required = {
+                  "assets/THIRD_PARTY_NOTICES.md",
+                  "assets/UPSTREAM_THIRD_PARTY_NOTICES.txt",
+                  "assets/POM_THIRD_PARTY_ATTRIBUTIONS.txt",
+                  "assets/licenses/Apache-2.0.txt",
+              }
+              missing = sorted(required - names)
+              if missing:
+                  fail("APK is missing required notice assets: " + str(missing))
+              source_assets = {
+                  "assets/THIRD_PARTY_NOTICES.md": "android/app/src/main/assets/THIRD_PARTY_NOTICES.md",
+                  "assets/UPSTREAM_THIRD_PARTY_NOTICES.txt": "android/app/src/main/assets/UPSTREAM_THIRD_PARTY_NOTICES.txt",
+                  "assets/POM_THIRD_PARTY_ATTRIBUTIONS.txt": "android/app/src/main/assets/POM_THIRD_PARTY_ATTRIBUTIONS.txt",
+                  "assets/licenses/Apache-2.0.txt": "android/app/src/main/assets/licenses/Apache-2.0.txt",
+              }
+              for asset_name, source_path in source_assets.items():
+                  if archive.read(asset_name) != Path(source_path).read_bytes():
+                      fail("APK asset bytes do not exactly match generated source asset: " + asset_name)
+              license_text = archive.read("assets/licenses/Apache-2.0.txt").decode("utf-8")
+              notices = archive.read("assets/THIRD_PARTY_NOTICES.md").decode("utf-8")
+              upstream = archive.read("assets/UPSTREAM_THIRD_PARTY_NOTICES.txt").decode("utf-8")
+              pom_attributions = archive.read("assets/POM_THIRD_PARTY_ATTRIBUTIONS.txt").decode("utf-8")
+              if ("Apache License" not in license_text
+                      or "Version 2.0" not in license_text
+                      or "TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION" not in license_text
+                      or "UPSTREAM THIRD-PARTY LICENSE AND ATTRIBUTION EVIDENCE" not in upstream):
+                  fail("APK is missing the full Apache-2.0 text or upstream notice evidence header")
+              for item in sbom_components:
+                  group, name, version = item["group"], item["name"], item["version"]
+                  labels = sorted({
+                      (entry.get("license") or {}).get("id")
+                      or (entry.get("license") or {}).get("name")
+                      or "UNIDENTIFIED"
+                      for entry in (item.get("licenses") or [])
+                  })
+                  row = "| " + " | ".join((group, name, version, " OR ".join(labels))) + " |"
+                  coordinate = group + ":" + name + ":" + version
+                  if row not in notices:
+                      fail("APK third-party inventory is missing the exact component/version/license row: " + coordinate)
+                  component_heading = "\n## " + coordinate + "\n"
+                  if component_heading not in upstream or component_heading not in pom_attributions:
+                      fail("APK upstream/POM attribution assets do not cover component: " + coordinate)
+                  attribution_start = pom_attributions.find(component_heading)
+                  attribution_end = pom_attributions.find("\n## ", attribution_start + 1)
+                  if attribution_end < 0:
+                      attribution_end = len(pom_attributions)
+                  attribution_section = pom_attributions[attribution_start:attribution_end]
+                  if "Copyright/NOTICE attribution status: NOT ESTABLISHED BY POM METADATA; authoritative upstream artifact/source review required." not in attribution_section:
+                      fail("APK POM attribution asset does not disclose unresolved copyright/NOTICE status: " + coordinate)
+                  manifest_item = manifest_by_coordinate[coordinate]
+                  source_status = manifest_item["review_status"]
+                  if source_status == "PARTIAL":
+                      if "Upstream source review status: PARTIAL" not in attribution_section:
+                          fail("APK POM attribution asset changed a PARTIAL source status: " + coordinate)
+                      required_source_values = [
+                          "Upstream source license identifier (not archive text): " + manifest_item["license_id"],
+                          "Upstream source repository: " + manifest_item["source_repository"],
+                          "Upstream source ref: " + manifest_item["source_ref"],
+                          "Upstream source commit: " + manifest_item["source_commit"],
+                          "Upstream source revision assessment: " + manifest_item["source_revision_resolution"],
+                          "Upstream artifact/source mapping assessment: " + manifest_item["source_mapping_status"],
+                          "Upstream NOTICE review status: " + manifest_item["notice_review_status"]
+                          + "; paths checked: " + ", ".join(manifest_item["notice_paths_checked"]),
+                          "Artifact signature status: UNVERIFIED",
+                      ]
+                      required_source_values.extend(
+                          "Source-derived copyright attribution (not archive-extracted): " + value
+                          for value in manifest_item["copyright_attributions"]
+                      )
+                      required_source_values.extend(
+                          "Source file (Git blob SHA-1 " + value["git_blob_sha"] + "): " + value["url"]
+                          for value in manifest_item["source_files"]
+                      )
+                      required_source_values.extend(
+                          "Supporting source/POM evidence (Git blob SHA-1 " + value["git_blob_sha"] + "): " + value["url"]
+                          for value in manifest_item.get("supporting_evidence") or []
+                      )
+                      required_source_values.extend(
+                          "Unresolved upstream review: " + value for value in manifest_item["unresolved"]
+                      )
+                      for required_value in required_source_values:
+                          if required_value not in attribution_section:
+                              fail("APK POM attribution asset is missing exact source evidence: " + coordinate)
+                      signature_evidence = manifest_item.get("signature_evidence")
+                      if signature_evidence:
+                          expected_signature_note = ("Historical signature evidence only (not current verification): "
+                                                      + signature_evidence["url"] + " — " + signature_evidence["summary"])
+                          if expected_signature_note not in attribution_section:
+                              fail("APK POM attribution asset omits historical-only signature context: " + coordinate)
+                  else:
+                      if ("Upstream source review status: NOT_REVIEWED; no coordinate-specific authoritative source record is available." not in attribution_section
+                              or "Upstream source mapping status: " + manifest_item["source_mapping_status"] not in attribution_section
+                              or "Copyright attribution: NOT_REVIEWED; manual upstream review required." not in attribution_section
+                              or "Upstream NOTICE review status: NOT_REVIEWED." not in attribution_section
+                              or "Artifact signature status: UNVERIFIED" not in attribution_section):
+                          fail("APK POM attribution asset does not keep unreviewed source/copyright status explicit: " + coordinate)
+                      for unresolved in manifest_item["unresolved"]:
+                          if "Unresolved upstream review: " + unresolved not in attribution_section:
+                              fail("APK POM attribution asset omits an unreviewed source blocker: " + coordinate)
+              for item in audit_components:
+                  coordinate = item["coordinate"]
+                  section_start = upstream.find("\n## " + coordinate + "\n")
+                  if section_start < 0:
+                      fail("APK upstream notice asset is missing a component section: " + coordinate)
+                  section_end = len(upstream)
+                  for other in audit_components:
+                      if other["coordinate"] == coordinate:
+                          continue
+                      next_heading = upstream.find("\n## " + other["coordinate"] + "\n", section_start + 1)
+                      if next_heading >= 0:
+                          section_end = min(section_end, next_heading)
+                  section = upstream[section_start:section_end]
+                  if "Evidence: " + item["evidence_level"] not in section:
+                      fail("APK upstream notice evidence label is inconsistent: " + coordinate)
+                  for source in (item.get("archive_license_files") or []) + (item.get("archive_notice_files") or []):
+                      if source not in section:
+                          fail("APK upstream evidence asset is missing an extracted source path: " + coordinate)
+                  if not item.get("notice_found") and "No matching archive NOTICE/COPYRIGHT text file found" not in section:
+                      fail("APK upstream notice asset does not disclose this component's missing archive notice: " + coordinate)
+              if not pom_attributions.strip():
+                  fail("APK POM attribution asset is empty")
+
+          print("APK inventory and POM metadata validated for 34/34 runtime components.")
+          print("POM/SBOM license matches: " + str(metadata["license_match_count"]) + "/34; mismatches: " + str(metadata["license_mismatch_count"]) + ".")
+          print("Archive LICENSE texts found for " + str(audit["archive_license_component_count"]) + "/34 runtime components.")
+          print("Archive NOTICE/COPYRIGHT texts found for " + str(audit["archive_notice_component_count"]) + "/34 runtime components.")
+          print("MANUAL NOTICE REVIEW REQUIRED for " + str(audit["manual_review_component_count"]) + "/34 runtime components; see BINARY_NOTICE_AUDIT.md.")
+          print("Upstream source review: " + str(source_partial) + " PARTIAL; " + str(source_not_reviewed) + " NOT_REVIEWED; 0 mismatches.")
+          print("Upstream copyright/NOTICE clearance is not inferred from SBOM or POM metadata.")
+          PY
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
@@ -49,3 +469,37 @@ jobs:
           name: mosharrof-android-control-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      - name: Upload generated Gradle dependency evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-gradle-dependency-evidence
+          path: |
+            android/app/gradle.lockfile
+            android/buildscript-gradle.lockfile
+            android/gradle/verification-metadata.xml
+            android/app/build/reports/cyclonedx-direct/bom.json
+            android/build/reports/license-review/**
+            android/app/src/main/assets/UPSTREAM_THIRD_PARTY_NOTICES.txt
+            android/app/src/main/assets/POM_THIRD_PARTY_ATTRIBUTIONS.txt
+            android/build/reports/license-review/maven-metadata-audit.json
+            android/build/reports/license-review/MAVEN_METADATA_AUDIT.md
+            tools/upstream_attribution_evidence.json
+            android/build/reports/dependency-triage/**
+          if-no-files-found: warn
+
+  dependency-scan:
+    needs: assemble
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.7.1
+    with:
+      download-artifact: android-gradle-dependency-evidence
+      scan-args: |-
+        --lockfile=android/app/gradle.lockfile
+        --lockfile=android/buildscript-gradle.lockfile
+        --lockfile=android/gradle/verification-metadata.xml
+      fail-on-vuln: false

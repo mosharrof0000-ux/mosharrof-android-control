@@ -60,6 +60,44 @@ class McpArgumentsValidatorTest {
     }
 
     @Test
+    fun acceptsNullForRequiredPropertyWhenNullTypeIsDeclared() {
+        val nullableSchema = mapOf<String, Any?>(
+            "type" to "object",
+            "properties" to mapOf(
+                "maybe" to mapOf("type" to listOf("string", "null"))
+            ),
+            "required" to listOf("maybe"),
+            "additionalProperties" to false
+        )
+
+        assertTrue(McpArgumentsValidator.validate(nullableSchema, mapOf("maybe" to null), listOf("maybe")))
+    }
+
+    @Test
+    fun acceptsNullForNestedRequiredPropertyWhenNullTypeIsDeclared() {
+        val nullableNestedSchema = mapOf<String, Any?>(
+            "type" to "object",
+            "properties" to mapOf(
+                "nested" to mapOf(
+                    "type" to "object",
+                    "properties" to mapOf("maybe" to mapOf("type" to "null")),
+                    "required" to listOf("maybe")
+                )
+            ),
+            "required" to listOf("nested"),
+            "additionalProperties" to false
+        )
+
+        assertTrue(
+            McpArgumentsValidator.validate(
+                nullableNestedSchema,
+                mapOf("nested" to mapOf("maybe" to null)),
+                listOf("nested")
+            )
+        )
+    }
+
+    @Test
     fun rejectsWrongPrimitiveType() {
         assertFalse(
             McpArgumentsValidator.validate(
@@ -191,6 +229,129 @@ class McpArgumentsValidatorTest {
                 invalidSchema, mapOf("text" to "hello"), emptyList()
             )
         )
+    }
+
+
+    @Test
+    fun rejectsArgumentNestingBeyondSafetyLimit() {
+        var nestedSchema: Map<String, Any?> = mapOf("type" to "string")
+        var nestedValue: Any? = "leaf"
+        repeat(40) {
+            nestedSchema = mapOf(
+                "type" to "object",
+                "properties" to mapOf("child" to nestedSchema),
+                "required" to listOf("child")
+            )
+            nestedValue = mapOf("child" to nestedValue)
+        }
+        val rootSchema = mapOf<String, Any?>(
+            "type" to "object",
+            "properties" to mapOf("root" to nestedSchema)
+        )
+        assertFalse(
+            McpArgumentsValidator.validate(
+                rootSchema,
+                mapOf("root" to nestedValue),
+                emptyList()
+            )
+        )
+    }
+
+
+    @Test
+    fun rejectsUnsupportedSchemaAssertionsAtEveryDepth() {
+        val unsupportedRoot = schema + (
+            "patternProperties" to mapOf(".*" to mapOf("type" to "string"))
+        )
+        assertFalse(McpArgumentsValidator.supportsSchema(unsupportedRoot))
+        assertFalse(
+            McpArgumentsValidator.validate(
+                unsupportedRoot,
+                mapOf("text" to "hello"),
+                listOf("text")
+            )
+        )
+
+        val unsupportedNested = mapOf<String, Any?>(
+            "type" to "object",
+            "properties" to mapOf(
+                "value" to mapOf(
+                    "type" to "string",
+                    "patternProperties" to mapOf(".*" to mapOf("type" to "string"))
+                )
+            )
+        )
+        assertFalse(McpArgumentsValidator.supportsSchema(unsupportedNested))
+    }
+
+    @Test
+    fun acceptsProtocolSupportedFormatAndMcpHeaderAnnotations() {
+        val schema = mapOf<String, Any?>(
+            "type" to "object",
+            "properties" to mapOf(
+                "region" to mapOf(
+                    "type" to "string",
+                    "format" to "email",
+                    "x-mcp-header" to "Region"
+                )
+            ),
+            "required" to listOf("region")
+        )
+
+        assertTrue(McpProtocol.validateInputSchema(schema))
+        assertTrue(McpArgumentsValidator.supportsSchema(schema))
+        assertTrue(McpArgumentsValidator.validate(schema, mapOf("region" to "a@example.com"), listOf("region")))
+    }
+
+    @Test
+    fun rejectsInvalidMcpHeaderPlacementAndNames() {
+        val rootHeader = mapOf<String, Any?>(
+            "type" to "object",
+            "x-mcp-header" to "Region",
+            "properties" to emptyMap<String, Any?>()
+        )
+        val invalidHeaderName = mapOf<String, Any?>(
+            "type" to "object",
+            "properties" to mapOf(
+                "region" to mapOf("type" to "string", "x-mcp-header" to "Bad Header")
+            )
+        )
+
+        assertFalse(McpArgumentsValidator.supportsSchema(rootHeader))
+        assertFalse(McpArgumentsValidator.supportsSchema(invalidHeaderName))
+    }
+
+    @Test
+    fun rejectsNullValuesForPresentSchemaKeywords() {
+        val nullType = mapOf<String, Any?>("type" to null)
+        val nullAdditionalProperties = mapOf<String, Any?>(
+            "type" to "object",
+            "additionalProperties" to null
+        )
+        assertFalse(McpArgumentsValidator.supportsSchema(nullType))
+        assertFalse(McpArgumentsValidator.supportsSchema(nullAdditionalProperties))
+    }
+
+    @Test
+    fun rejectsMalformedSupportedConstraintsAndAcceptsSupportedAnnotations() {
+        val malformed = mapOf<String, Any?>(
+            "type" to "object",
+            "properties" to mapOf("value" to mapOf("type" to "string", "pattern" to "["))
+        )
+        assertFalse(McpArgumentsValidator.supportsSchema(malformed))
+
+        val supported = mapOf<String, Any?>(
+            "type" to "object",
+            "title" to "Lookup input",
+            "description" to "Safe lookup",
+            "properties" to mapOf(
+                "value" to mapOf("type" to "string", "minLength" to 1, "maxLength" to 20)
+            ),
+            "required" to listOf("value"),
+            "additionalProperties" to false
+        )
+        assertTrue(McpArgumentsValidator.supportsSchema(supported))
+        assertTrue(McpArgumentsValidator.validate(supported, mapOf("value" to "ok"), listOf("value")))
     }
 
 }

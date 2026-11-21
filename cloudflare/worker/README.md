@@ -27,6 +27,7 @@ Import `openapi/chatgpt-device-relay.yaml` into an authenticated custom connecto
 - No arbitrary shell text, arbitrary executable paths, caller-provided arguments, file deletion, or file modification.
 - Device token is protected by Android Keystore; all network traffic requires HTTPS.
 - Polling is foreground-only in this version. Keep Android Companion open while testing; Android may stop background work. A later foreground-service design would require a visible persistent notification and explicit user consent.
-- Jobs expire after 60 seconds; queue is capped at 20; results expire after 24 hours; audit metadata expires after 7 days.
+- Jobs expire after 60 seconds and use a 15–30 second renewable-on-repoll lease instead of destructive read-and-pop; unacknowledged jobs become available again until expiry. Queue is capped at 20; identical result retries are idempotently accepted, conflicting results are rejected, and accepted results remove the job atomically. Results expire after 24 hours; audit metadata expires after 7 days.
+- Server rate limits: connector command creation 20/minute, device polling 30/minute, and result submissions 30/minute. Every command requires a stable 8–100 character idempotency key.
 - The current relay is for one paired device. Do not use for multiple devices without a per-device registry and isolation.
 - A green deploy does not prove device connectivity. Require a physical Android ↔ Worker ↔ connector round-trip before calling it live.

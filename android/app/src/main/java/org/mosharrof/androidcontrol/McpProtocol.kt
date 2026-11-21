@@ -1,5 +1,7 @@
 package org.mosharrof.androidcontrol
 
+import java.net.URI
+
 /**
  * MCP JSON-RPC message models and safe request builders.
  * Network transport and JSON encoding are intentionally separate.
@@ -86,14 +88,15 @@ object McpProtocol {
     fun modernToolsListRequest(
         id: String,
         clientName: String,
-        clientVersion: String
+        clientVersion: String,
+        cursor: String? = null
     ): Request {
         require(id.isNotBlank())
-        return Request(
-            id = id,
-            method = "tools/list",
-            params = mapOf("_meta" to modernMetadata(clientName, clientVersion))
+        val params = linkedMapOf<String, Any?>(
+            "_meta" to modernMetadata(clientName, clientVersion)
         )
+        if (cursor != null) params["cursor"] = cursor
+        return Request(id = id, method = "tools/list", params = params)
     }
 
     fun modernToolsCallRequest(
@@ -101,16 +104,78 @@ object McpProtocol {
         toolName: String,
         arguments: Map<String, Any?> = emptyMap(),
         clientName: String,
-        clientVersion: String
+        clientVersion: String,
+        inputResponses: Map<String, Any?>? = null,
+        requestState: String? = null
     ): Request {
         require(id.isNotBlank())
         require(isSafeName(toolName))
+        require(inputResponses == null || inputResponses.keys.all { it.isNotBlank() }) {
+            "MRTR inputResponses-এর key খালি হতে পারবে না।"
+        }
+        val params = linkedMapOf<String, Any?>(
+            "name" to toolName,
+            "arguments" to arguments,
+            "_meta" to modernMetadata(clientName, clientVersion)
+        )
+        // requestState is opaque server-owned state: preserve it byte-for-byte.
+        if (inputResponses != null) params["inputResponses"] = inputResponses
+        if (requestState != null) params["requestState"] = requestState
+        return Request(id = id, method = "tools/call", params = params)
+    }
+
+    /** Task extension request builders; callers gate them on negotiated modern protocol and user-mediated UI. */
+    fun modernTasksGetRequest(
+        id: String,
+        taskId: String,
+        clientName: String,
+        clientVersion: String
+    ): Request {
+        require(id.isNotBlank() && taskId.isNotBlank() && taskId.length <= 256)
         return Request(
             id = id,
-            method = "tools/call",
+            method = "tasks/get",
             params = mapOf(
-                "name" to toolName,
-                "arguments" to arguments,
+                "taskId" to taskId,
+                "_meta" to modernMetadata(clientName, clientVersion)
+            )
+        )
+    }
+
+    fun modernTasksUpdateRequest(
+        id: String,
+        taskId: String,
+        inputResponses: Map<String, Any?>,
+        clientName: String,
+        clientVersion: String
+    ): Request {
+        require(id.isNotBlank() && taskId.isNotBlank() && taskId.length <= 256)
+        require(inputResponses.isNotEmpty() && inputResponses.keys.all { it.isNotBlank() }) {
+            "Task inputResponses-এর key খালি হতে পারবে না।"
+        }
+        return Request(
+            id = id,
+            method = "tasks/update",
+            params = mapOf(
+                "taskId" to taskId,
+                "inputResponses" to inputResponses,
+                "_meta" to modernMetadata(clientName, clientVersion)
+            )
+        )
+    }
+
+    fun modernTasksCancelRequest(
+        id: String,
+        taskId: String,
+        clientName: String,
+        clientVersion: String
+    ): Request {
+        require(id.isNotBlank() && taskId.isNotBlank() && taskId.length <= 256)
+        return Request(
+            id = id,
+            method = "tasks/cancel",
+            params = mapOf(
+                "taskId" to taskId,
                 "_meta" to modernMetadata(clientName, clientVersion)
             )
         )
@@ -119,9 +184,10 @@ object McpProtocol {
     fun initializedNotification(): Request =
         Request(id = null, method = "notifications/initialized")
 
-    fun toolsListRequest(id: String): Request {
+    fun toolsListRequest(id: String, cursor: String? = null): Request {
         require(id.isNotBlank())
-        return Request(id = id, method = "tools/list")
+        val params = if (cursor == null) emptyMap() else mapOf("cursor" to cursor)
+        return Request(id = id, method = "tools/list", params = params)
     }
 
     fun toolsCallRequest(
@@ -144,71 +210,183 @@ object McpProtocol {
         return true
     }
 
+    /** Returns an HTTPS-only external elicitation URL, rejecting credentials and unsafe URI parts. */
+    fun validateElicitationUrl(value: String?): String? {
+        if (value.isNullOrBlank() || value.length > 4_096) return null
+        val uri = runCatching { URI(value.trim()) }.getOrNull() ?: return null
+        if (!uri.scheme.equals("https", ignoreCase = true)) return null
+        if (uri.host.isNullOrBlank() || uri.userInfo != null) return null
+        if (uri.port !in -1..65_535) return null
+        return uri.toASCIIString()
+    }
+
+    /**
+     * Validates the bounded server-to-client requests carried by a modern MRTR result.
+     * Their params remain opaque data for the matching handler/UI.
+     */
+    fun validateInputRequests(inputRequests: Map<String, Any?>): Boolean {
+        if (inputRequests.isEmpty() || inputRequests.size > 16) return false
+        val supportedMethods = setOf(
+            "elicitation/create",
+            "sampling/createMessage",
+            "roots/list"
+        )
+        return inputRequests.all { (key, rawRequest) ->
+            if (key.isBlank() || key.length > 128) return@all false
+            val request = rawRequest as? Map<*, *> ?: return@all false
+            val method = request["method"] as? String ?: return@all false
+            method in supportedMethods && request["params"] is Map<*, *>
+        }
+    }
+
     fun validateInputSchema(schema: Map<String, Any?>): Boolean {
         if (schema["type"] != "object") return false
 
         val usedHeaders = mutableSetOf<String>()
+        var visitedSchemas = 0
+        val maxSchemaDepth = 32
+        val maxSchemaNodes = 2048
+        val supportedKeywords = setOf(
+            "\$schema", "\$id", "title", "description", "default", "examples",
+            "deprecated", "readOnly", "writeOnly", "format",
+            "type", "const", "enum", "properties", "required", "additionalProperties",
+            "minProperties", "maxProperties", "minLength", "maxLength", "pattern",
+            "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
+            "minItems", "maxItems", "items", "x-mcp-header"
+        )
+        val supportedTypes = setOf(
+            "object", "array", "string", "boolean", "integer", "number", "null"
+        )
 
-        fun containsHeaderAnnotation(value: Any?): Boolean = when (value) {
-            is Map<*, *> ->
-                value.containsKey("x-mcp-header") ||
-                    value.values.any(::containsHeaderAnnotation)
-            is Iterable<*> -> value.any(::containsHeaderAnnotation)
-            is Array<*> -> value.any(::containsHeaderAnnotation)
-            else -> false
+        fun schemaNumber(value: Any?): java.math.BigDecimal? {
+            if (value !is Number) return null
+            return runCatching { java.math.BigDecimal(value.toString()) }.getOrNull()
         }
 
-        fun visitObject(current: Map<*, *>): Boolean {
-            for ((key, value) in current) {
-                if (key != "properties" && containsHeaderAnnotation(value)) {
-                    return false
+        fun validNonNegativeInteger(value: Any?): Boolean {
+            val number = schemaNumber(value) ?: return false
+            return number.stripTrailingZeros().scale() <= 0 &&
+                number >= java.math.BigDecimal.ZERO &&
+                number <= java.math.BigDecimal.valueOf(Int.MAX_VALUE.toLong())
+        }
+
+        fun visitSchema(
+            current: Map<*, *>,
+            depth: Int,
+            allowHeaderHere: Boolean,
+            allowHeadersInProperties: Boolean
+        ): Boolean {
+            if (depth > maxSchemaDepth || ++visitedSchemas > maxSchemaNodes) return false
+            if (current.keys.any { it !is String || it !in supportedKeywords }) return false
+
+            for (key in listOf("\$schema", "\$id", "title", "description", "format")) {
+                if (current.containsKey(key) && current[key] !is String) return false
+            }
+            for (key in listOf("deprecated", "readOnly", "writeOnly")) {
+                if (current.containsKey(key) && current[key] !is Boolean) return false
+            }
+            if (current.containsKey("examples") && current["examples"] !is List<*>) return false
+
+            val types = when (val declared = current["type"]) {
+                null -> emptyList()
+                is String -> listOf(declared)
+                is List<*> -> {
+                    if (declared.isEmpty() || declared.any { it !is String }) return false
+                    val names = declared.filterIsInstance<String>()
+                    if (names.size != names.toSet().size) return false
+                    names
+                }
+                else -> return false
+            }
+            if (types.any { it !in supportedTypes }) return false
+
+            if (current.containsKey("enum")) {
+                val values = current["enum"] as? List<*> ?: return false
+                if (values.isEmpty()) return false
+            }
+
+            val properties = if (current.containsKey("properties")) {
+                current["properties"] as? Map<*, *> ?: return false
+            } else null
+            if (properties?.keys?.any { it !is String } == true) return false
+            if (properties != null && current["type"] != "object") return false
+
+            if (current.containsKey("required")) {
+                val required = current["required"] as? List<*> ?: return false
+                if (required.any { it !is String || it.isBlank() }) return false
+                if (required.size != required.toSet().size) return false
+                if (properties != null && required.any { it !in properties.keys }) return false
+            }
+
+            for (key in listOf(
+                "minProperties", "maxProperties", "minLength", "maxLength", "minItems", "maxItems"
+            )) {
+                if (current.containsKey(key) && !validNonNegativeInteger(current[key])) return false
+            }
+            val minMaxPairs = listOf(
+                "minProperties" to "maxProperties",
+                "minLength" to "maxLength",
+                "minItems" to "maxItems"
+            )
+            for ((minKey, maxKey) in minMaxPairs) {
+                if (current.containsKey(minKey) && current.containsKey(maxKey)) {
+                    val min = schemaNumber(current[minKey]) ?: return false
+                    val max = schemaNumber(current[maxKey]) ?: return false
+                    if (min > max) return false
                 }
             }
 
-            val rawProperties = current["properties"]
-            if (rawProperties == null) return true
-            val properties = rawProperties as? Map<*, *> ?: return false
-
-            for ((_, rawProperty) in properties) {
-                val property = rawProperty as? Map<*, *> ?: return false
-
-                for ((key, value) in property) {
-                    if (key != "properties" &&
-                        key != "x-mcp-header" &&
-                        containsHeaderAnnotation(value)
-                    ) return false
-                }
-
-                if (property.containsKey("x-mcp-header")) {
-                    val header = property["x-mcp-header"] as? String
-                        ?: return false
-                    if (!Regex("[!#$%&'*+.^_`|~0-9A-Za-z-]+").matches(header)) {
-                        return false
-                    }
-
-                    val type = property["type"] as? String ?: return false
-                    if (type !in setOf("string", "integer", "boolean")) {
-                        return false
-                    }
-                    if (!usedHeaders.add(header.lowercase(java.util.Locale.ROOT))) {
-                        return false
-                    }
-                }
-
-                if (property.containsKey("properties") &&
-                    property["type"] != "object"
-                ) return false
-
-                if (property["type"] == "object" &&
-                    !visitObject(property)
-                ) return false
+            for (key in listOf("minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum")) {
+                if (current.containsKey(key) && schemaNumber(current[key]) == null) return false
             }
+            if (current.containsKey("multipleOf")) {
+                val divisor = schemaNumber(current["multipleOf"]) ?: return false
+                if (divisor <= java.math.BigDecimal.ZERO) return false
+            }
+            if (current.containsKey("pattern")) {
+                val pattern = current["pattern"] as? String ?: return false
+                if (runCatching { Regex(pattern) }.isFailure) return false
+            }
+
+            if (current.containsKey("x-mcp-header")) {
+                if (!allowHeaderHere) return false
+                val header = current["x-mcp-header"] as? String ?: return false
+                if (!Regex("[!#$%&'*+.^_\\x60|~0-9A-Za-z-]+").matches(header)) return false
+                val type = current["type"] as? String ?: return false
+                if (type !in setOf("string", "integer", "boolean")) return false
+                if (!usedHeaders.add(header.lowercase(java.util.Locale.ROOT))) return false
+            }
+
+            if (properties != null) {
+                for ((_, rawChild) in properties) {
+                    val child = rawChild as? Map<*, *> ?: return false
+                    if (!visitSchema(
+                        child,
+                        depth + 1,
+                        allowHeadersInProperties,
+                        allowHeadersInProperties
+                    )) return false
+                }
+            }
+
+            if (current.containsKey("items")) {
+                val items = current["items"] as? Map<*, *> ?: return false
+                if (!visitSchema(items, depth + 1, false, false)) return false
+            }
+
+            if (current.containsKey("additionalProperties")) {
+                when (val additional = current["additionalProperties"]) {
+                    is Boolean -> Unit
+                    is Map<*, *> -> if (!visitSchema(additional, depth + 1, false, false)) return false
+                    else -> return false
+                }
+            }
+
             return true
         }
 
-        return !schema.containsKey("x-mcp-header") && visitObject(schema)
+        return visitSchema(schema, 0, false, true)
     }
-
     fun validateTool(tool: ToolDefinition): Boolean {
         if (!isSafeName(tool.name)) return false
         return validateInputSchema(tool.inputSchema)

@@ -14,17 +14,19 @@ Open the android/ directory in Android Studio (Ladybug or newer), sync Gradle, a
 3. Bounded recursive file listing and SHA-256 duplicate reporting.
 4. Audio metadata inspection.
 5. MCP Plugin Connector page available from Home and the bottom navigation.
-6. HTTPS MCP discovery, tools/list, schema validation, and tools/call.
+6. HTTPS MCP discovery, cursor-based tools/list pagination (100-page/5,000-tool cap), modern cache-hint validation, fail-closed supported-subset JSON Schema validation, and tools/call.
 7. Explicit approval dialog for each tool invocation; WRITE tools require a short-lived, single-use approval grant.
 8. Android Keystore AES-GCM storage for MCP bearer tokens.
-9. Optional HTTPS device relay client with encrypted device-token storage and a fixed allowlist of read-only Termux diagnostics.
+9. Optional HTTPS device relay client with encrypted device-token storage, bounded responses, strict job validation, in-app approval, persisted active-job/result recovery, and bounded retries for idempotent network operations; Termux remains limited to fixed read-only diagnostics.
 
 ## Limits and verification status
 - The app only sees the selected tree and what its document provider exposes.
 - Scans are bounded to 5,000 files and 12 directory levels; audio details display at most 100 files.
 - Hashing can take time and reads file contents; use a folder you own and have permission to inspect.
 - No arbitrary shell command or unrestricted Android control is exposed.
-- The relay client code is present, but relay deployment, ChatGPT connector configuration, server-side replay/expiry controls, and end-to-end operation have not been verified.
+- Relay deployment, ChatGPT connector configuration, server-side lease/idempotency/rate-limit behavior, and Android ↔ Worker ↔ connector round-trip still require live QA. A missing Termux callback is reported as an unknown outcome after 90 seconds; the app does not automatically re-run it.
+- Modern MCP `input_required` MRTR supports user-reviewed JSON `inputResponses`, opaque `requestState` round-tripping, exact request-key matching, and a 10-round cap. Native schema-driven forms and URL-mode browser handoff are not yet implemented; the optional Tasks extension remains pending.
+- OAuth/CIMD authorization is not implemented; use a server-issued Bearer token where supported.
 - Real external MCP server connection, tool execution, and disconnect still require physical-device QA.
 
 ## CI

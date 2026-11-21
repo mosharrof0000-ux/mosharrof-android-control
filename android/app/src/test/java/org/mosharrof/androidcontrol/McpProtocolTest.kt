@@ -34,6 +34,65 @@ class McpProtocolTest {
         assertTrue(request.params.containsKey("_meta"))
     }
 
+    @Test fun modernToolsCallCarriesMrtrResponsesAndOpaqueRequestState() {
+        val responses = mapOf(
+            "confirm" to mapOf("action" to "accept", "content" to mapOf("ok" to true))
+        )
+        val opaqueState = "opaque-state:%2Fmust-remain-unchanged"
+        val request = McpProtocol.modernToolsCallRequest(
+            id = "14",
+            toolName = "files.read",
+            arguments = mapOf("path" to "notes.txt"),
+            clientName = "Mosharrof",
+            clientVersion = "1.0",
+            inputResponses = responses,
+            requestState = opaqueState
+        )
+
+        assertEquals(responses, request.params["inputResponses"])
+        assertEquals(opaqueState, request.params["requestState"])
+        assertEquals("files.read", request.params["name"])
+    }
+
+    @Test fun modernToolsCallOmitsMrtrFieldsOnInitialRequest() {
+        val request = McpProtocol.modernToolsCallRequest(
+            id = "15",
+            toolName = "files.read",
+            clientName = "Mosharrof",
+            clientVersion = "1.0"
+        )
+
+        assertFalse(request.params.containsKey("inputResponses"))
+        assertFalse(request.params.containsKey("requestState"))
+    }
+
+    @Test fun modernToolsCallRejectsBlankMrtrResponseKeys() {
+        val result = runCatching {
+            McpProtocol.modernToolsCallRequest(
+                id = "16",
+                toolName = "files.read",
+                clientName = "Mosharrof",
+                clientVersion = "1.0",
+                inputResponses = mapOf("" to mapOf("action" to "accept"))
+            )
+        }
+        assertTrue(result.isFailure)
+    }
+
+    @Test fun modernToolsListCarriesOpaqueCursor() {
+        val request = McpProtocol.modernToolsListRequest(
+            "12", "Mosharrof", "1.0", cursor = "opaque-next"
+        )
+        assertEquals("tools/list", request.method)
+        assertEquals("opaque-next", request.params["cursor"])
+        assertTrue(request.params.containsKey("_meta"))
+    }
+
+    @Test fun legacyToolsListCarriesOpaqueCursor() {
+        val request = McpProtocol.toolsListRequest("13", cursor = "opaque-next")
+        assertEquals("opaque-next", request.params["cursor"])
+    }
+
     @Test fun initializedIsNotificationWithoutId() {
         val request = McpProtocol.initializedNotification()
         assertNull(request.id)
@@ -144,6 +203,57 @@ class McpProtocolTest {
         }
     }
 
+    @Test fun rejectsUnsupportedSchemaAssertionsInsteadOfIgnoringThem() {
+        val schemas = listOf(
+            mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "value" to mapOf(
+                        "type" to "string",
+                        "oneOf" to listOf(mapOf("const" to "a"), mapOf("const" to "b"))
+                    )
+                )
+            ),
+            mapOf(
+                "type" to "object",
+                "properties" to mapOf("value" to mapOf("type" to "string", "patternProperties" to emptyMap<String, Any>()))
+            ),
+            mapOf(
+                "type" to "object",
+                "properties" to mapOf("items" to mapOf("type" to "array", "uniqueItems" to true))
+            ),
+            mapOf(
+                "type" to "object",
+                "properties" to mapOf("value" to mapOf("\$ref" to "#/definitions/value"))
+            )
+        )
+        schemas.forEach { assertFalse(McpProtocol.validateInputSchema(it)) }
+    }
+
+    @Test fun rejectsMalformedAdditionalPropertiesConstraint() {
+        val schema = mapOf(
+            "type" to "object",
+            "properties" to mapOf("value" to mapOf("type" to "string")),
+            "additionalProperties" to "false"
+        )
+        assertFalse(McpProtocol.validateInputSchema(schema))
+    }
+
+    @Test fun rejectsSchemaNestingBeyondSupportedDepth() {
+        var nested: Map<String, Any?> = mapOf("type" to "string")
+        repeat(40) {
+            nested = mapOf(
+                "type" to "object",
+                "properties" to mapOf("child" to nested)
+            )
+        }
+        val root = mapOf(
+            "type" to "object",
+            "properties" to mapOf("root" to nested)
+        )
+        assertFalse(McpProtocol.validateInputSchema(root))
+    }
+
     @Test fun responseMustMatchRequestAndContainExactlyOneOutcome() {
         assertTrue(McpProtocol.validateResponse(
             McpProtocol.Response(id = "4", result = mapOf("ok" to true)), "4"
@@ -156,6 +266,45 @@ class McpProtocolTest {
         ))
     }
 
+    @Test fun acceptsKnownMcpMrtrRequestMethods() {
+        val requests = mapOf(
+            "confirm" to mapOf(
+                "method" to "elicitation/create",
+                "params" to mapOf("mode" to "form")
+            ),
+            "sample" to mapOf(
+                "method" to "sampling/createMessage",
+                "params" to emptyMap<String, Any?>()
+            ),
+            "roots" to mapOf(
+                "method" to "roots/list",
+                "params" to emptyMap<String, Any?>()
+            )
+        )
+        assertTrue(McpProtocol.validateInputRequests(requests))
+    }
+
+    @Test fun rejectsMalformedOrUnsupportedMcpMrtrRequests() {
+        val invalid = listOf(
+            emptyMap<String, Any?>(),
+            mapOf(" " to mapOf("method" to "roots/list", "params" to emptyMap<String, Any?>())),
+            mapOf("x" to mapOf("method" to "unknown/method", "params" to emptyMap<String, Any?>())),
+            mapOf("x" to mapOf("method" to "roots/list")),
+            mapOf("x" to "not-an-object")
+        )
+        invalid.forEach { assertFalse(McpProtocol.validateInputRequests(it)) }
+    }
+
+    @Test fun boundsMcpMrtrInputRequestCount() {
+        val tooMany = (1..17).associate { index ->
+            "request-$index" to mapOf(
+                "method" to "roots/list",
+                "params" to emptyMap<String, Any?>()
+            )
+        }
+        assertFalse(McpProtocol.validateInputRequests(tooMany))
+    }
+
     @Test fun rejectsBlankInitializeFields() {
         try {
             McpProtocol.initializeRequest("", "Mosharrof", "1.0", "test")
@@ -164,4 +313,76 @@ class McpProtocolTest {
             assertTrue(true)
         }
     }
+
+    @Test
+    fun elicitationUrlAllowsOnlySafeHttpsTargets() {
+        assertEquals(
+            "https://auth.example.com/continue?state=abc#step",
+            McpProtocol.validateElicitationUrl("https://auth.example.com/continue?state=abc#step")
+        )
+        assertEquals(
+            "https://auth.example.com:8443/continue",
+            McpProtocol.validateElicitationUrl("https://auth.example.com:8443/continue")
+        )
+    }
+
+    @Test
+    fun elicitationUrlRejectsInsecureOrCredentialBearingTargets() {
+        val invalid = listOf(
+            null,
+            "",
+            "not a url",
+            "http://auth.example.com/continue",
+            "javascript:alert(1)",
+            "https://user:password@auth.example.com/continue",
+            "https:///missing-host",
+            "https://auth.example.com:99999/continue"
+        )
+        invalid.forEach { value ->
+            assertNull("Expected URL to be rejected: $value", McpProtocol.validateElicitationUrl(value))
+        }
+    }
+
+    @Test
+    fun buildsMcpTaskExtensionRequests() {
+        val get = McpProtocol.modernTasksGetRequest("1", "task-123", "Mosharrof", "1.0")
+        assertEquals("tasks/get", get.method)
+        assertEquals("task-123", get.params["taskId"])
+
+        val update = McpProtocol.modernTasksUpdateRequest(
+            "2", "task-123", mapOf("request-1" to mapOf("action" to "accept")),
+            "Mosharrof", "1.0"
+        )
+        assertEquals("tasks/update", update.method)
+        assertEquals("task-123", update.params["taskId"])
+        assertTrue(update.params.containsKey("inputResponses"))
+
+        val cancel = McpProtocol.modernTasksCancelRequest("3", "task-123", "Mosharrof", "1.0")
+        assertEquals("tasks/cancel", cancel.method)
+        assertEquals("task-123", cancel.params["taskId"])
+    }
+
+    @Test
+    fun taskRequestsRejectInvalidIdsAndEmptyResponses() {
+        assertTrue(
+            runCatching {
+                McpProtocol.modernTasksGetRequest("1", "", "Mosharrof", "1.0")
+            }.isFailure
+        )
+        assertTrue(
+            runCatching {
+                McpProtocol.modernTasksUpdateRequest(
+                    "2", "task-1", emptyMap(), "Mosharrof", "1.0"
+                )
+            }.isFailure
+        )
+        assertTrue(
+            runCatching {
+                McpProtocol.modernTasksCancelRequest(
+                    "3", "x".repeat(257), "Mosharrof", "1.0"
+                )
+            }.isFailure
+        )
+    }
+
 }

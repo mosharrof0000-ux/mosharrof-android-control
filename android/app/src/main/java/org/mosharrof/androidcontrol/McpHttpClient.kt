@@ -8,6 +8,8 @@ import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
 import java.nio.charset.StandardCharsets
+import java.util.concurrent.Executor
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * HTTPS Streamable HTTP transport for MCP.
@@ -26,7 +28,8 @@ class McpHttpClient(
     private val bearerToken: String? = null,
     private val connectionFactory: (URL) -> HttpURLConnection = {
         it.openConnection() as HttpURLConnection
-    }
+    },
+    private val allowSynchronousRequests: Boolean = true
 ) {
     @Volatile private var sessionId: String? = null
 
@@ -36,11 +39,9 @@ class McpHttpClient(
             protocolVersion == McpProtocol.MODERN_VERSION ||
             protocolVersion in LEGACY_VERSIONS
         ) { "অসমর্থিত MCP protocol version: $protocolVersion" }
-        require(bearerToken == null || (
-            bearerToken.isNotBlank() &&
-            !bearerToken.contains("\r") &&
-            !bearerToken.contains("\n")
-        )) { "অবৈধ Bearer Token" }
+        require(bearerToken == null || isValidBearerToken(bearerToken)) {
+            "অবৈধ Bearer Token"
+        }
     }
 
     @Synchronized
@@ -58,8 +59,72 @@ class McpHttpClient(
         }
     }
 
+    /**
+     * Callback-based OAuth request entry point. Token resolution and HTTP work
+     * are both dispatched off the caller thread. A token is resolved for this
+     * request only; it is never retained by this client instance.
+     */
+    internal fun postAsync(
+        connectorId: String,
+        tokenProvider: McpAccessTokenResolver,
+        ioExecutor: Executor,
+        request: McpProtocol.Request,
+        toolDefinition: McpProtocol.ToolDefinition? = null,
+        onComplete: (Result<JSONObject>) -> Unit
+    ) {
+        val completed = AtomicBoolean(false)
+        fun complete(result: Result<JSONObject>) {
+            if (completed.compareAndSet(false, true)) onComplete(result)
+        }
+
+        try {
+            ioExecutor.execute {
+                try {
+                    tokenProvider.resolve(connectorId, endpoint) { tokenResult ->
+                        tokenResult.fold(
+                            onSuccess = { token ->
+                                try {
+                                    ioExecutor.execute {
+                                        complete(runCatching {
+                                            postWithBearer(request, toolDefinition, token.value)
+                                        })
+                                    }
+                                } catch (failure: Throwable) {
+                                    complete(Result.failure(failure))
+                                }
+                            },
+                            onFailure = { failure -> complete(Result.failure(failure)) }
+                        )
+                    }
+                } catch (failure: Throwable) {
+                    complete(Result.failure(failure))
+                }
+            }
+        } catch (failure: Throwable) {
+            complete(Result.failure(failure))
+        }
+    }
+
+    /** Retains the static/manual-token API for non-OAuth connectors. */
+    fun post(
+        request: McpProtocol.Request,
+        toolDefinition: McpProtocol.ToolDefinition? = null
+    ): JSONObject {
+        check(allowSynchronousRequests) {
+            "এই OAuth Connector-এ synchronous/static-token transport বন্ধ; per-request async token resolution বাধ্যতামূলক।"
+        }
+        return postWithBearer(request, toolDefinition, bearerToken)
+    }
+
     @Synchronized
-    fun post(request: McpProtocol.Request, toolDefinition: McpProtocol.ToolDefinition? = null): JSONObject {
+    private fun postWithBearer(
+        request: McpProtocol.Request,
+        toolDefinition: McpProtocol.ToolDefinition?,
+        requestBearerToken: String?
+    ): JSONObject {
+        require(requestBearerToken == null || isValidBearerToken(requestBearerToken)) {
+            "অবৈধ Bearer Token"
+        }
         require(request.jsonrpc == "2.0")
         require(request.method.matches(Regex("[a-zA-Z0-9/_-]{2,100}")))
         if (request.id == null) {
@@ -109,7 +174,7 @@ class McpHttpClient(
             connection.setRequestProperty("Content-Type", "application/json")
             connection.setRequestProperty("Accept", "application/json, text/event-stream")
             connection.setRequestProperty("MCP-Protocol-Version", protocolVersion)
-            bearerToken?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
+            requestBearerToken?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
             sessionId?.let { connection.setRequestProperty("Mcp-Session-Id", it) }
 
             if (modern) {
@@ -143,13 +208,24 @@ class McpHttpClient(
                 JSONObject(detail).optJSONObject("error")
             }.getOrNull()
             val rpcCode = (rpcError?.opt("code") as? Number)?.toInt()
-            val rpcData = rpcError?.optJSONObject("data")?.let {
-                JSONObject(it.toString())
+            // Keep only the protocol-version hint needed for safe negotiation.
+            // Arbitrary server error bodies can echo Authorization headers or tokens.
+            val rpcData = if (rpcCode == -32022) {
+                rpcError?.optJSONObject("data")?.optJSONArray("supported")?.let { raw ->
+                    val supported = org.json.JSONArray()
+                    for (index in 0 until raw.length()) {
+                        val version = raw.opt(index) as? String ?: continue
+                        if (version.length <= 64) supported.put(version)
+                    }
+                    JSONObject().put("supported", supported)
+                }
+            } else {
+                null
             }
             throw McpHttpException(
                 status,
                 rpcCode,
-                "MCP HTTP $status: ${detail.take(240)}",
+                "MCP HTTP $status request failed",
                 rpcData
             )
             }
@@ -184,8 +260,8 @@ class McpHttpClient(
                 "MCP response-এ result অথবা error—একটি থাকতে হবে।"
             }
 
-            // MCP 2026-07-28 requires resultType on successful results.
-            // This client currently implements only the complete result type.
+            // Preserve the modern wire discriminator here; the service layer decides
+            // whether this app can safely consume the returned result type.
             if (modern && response.has("result")) {
                 val resultObject = response.optJSONObject("result")
                     ?: throw IOException("আধুনিক MCP result অবজেক্ট নয়।")
@@ -232,6 +308,9 @@ class McpHttpClient(
 
             return true
         }
+
+        internal fun isValidBearerToken(value: String): Boolean =
+            value.isNotBlank() && !value.contains("\r") && !value.contains("\n")
 
         internal fun isSafeEndpoint(value: String): Boolean = runCatching {
             val uri = URI(value.trim())
@@ -352,6 +431,7 @@ class McpHttpClient(
         val value = when (method) {
             "tools/call", "prompts/get" -> params["name"] as? String
             "resources/read" -> params["uri"] as? String
+            "tasks/get", "tasks/update", "tasks/cancel" -> params["taskId"] as? String
             else -> return null
         } ?: throw IllegalArgumentException("$method-এর জন্য Mcp-Name প্রয়োজন।")
 

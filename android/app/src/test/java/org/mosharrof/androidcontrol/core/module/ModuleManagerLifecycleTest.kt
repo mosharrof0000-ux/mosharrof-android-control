@@ -142,7 +142,7 @@ class ModuleManagerLifecycleTest {
         assertTrue(manager.register(broken).isSuccess)
         assertTrue(manager.initialize("broken", coreContext()).isFailure)
         assertEquals(ModuleStatus.FAILED, manager.snapshot()["broken"])
-        assertEquals("initialization failed", manager.failureDetails()["broken"])
+        assertEquals("অপারেশন সম্পন্ন হয়নি। নিরাপত্তার জন্য বিস্তারিত error text আড়াল রাখা হয়েছে।", manager.failureDetails()["broken"])
     }
 
     @Test
@@ -213,7 +213,7 @@ class ModuleManagerLifecycleTest {
         assertTrue(manager.initialize("broken-start", coreContext()).isSuccess)
         assertTrue(manager.start("broken-start", coreContext()).isFailure)
         assertEquals(ModuleStatus.FAILED, manager.snapshot()["broken-start"])
-        assertEquals("start failed", manager.failureDetails()["broken-start"])
+        assertEquals("অপারেশন সম্পন্ন হয়নি। নিরাপত্তার জন্য বিস্তারিত error text আড়াল রাখা হয়েছে।", manager.failureDetails()["broken-start"])
     }
 
     @Test
@@ -233,7 +233,7 @@ class ModuleManagerLifecycleTest {
         assertTrue(manager.start("broken-stop", coreContext()).isSuccess)
         assertTrue(manager.stop("broken-stop", coreContext()).isFailure)
         assertEquals(ModuleStatus.FAILED, manager.snapshot()["broken-stop"])
-        assertEquals("stop failed", manager.failureDetails()["broken-stop"])
+        assertEquals("অপারেশন সম্পন্ন হয়নি। নিরাপত্তার জন্য বিস্তারিত error text আড়াল রাখা হয়েছে।", manager.failureDetails()["broken-stop"])
     }
 
     @Test
@@ -252,7 +252,7 @@ class ModuleManagerLifecycleTest {
         assertTrue(manager.initialize("broken-destroy", coreContext()).isSuccess)
         assertTrue(manager.destroy("broken-destroy", coreContext()).isFailure)
         assertEquals(ModuleStatus.FAILED, manager.snapshot()["broken-destroy"])
-        assertEquals("destroy failed", manager.failureDetails()["broken-destroy"])
+        assertEquals("অপারেশন সম্পন্ন হয়নি। নিরাপত্তার জন্য বিস্তারিত error text আড়াল রাখা হয়েছে।", manager.failureDetails()["broken-destroy"])
     }
 
     @Test

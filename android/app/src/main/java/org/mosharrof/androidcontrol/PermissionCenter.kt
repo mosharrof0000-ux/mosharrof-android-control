@@ -147,7 +147,7 @@ object PermissionCenter {
                             )
                         } catch (error: Exception) {
                             AlertDialog.Builder(activity)
-                                .setMessage("সেটিংস খোলা যায়নি: ${error.message}")
+                                .setMessage("সেটিংস খোলা যায়নি। ${safeUiErrorMessage(error)}")
                                 .setPositiveButton("ঠিক আছে", null)
                                 .show()
                         }

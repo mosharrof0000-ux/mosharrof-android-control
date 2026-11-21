@@ -20,12 +20,23 @@ class McpConnectorServiceRegressionTest {
         private val invalidSecondTool: Boolean = false,
         private val discoveryVersions: List<String> = listOf(McpProtocol.MODERN_VERSION),
         private val versionErrorSupported: List<String>? = null,
-        private val discoveryErrorCode: Int? = null
+        private val discoveryErrorCode: Int? = null,
+        private val paginatedTools: Boolean = false,
+        private val repeatCursor: Boolean = false,
+        private val toolResultType: String = "complete",
+        private val taskGetStatuses: List<String> = listOf("working", "completed"),
+        private val taskPollIntervalMs: Long = 10L,
+        private val unsupportedSchema: Boolean = false
     ) {
         val toolCalls = AtomicInteger(0)
+        val taskGetCalls = AtomicInteger(0)
         val methods = mutableListOf<String>()
         val toolCallMetadata = mutableListOf<Boolean>()
         val toolCallHeaders = mutableListOf<Map<String, String?>>()
+        val authorizationHeaders = mutableListOf<String?>()
+        val requestAuthorizationHeaders = mutableListOf<String?>()
+        val toolCallParams = mutableListOf<JSONObject>()
+        val toolListCursors = mutableListOf<String?>()
 
         fun connection(url: URL): HttpURLConnection =
             object : HttpURLConnection(url) {
@@ -48,52 +59,71 @@ class McpConnectorServiceRegressionTest {
                     )
                     val method = request.optString("method")
                     methods.add(method)
-            if (method == "tools/call") {
-                val params = request.optJSONObject("params")
-                val metadata = params?.optJSONObject("_meta")
-                toolCallMetadata.add(
-                    metadata?.optString("io.modelcontextprotocol/protocolVersion") ==
-                        McpProtocol.MODERN_VERSION
-                )
-                toolCallHeaders.add(
-                    mapOf(
-                        "protocol" to getRequestProperty("MCP-Protocol-Version"),
-                        "method" to getRequestProperty("Mcp-Method"),
-                        "name" to getRequestProperty("Mcp-Name")
-                    )
-                )
-            }
-            val id = request.opt("id")
+                    requestAuthorizationHeaders.add(getRequestProperty("Authorization"))
 
-            if (method == "server/discover" && discoveryErrorCode != null) {
-                status = 404
-                responseBody = JSONObject()
-                    .put("jsonrpc", "2.0")
-                    .put("id", id)
-                    .put("error", JSONObject().put("code", discoveryErrorCode).put("message", "Method not found"))
-                    .toString()
-                return
-            }
+                    if (method == "tools/list") {
+                        val params = request.optJSONObject("params")
+                        val cursor = if (params != null && params.has("cursor") && !params.isNull("cursor")) {
+                            params.opt("cursor") as? String
+                                ?: error("Fake server received non-string cursor")
+                        } else null
+                        toolListCursors.add(cursor)
+                    }
 
-            if (method == "server/discover" && versionErrorSupported != null) {
-                val supported = JSONArray()
-                versionErrorSupported.forEach { supported.put(it) }
-                status = 400
-                responseBody = JSONObject()
-                    .put("jsonrpc", "2.0")
-                    .put("id", id)
-                    .put(
-                        "error",
-                        JSONObject()
-                            .put("code", -32022)
-                            .put("message", "Unsupported protocol version")
-                            .put("data", JSONObject().put("supported", supported))
-                    )
-                    .toString()
-                return
-            }
+                    if (method == "tools/call") {
+                        authorizationHeaders.add(getRequestProperty("Authorization"))
+                        val params = request.optJSONObject("params")
+                        if (params != null) toolCallParams.add(JSONObject(params.toString()))
+                        val metadata = params?.optJSONObject("_meta")
+                        toolCallMetadata.add(
+                            metadata?.optString("io.modelcontextprotocol/protocolVersion") ==
+                                McpProtocol.MODERN_VERSION
+                        )
+                        toolCallHeaders.add(
+                            mapOf(
+                                "protocol" to getRequestProperty("MCP-Protocol-Version"),
+                                "method" to getRequestProperty("Mcp-Method"),
+                                "name" to getRequestProperty("Mcp-Name")
+                            )
+                        )
+                    }
 
-            if (method == "server/discover" && legacy) {
+                    val id = request.opt("id")
+
+                    if (method == "server/discover" && discoveryErrorCode != null) {
+                        status = 404
+                        responseBody = JSONObject()
+                            .put("jsonrpc", "2.0")
+                            .put("id", id)
+                            .put(
+                                "error",
+                                JSONObject()
+                                    .put("code", discoveryErrorCode)
+                                    .put("message", "Method not found")
+                            )
+                            .toString()
+                        return
+                    }
+
+                    if (method == "server/discover" && versionErrorSupported != null) {
+                        val supported = JSONArray()
+                        versionErrorSupported.forEach { supported.put(it) }
+                        status = 400
+                        responseBody = JSONObject()
+                            .put("jsonrpc", "2.0")
+                            .put("id", id)
+                            .put(
+                                "error",
+                                JSONObject()
+                                    .put("code", -32022)
+                                    .put("message", "Unsupported protocol version")
+                                    .put("data", JSONObject().put("supported", supported))
+                            )
+                            .toString()
+                        return
+                    }
+
+                    if (method == "server/discover" && legacy) {
                         status = 404
                         responseBody = ""
                         return
@@ -132,24 +162,78 @@ class McpConnectorServiceRegressionTest {
                             )
 
                         "tools/list" -> {
+                            val params = request.optJSONObject("params")
+                            val cursor = if (params != null && params.has("cursor") && !params.isNull("cursor")) {
+                                params.optString("cursor")
+                            } else null
                             val tools = JSONArray()
-                            tools.put(tool("echo", false))
-                            if (invalidSecondTool) tools.put(tool("invalid", true))
+                            if (paginatedTools) {
+                                if (cursor == null) tools.put(tool("echo", false))
+                                else tools.put(tool("second", invalidSecondTool))
+                            } else {
+                                tools.put(tool("echo", false))
+                                if (invalidSecondTool) tools.put(tool("invalid", true))
+                            }
+                            val page = JSONObject().put("tools", tools)
+                            if (getRequestProperty("MCP-Protocol-Version") == McpProtocol.MODERN_VERSION) {
+                                page.put("resultType", "complete")
+                                    .put("ttlMs", 0)
+                                    .put("cacheScope", "private")
+                            }
+                            if ((paginatedTools && cursor == null) || repeatCursor) {
+                                page.put("nextCursor", "next")
+                            }
+                            page
+                        }
+
+                        "tasks/get" -> {
+                            val index = taskGetCalls.getAndIncrement()
+                            val taskStatus = taskGetStatuses.getOrElse(index) {
+                                taskGetStatuses.lastOrNull() ?: "working"
+                            }
                             JSONObject()
                                 .put("resultType", "complete")
-                                .put("tools", tools)
+                                .put("task", taskSnapshot(taskStatus))
                         }
+
+                        "tasks/update" -> JSONObject()
+                            .put("resultType", "complete")
+                            .put("task", taskSnapshot("working"))
+
+                        "tasks/cancel" -> JSONObject()
+                            .put("resultType", "complete")
+                            .put("task", taskSnapshot("cancelled"))
 
                         "tools/call" -> {
                             toolCalls.incrementAndGet()
                             JSONObject()
-                                .put("resultType", "complete")
+                                .put("resultType", toolResultType)
                                 .put(
                                     "content",
                                     JSONArray().put(
                                         JSONObject().put("type", "text").put("text", "ok")
                                     )
                                 )
+                                .apply {
+                                    if (toolResultType == "input_required") {
+                                        put(
+                                            "inputRequests",
+                                            JSONObject().put(
+                                                "confirm",
+                                                JSONObject()
+                                                    .put("method", "elicitation/create")
+                                                    .put("params", JSONObject().put("mode", "form"))
+                                            )
+                                        )
+                                        put("requestState", "opaque-state-from-server")
+                                    }
+                                    if (toolResultType == "task") {
+                                        put("taskId", "task-started")
+                                        put("status", "working")
+                                        put("ttlMs", 60_000)
+                                        put("pollIntervalMs", 25)
+                                    }
+                                }
                         }
 
                         else -> JSONObject()
@@ -161,6 +245,20 @@ class McpConnectorServiceRegressionTest {
                         .put("id", id)
                         .put("result", result)
                         .toString()
+                }
+                private fun taskSnapshot(status: String): JSONObject {
+                    val task = JSONObject()
+                        .put("taskId", "task-1")
+                        .put("status", status)
+                        .put("ttlMs", 60_000)
+                        .put("pollIntervalMs", taskPollIntervalMs)
+                    if (status == "completed") {
+                        task.put("result", JSONObject().put("content", JSONArray()))
+                    }
+                    if (status == "failed") {
+                        task.put("error", JSONObject().put("code", -1).put("message", "failed"))
+                    }
+                    return task
                 }
 
                 private fun tool(name: String, invalid: Boolean): JSONObject {
@@ -179,6 +277,9 @@ class McpConnectorServiceRegressionTest {
                             .put("required", JSONArray().put("text"))
                     }
 
+                    if (unsupportedSchema && name == "echo") {
+                        schema.put("patternProperties", JSONObject().put(".*", JSONObject().put("type", "string")))
+                    }
                     return JSONObject()
                         .put("name", name)
                         .put("description", "Test tool")
@@ -203,10 +304,10 @@ class McpConnectorServiceRegressionTest {
             }
     }
 
-    private fun registerConnector() {
+    private fun registerConnector(id: String = "test.mcp") {
         ConnectorRegistry.registerConnector(
             ConnectorRegistry.Connector(
-                id = "test.mcp",
+                id = id,
                 name = "Test MCP",
                 transport = ConnectorRegistry.Transport.MCP_STREAMABLE_HTTP,
                 endpoint = "https://example.com/mcp"
@@ -214,17 +315,97 @@ class McpConnectorServiceRegressionTest {
         ).getOrThrow()
     }
 
-    private fun service(server: FakeServer): McpConnectorService {
+    private fun service(
+        server: FakeServer,
+        taskStore: McpTaskStore = InMemoryMcpTaskStore()
+    ): McpConnectorService {
         val client = McpHttpClient(
             endpoint = "https://example.com/mcp",
             connectionFactory = server::connection
         )
-        return McpConnectorService(client)
+        return McpConnectorService(client, taskStore = taskStore)
+    }
+
+    @Test
+    fun oauthDiscoveryRejectsUnknownConnectorBeforeNetworkAccess() {
+        val fetchAttempts = AtomicInteger(0)
+        val fetcher = McpOAuthMetadataFetcher {
+            fetchAttempts.incrementAndGet()
+            error("Network access must not occur for an unknown connector")
+        }
+        val client = McpHttpClient(
+            endpoint = "https://example.com/mcp",
+            connectionFactory = FakeServer()::connection
+        )
+        val service = McpConnectorService(client, oauthMetadataFetcher = fetcher)
+
+        assertTrue(service.discoverOAuthMetadata("missing.connector").isFailure)
+        assertEquals(0, fetchAttempts.get())
+    }
+
+    @Test
+    fun oauthDiscoveryRejectsNonMcpTransportBeforeNetworkAccess() {
+        ConnectorRegistry.registerConnector(
+            ConnectorRegistry.Connector(
+                id = "test.api",
+                name = "Test HTTPS API",
+                transport = ConnectorRegistry.Transport.HTTPS_API,
+                endpoint = "https://api.example.com/v1"
+            )
+        ).getOrThrow()
+        val fetchAttempts = AtomicInteger(0)
+        val fetcher = McpOAuthMetadataFetcher {
+            fetchAttempts.incrementAndGet()
+            error("Network access must not occur for a non-MCP connector")
+        }
+        val client = McpHttpClient(
+            endpoint = "https://example.com/mcp",
+            connectionFactory = FakeServer()::connection
+        )
+        val service = McpConnectorService(client, oauthMetadataFetcher = fetcher)
+
+        assertTrue(service.discoverOAuthMetadata("test.api").isFailure)
+        assertEquals(0, fetchAttempts.get())
     }
 
     @After
     fun cleanup() {
         ConnectorRegistry.clearForTests()
+    }
+
+
+    @Test
+    fun serviceReportsOnlyConnectorSessionsItOwns() {
+        registerConnector()
+        registerConnector("test.mcp.two")
+        val firstService = service(FakeServer())
+        val secondService = service(FakeServer())
+
+        firstService.connect("test.mcp").getOrThrow()
+        secondService.connect("test.mcp.two").getOrThrow()
+
+        assertEquals(setOf("test.mcp"), firstService.connectedConnectorIds())
+        assertEquals(setOf("test.mcp.two"), secondService.connectedConnectorIds())
+
+        firstService.disconnect("test.mcp").getOrThrow()
+        assertTrue(firstService.connectedConnectorIds().isEmpty())
+        assertEquals(setOf("test.mcp.two"), secondService.connectedConnectorIds())
+    }
+
+
+    @Test
+    fun unsupportedSchemaKeywordFailsConnectionAndRollsBackTools() {
+        registerConnector()
+        val server = FakeServer(unsupportedSchema = true)
+
+        val failure = service(server).connect("test.mcp")
+
+        assertTrue("Unsupported JSON Schema assertions must fail closed", failure.isFailure)
+        assertTrue(ConnectorRegistry.toolsFor("test.mcp").isEmpty())
+        assertTrue(
+            ConnectorRegistry.connectorSnapshot().single().state ==
+                ConnectorRegistry.ConnectionState.DISCONNECTED
+        )
     }
 
     @Test
@@ -237,6 +418,311 @@ class McpConnectorServiceRegressionTest {
         assertEquals(1, result.discoveredTools)
         assertTrue(server.methods.contains("server/discover"))
         assertTrue(server.methods.contains("tools/list"))
+    }
+
+    @Test
+    fun toolListPaginationFetchesEveryPageAndPreservesOpaqueCursor() {
+        registerConnector()
+        val server = FakeServer(paginatedTools = true)
+
+        val result = service(server).connect("test.mcp").getOrThrow()
+
+        assertEquals(2, result.discoveredTools)
+        assertEquals(listOf(null, "next"), server.toolListCursors)
+        assertEquals(
+            setOf("echo", "second"),
+            ConnectorRegistry.toolsFor("test.mcp").map { it.name }.toSet()
+        )
+    }
+
+    @Test
+    fun repeatedToolListCursorFailsAndRollsBackAllTools() {
+        registerConnector()
+        val server = FakeServer(paginatedTools = true, repeatCursor = true)
+
+        val result = service(server).connect("test.mcp")
+
+        assertTrue(result.isFailure)
+        assertEquals(listOf(null, "next"), server.toolListCursors)
+        assertTrue(ConnectorRegistry.toolsFor("test.mcp").isEmpty())
+    }
+
+    @Test
+    fun inputRequiredResultIsReturnedForMrtrHandling() {
+        registerConnector()
+        val server = FakeServer(toolResultType = "input_required")
+        val connectorService = service(server)
+        connectorService.connect("test.mcp").getOrThrow()
+        val tool = ConnectorRegistry.toolsFor("test.mcp").single()
+        val arguments = mapOf<String, Any?>("text" to "hello")
+        val grant = connectorService.issueApprovalGrant(tool.id, arguments).getOrThrow()
+            ?: error("Approval Grant পাওয়া যায়নি।")
+
+        val result = connectorService.callTool(tool.id, arguments, grant).getOrThrow()
+        val payload = JSONObject(result)
+
+        assertEquals("input_required", payload.optString("resultType"))
+        assertTrue(payload.optJSONObject("inputRequests")?.has("confirm") == true)
+        assertEquals("opaque-state-from-server", payload.optString("requestState"))
+        assertEquals(1, server.toolCalls.get())
+    }
+
+    @Test
+    fun mrtrRetryCarriesResponsesAndOpaqueStateWithoutChangingOriginalArguments() {
+        registerConnector()
+        val server = FakeServer(toolResultType = "input_required")
+        val connectorService = service(server)
+        connectorService.connect("test.mcp").getOrThrow()
+        val tool = ConnectorRegistry.toolsFor("test.mcp").single()
+        val arguments = mapOf<String, Any?>("text" to "hello")
+        val firstGrant = connectorService.issueApprovalGrant(tool.id, arguments).getOrThrow()
+            ?: error("Approval Grant পাওয়া যায়নি।")
+        connectorService.callTool(tool.id, arguments, firstGrant).getOrThrow()
+
+        val responses = mapOf<String, Any?>(
+            "confirm" to mapOf("action" to "accept", "content" to mapOf("ok" to true))
+        )
+        val secondGrant = connectorService.issueApprovalGrant(tool.id, arguments).getOrThrow()
+            ?: error("দ্বিতীয় Approval Grant পাওয়া যায়নি।")
+        connectorService.callTool(
+            toolId = tool.id,
+            arguments = arguments,
+            approvalGrant = secondGrant,
+            inputResponses = responses,
+            requestState = "opaque-state-from-server"
+        ).getOrThrow()
+
+        val retryParams = server.toolCallParams.last()
+        assertEquals(
+            "accept",
+            retryParams.optJSONObject("inputResponses")
+                ?.optJSONObject("confirm")
+                ?.optString("action")
+        )
+        assertEquals("opaque-state-from-server", retryParams.optString("requestState"))
+        assertEquals("hello", retryParams.optJSONObject("arguments")?.optString("text"))
+        assertEquals(2, server.toolCalls.get())
+    }
+
+    @Test
+    fun approvedToolTaskHandleIsPersistedAsPendingRecoveryMetadata() {
+        registerConnector()
+        val server = FakeServer(toolResultType = "task")
+        val store = InMemoryMcpTaskStore()
+        val connectorService = service(server, store)
+        connectorService.connect("test.mcp").getOrThrow()
+        val tool = ConnectorRegistry.toolsFor("test.mcp").single()
+        val arguments = mapOf<String, Any?>("text" to "start")
+        val grant = connectorService.issueApprovalGrant(tool.id, arguments).getOrThrow()
+            ?: error("Approval Grant পাওয়া যায়নি।")
+
+        val payload = JSONObject(
+            connectorService.callTool(tool.id, arguments, grant).getOrThrow()
+        )
+
+        assertEquals("task", payload.optString("resultType"))
+        val pending = connectorService.pendingTasks("test.mcp").getOrThrow()
+        assertEquals(1, pending.size)
+        assertEquals("task-started", pending.single().taskId)
+        assertEquals("WORKING", pending.single().status)
+        assertEquals(25L, pending.single().pollIntervalMs)
+    }
+
+    @Test
+    fun taskGetUpdateAndCancelUseModernTaskEndpoints() {
+        registerConnector()
+        val server = FakeServer()
+        val connectorService = service(server)
+        connectorService.connect("test.mcp").getOrThrow()
+
+        val fetched = connectorService.getTask("test.mcp", "task-1").getOrThrow()
+        assertEquals(McpTaskProtocol.Status.WORKING, fetched.status)
+        val updated = connectorService.updateTask(
+            "test.mcp",
+            "task-1",
+            mapOf("confirm" to mapOf("action" to "accept"))
+        ).getOrThrow()
+        assertEquals(McpTaskProtocol.Status.WORKING, updated.status)
+        val cancelled = connectorService.cancelTask("test.mcp", "task-1").getOrThrow()
+        assertEquals(McpTaskProtocol.Status.CANCELLED, cancelled.status)
+        assertTrue(server.methods.containsAll(listOf("tasks/get", "tasks/update", "tasks/cancel")))
+    }
+
+    @Test
+    fun pendingTaskCandidatesSurviveServiceRecreationAndAreRefreshedFromServer() {
+        registerConnector()
+        val taskStore = InMemoryMcpTaskStore()
+        val firstServer = FakeServer(taskGetStatuses = listOf("working"))
+        val firstService = service(firstServer, taskStore)
+        firstService.connect("test.mcp").getOrThrow()
+        firstService.getTask("test.mcp", "task-1").getOrThrow()
+        assertEquals(
+            listOf("task-1"),
+            firstService.pendingTasks("test.mcp").getOrThrow().map { it.taskId }
+        )
+
+        // Simulate a process/session recreation without a graceful disconnect.
+        val recoveredServer = FakeServer(taskGetStatuses = listOf("completed"))
+        val recoveredService = service(recoveredServer, taskStore)
+        recoveredService.connect("test.mcp").getOrThrow()
+        val candidates = recoveredService.pendingTasks("test.mcp").getOrThrow()
+        assertEquals(listOf("task-1"), candidates.map { it.taskId })
+
+        // A restored ID is only a candidate; refresh revalidates it via tasks/get.
+        val refreshed = recoveredService.refreshPendingTasks("test.mcp").getOrThrow()
+        assertEquals(listOf(McpTaskProtocol.Status.COMPLETED), refreshed.map { it.status })
+        assertTrue(recoveredService.pendingTasks("test.mcp").getOrThrow().isEmpty())
+        assertEquals(1, recoveredServer.taskGetCalls.get())
+    }
+
+    @Test
+    fun explicitDisconnectClearsPersistedTaskRecoveryCandidates() {
+        registerConnector()
+        val taskStore = InMemoryMcpTaskStore()
+        val server = FakeServer()
+        val connectorService = service(server, taskStore)
+        connectorService.connect("test.mcp").getOrThrow()
+        connectorService.getTask("test.mcp", "task-1").getOrThrow()
+        assertEquals(1, connectorService.pendingTasks("test.mcp").getOrThrow().size)
+
+        connectorService.disconnect("test.mcp").getOrThrow()
+
+        assertTrue(taskStore.list("test.mcp").isEmpty())
+    }
+
+    @Test
+    fun taskOperationsRejectSnapshotForDifferentTaskId() {
+        registerConnector()
+        val server = FakeServer()
+        val connectorService = service(server)
+        connectorService.connect("test.mcp").getOrThrow()
+
+        assertTrue(connectorService.getTask("test.mcp", "task-2").isFailure)
+        assertTrue(
+            connectorService.updateTask(
+                "test.mcp",
+                "task-2",
+                mapOf("confirm" to mapOf("action" to "accept"))
+            ).isFailure
+        )
+        assertTrue(connectorService.cancelTask("test.mcp", "task-2").isFailure)
+    }
+
+    @Test
+    fun taskPollingStopsOnTerminalStateAndRespectsInjectedDelay() {
+        registerConnector()
+        val server = FakeServer(taskGetStatuses = listOf("working", "completed"))
+        val connectorService = service(server)
+        connectorService.connect("test.mcp").getOrThrow()
+        val delays = mutableListOf<Long>()
+
+        val snapshot = connectorService.pollTask(
+            connectorId = "test.mcp",
+            taskId = "task-1",
+            maxWaitMs = 1_000,
+            maxPolls = 5,
+            sleeper = { delays.add(it) }
+        ).getOrThrow()
+
+        assertEquals(McpTaskProtocol.Status.COMPLETED, snapshot.status)
+        assertEquals(listOf(10L), delays)
+        assertEquals(2, server.taskGetCalls.get())
+    }
+
+    @Test
+    fun taskPollingDoesNotPollBeforeServerIntervalWhenBudgetIsShorter() {
+        registerConnector()
+        val server = FakeServer(
+            taskGetStatuses = listOf("working", "completed"),
+            taskPollIntervalMs = 60_000L
+        )
+        val connectorService = service(server)
+        connectorService.connect("test.mcp").getOrThrow()
+        val delays = mutableListOf<Long>()
+        var elapsedNanos = 0L
+
+        val snapshot = connectorService.pollTask(
+            connectorId = "test.mcp",
+            taskId = "task-1",
+            maxWaitMs = 45_000L,
+            maxPolls = 5,
+            sleeper = { delay ->
+                delays.add(delay)
+                elapsedNanos += delay * 1_000_000L
+            },
+            clockNanos = { elapsedNanos }
+        ).getOrThrow()
+
+        assertEquals(McpTaskProtocol.Status.WORKING, snapshot.status)
+        assertEquals(listOf(45_000L), delays)
+        assertEquals("No second request before the server poll interval", 1, server.taskGetCalls.get())
+    }
+
+    @Test
+    fun taskPollingCountsInitialSnapshotAgainstPollLimit() {
+        registerConnector()
+        val server = FakeServer(taskGetStatuses = listOf("working", "completed"))
+        val connectorService = service(server)
+        connectorService.connect("test.mcp").getOrThrow()
+        val delays = mutableListOf<Long>()
+
+        val snapshot = connectorService.pollTask(
+            connectorId = "test.mcp",
+            taskId = "task-1",
+            maxWaitMs = 1_000,
+            maxPolls = 1,
+            sleeper = { delays.add(it) }
+        ).getOrThrow()
+
+        assertEquals(McpTaskProtocol.Status.WORKING, snapshot.status)
+        assertTrue(delays.isEmpty())
+        assertEquals(1, server.taskGetCalls.get())
+    }
+
+    @Test
+    fun taskPollingStopsWhenCallerCancelsDuringDelay() {
+        registerConnector()
+        val server = FakeServer(taskGetStatuses = listOf("working", "completed"))
+        val connectorService = service(server)
+        connectorService.connect("test.mcp").getOrThrow()
+        var cancelled = false
+        val result = connectorService.pollTask(
+            connectorId = "test.mcp",
+            taskId = "task-1",
+            maxWaitMs = 1_000,
+            maxPolls = 5,
+            sleeper = { cancelled = true },
+            shouldCancel = { cancelled }
+        )
+
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull() is java.util.concurrent.CancellationException)
+        assertEquals("Cancellation must prevent the next network request", 1, server.taskGetCalls.get())
+    }
+
+    @Test
+    fun taskPollingRejectsUnboundedArgumentsBeforeNetworkCalls() {
+        registerConnector()
+        val server = FakeServer()
+        val connectorService = service(server)
+        connectorService.connect("test.mcp").getOrThrow()
+
+        assertTrue(connectorService.pollTask("test.mcp", "task-1", maxWaitMs = 300_001).isFailure)
+        assertTrue(connectorService.pollTask("test.mcp", "task-1", maxPolls = 101).isFailure)
+        assertEquals(0, server.taskGetCalls.get())
+    }
+
+    @Test
+    fun taskOperationsRejectDisconnectedConnectorAndEmptyAnswers() {
+        registerConnector()
+        val server = FakeServer()
+        val connectorService = service(server)
+
+        assertTrue(connectorService.getTask("test.mcp", "task-1").isFailure)
+        connectorService.connect("test.mcp").getOrThrow()
+        assertTrue(connectorService.updateTask("test.mcp", "task-1", emptyMap()).isFailure)
+        connectorService.disconnect("test.mcp").getOrThrow()
+        assertTrue(connectorService.cancelTask("test.mcp", "task-1").isFailure)
     }
 
     @Test
@@ -445,4 +931,348 @@ class McpConnectorServiceRegressionTest {
         assertEquals("Invalid arguments must never reach the server", 0, server.toolCalls.get())
     }
 
+    @Test
+    fun asyncToolCallUsesPerRequestOAuthResolverAndPreservesApproval() {
+        registerConnector()
+        val server = FakeServer()
+        val client = McpHttpClient(
+            endpoint = "https://example.com/mcp",
+            connectionFactory = server::connection
+        )
+        val connectorService = McpConnectorService(client)
+        connectorService.connect("test.mcp").getOrThrow()
+        val tool = ConnectorRegistry.toolsFor("test.mcp").single()
+        val arguments = mapOf("text" to "async oauth")
+        val grant = connectorService.issueApprovalGrant(tool.id, arguments).getOrThrow()
+            ?: error("Approval grant missing")
+
+        val resolver = object : McpAccessTokenResolver {
+            override fun resolve(
+                connectorId: String,
+                expectedEndpoint: String,
+                onComplete: (Result<McpOAuthTokenRefresher.FreshBearerToken>) -> Unit
+            ) {
+                assertEquals("test.mcp", connectorId)
+                assertEquals("https://example.com/mcp", expectedEndpoint)
+                onComplete(Result.success(McpOAuthTokenRefresher.FreshBearerToken("test-access-token")))
+            }
+        }
+        var callbackResult: Result<String>? = null
+
+        connectorService.callToolAsync(
+            toolId = tool.id,
+            arguments = arguments,
+            tokenProvider = resolver,
+            ioExecutor = java.util.concurrent.Executor { it.run() },
+            approvalGrant = grant,
+            onComplete = { callbackResult = it }
+        )
+
+        assertNotNull(callbackResult)
+        assertTrue(callbackResult!!.isSuccess)
+        assertTrue(callbackResult!!.getOrThrow().contains("ok"))
+        assertEquals(1, server.toolCalls.get())
+        assertEquals("Bearer test-access-token", server.authorizationHeaders.last())
+    }
+
+    @Test
+    fun asyncToolCallStopsBeforeTransportWhenOAuthResolutionFails() {
+        registerConnector()
+        val server = FakeServer()
+        val client = McpHttpClient(
+            endpoint = "https://example.com/mcp",
+            connectionFactory = server::connection
+        )
+        val connectorService = McpConnectorService(client)
+        connectorService.connect("test.mcp").getOrThrow()
+        val tool = ConnectorRegistry.toolsFor("test.mcp").single()
+        val arguments = mapOf("text" to "must not send")
+        val grant = connectorService.issueApprovalGrant(tool.id, arguments).getOrThrow()
+            ?: error("Approval grant missing")
+        val resolver = object : McpAccessTokenResolver {
+            override fun resolve(
+                connectorId: String,
+                expectedEndpoint: String,
+                onComplete: (Result<McpOAuthTokenRefresher.FreshBearerToken>) -> Unit
+            ) {
+                onComplete(Result.failure(IllegalStateException("safe test failure")))
+            }
+        }
+        var callbackResult: Result<String>? = null
+
+        connectorService.callToolAsync(
+            toolId = tool.id,
+            arguments = arguments,
+            tokenProvider = resolver,
+            ioExecutor = java.util.concurrent.Executor { it.run() },
+            approvalGrant = grant,
+            onComplete = { callbackResult = it }
+        )
+
+        assertNotNull(callbackResult)
+        assertTrue(callbackResult!!.isFailure)
+        assertEquals("OAuth failure must prevent remote tool execution", 0, server.toolCalls.get())
+    }
+
+    @Test
+    fun asyncTaskLifecycleResolvesFreshTokenForEachOperation() {
+        registerConnector()
+        val server = FakeServer()
+        val client = McpHttpClient(
+            endpoint = "https://example.com/mcp",
+            connectionFactory = server::connection
+        )
+        val connectorService = McpConnectorService(client)
+        connectorService.connect("test.mcp").getOrThrow()
+        val resolutions = AtomicInteger(0)
+        val resolver = object : McpAccessTokenResolver {
+            override fun resolve(
+                connectorId: String,
+                expectedEndpoint: String,
+                onComplete: (Result<McpOAuthTokenRefresher.FreshBearerToken>) -> Unit
+            ) {
+                resolutions.incrementAndGet()
+                onComplete(Result.success(
+                    McpOAuthTokenRefresher.FreshBearerToken("task-access-token")
+                ))
+            }
+        }
+        val directExecutor = java.util.concurrent.Executor { it.run() }
+        var fetched: Result<McpTaskProtocol.Snapshot>? = null
+        connectorService.getTaskAsync(
+            "test.mcp", "task-1", resolver, directExecutor
+        ) { fetched = it }
+        assertNotNull(fetched)
+        assertEquals(McpTaskProtocol.Status.WORKING, fetched!!.getOrThrow().status)
+
+        var updated: Result<McpTaskProtocol.Snapshot>? = null
+        connectorService.updateTaskAsync(
+            "test.mcp",
+            "task-1",
+            mapOf("confirm" to mapOf("action" to "accept")),
+            resolver,
+            directExecutor
+        ) { updated = it }
+        assertNotNull(updated)
+        assertEquals(McpTaskProtocol.Status.WORKING, updated!!.getOrThrow().status)
+
+        var cancelled: Result<McpTaskProtocol.Snapshot>? = null
+        connectorService.cancelTaskAsync(
+            "test.mcp", "task-1", resolver, directExecutor
+        ) { cancelled = it }
+        assertNotNull(cancelled)
+        assertEquals(McpTaskProtocol.Status.CANCELLED, cancelled!!.getOrThrow().status)
+        assertEquals(3, resolutions.get())
+        assertTrue(server.methods.containsAll(listOf("tasks/get", "tasks/update", "tasks/cancel")))
+    }
+
+
+    @Test
+    fun asyncConnectResolvesTokenForEveryNegotiationAndPaginationRequest() {
+        registerConnector()
+        val server = FakeServer(paginatedTools = true)
+        val connectorService = service(server)
+        val resolutions = AtomicInteger(0)
+        val resolver = object : McpAccessTokenResolver {
+            override fun resolve(
+                connectorId: String,
+                expectedEndpoint: String,
+                onComplete: (Result<McpOAuthTokenRefresher.FreshBearerToken>) -> Unit
+            ) {
+                assertEquals("test.mcp", connectorId)
+                assertEquals("https://example.com/mcp", expectedEndpoint)
+                resolutions.incrementAndGet()
+                onComplete(Result.success(
+                    McpOAuthTokenRefresher.FreshBearerToken("fresh-per-request-token")
+                ))
+            }
+        }
+        var result: Result<McpConnectorService.ConnectionInfo>? = null
+
+        connectorService.connectAsync(
+            connectorId = "test.mcp",
+            tokenProvider = resolver,
+            ioExecutor = java.util.concurrent.Executor { it.run() }
+        ) { result = it }
+
+        assertNotNull(result)
+        assertTrue(result!!.isSuccess)
+        assertEquals(2, result!!.getOrThrow().discoveredTools)
+        assertEquals(3, resolutions.get())
+        assertEquals(
+            listOf("server/discover", "tools/list", "tools/list"),
+            server.methods
+        )
+        assertEquals(listOf(null, "next"), server.toolListCursors)
+        assertEquals(setOf("echo", "second"),
+            ConnectorRegistry.toolsFor("test.mcp").map { it.name }.toSet())
+        assertEquals(setOf("test.mcp"), connectorService.connectedConnectorIds())
+    }
+
+    @Test
+    fun asyncConnectUsesFreshTokensForLegacyInitializeAndNotification() {
+        registerConnector()
+        val server = FakeServer(legacy = true)
+        val connectorService = service(server)
+        val resolutions = AtomicInteger(0)
+        val resolver = object : McpAccessTokenResolver {
+            override fun resolve(
+                connectorId: String,
+                expectedEndpoint: String,
+                onComplete: (Result<McpOAuthTokenRefresher.FreshBearerToken>) -> Unit
+            ) {
+                resolutions.incrementAndGet()
+                onComplete(Result.success(
+                    McpOAuthTokenRefresher.FreshBearerToken("legacy-fresh-token")
+                ))
+            }
+        }
+        var result: Result<McpConnectorService.ConnectionInfo>? = null
+
+        connectorService.connectAsync(
+            "test.mcp",
+            resolver,
+            java.util.concurrent.Executor { it.run() }
+        ) { result = it }
+
+        assertNotNull(result)
+        assertTrue(result!!.isSuccess)
+        assertEquals(4, resolutions.get())
+        assertEquals(
+            listOf("server/discover", "initialize", "notifications/initialized", "tools/list"),
+            server.methods
+        )
+    }
+
+    @Test
+    fun asyncConnectDoesNotExposePartialToolsWhenLaterPageFails() {
+        registerConnector()
+        val server = FakeServer(paginatedTools = true, invalidSecondTool = true)
+        val connectorService = service(server)
+        val resolver = object : McpAccessTokenResolver {
+            override fun resolve(
+                connectorId: String,
+                expectedEndpoint: String,
+                onComplete: (Result<McpOAuthTokenRefresher.FreshBearerToken>) -> Unit
+            ) {
+                onComplete(Result.success(
+                    McpOAuthTokenRefresher.FreshBearerToken("page-failure-token")
+                ))
+            }
+        }
+        var result: Result<McpConnectorService.ConnectionInfo>? = null
+
+        connectorService.connectAsync(
+            "test.mcp",
+            resolver,
+            java.util.concurrent.Executor { it.run() }
+        ) { result = it }
+
+        assertNotNull(result)
+        assertTrue(result!!.isFailure)
+        assertTrue(ConnectorRegistry.toolsFor("test.mcp").isEmpty())
+        assertTrue(connectorService.connectedConnectorIds().isEmpty())
+        assertEquals(2, server.toolListCursors.size)
+    }
+
+    @Test
+    fun asyncConnectDuplicateAttemptCannotReleaseActiveConnectionSlot() {
+        registerConnector()
+        val server = FakeServer()
+        val connectorService = service(server)
+        var firstPending: ((Result<McpOAuthTokenRefresher.FreshBearerToken>) -> Unit)? = null
+        val resolutions = AtomicInteger(0)
+        val resolver = object : McpAccessTokenResolver {
+            override fun resolve(
+                connectorId: String,
+                expectedEndpoint: String,
+                onComplete: (Result<McpOAuthTokenRefresher.FreshBearerToken>) -> Unit
+            ) {
+                if (resolutions.incrementAndGet() == 1) {
+                    firstPending = onComplete
+                } else {
+                    onComplete(Result.success(
+                        McpOAuthTokenRefresher.FreshBearerToken("slot-guard-token")
+                    ))
+                }
+            }
+        }
+        val directExecutor = java.util.concurrent.Executor { it.run() }
+        var first: Result<McpConnectorService.ConnectionInfo>? = null
+        var duplicate: Result<McpConnectorService.ConnectionInfo>? = null
+        var third: Result<McpConnectorService.ConnectionInfo>? = null
+
+        connectorService.connectAsync("test.mcp", resolver, directExecutor) { first = it }
+        assertNotNull("First attempt should be waiting for token resolution", firstPending)
+
+        connectorService.connectAsync("test.mcp", resolver, directExecutor) { duplicate = it }
+        connectorService.connectAsync("test.mcp", resolver, directExecutor) { third = it }
+
+        assertNotNull(duplicate)
+        assertTrue(duplicate!!.isFailure)
+        assertNotNull(third)
+        assertTrue("A rejected duplicate must not unlock the first attempt", third!!.isFailure)
+        assertEquals("Duplicate attempts must not reach token resolution", 1, resolutions.get())
+
+        firstPending!!(Result.success(
+            McpOAuthTokenRefresher.FreshBearerToken("first-attempt-token")
+        ))
+        assertNotNull(first)
+        assertTrue(first!!.isSuccess)
+        assertTrue(connectorService.connectedConnectorIds().contains("test.mcp"))
+
+        var afterCompletion: Result<McpConnectorService.ConnectionInfo>? = null
+        connectorService.connectAsync("test.mcp", resolver, directExecutor) {
+            afterCompletion = it
+        }
+        assertNotNull(afterCompletion)
+        assertTrue("Connection slot should be released by its owner", afterCompletion!!.isSuccess)
+    }
+
+    @Test
+    fun oauthOnlyClientRejectsSynchronousStaticTransportButAllowsAsyncResolution() {
+        registerConnector()
+        val server = FakeServer()
+        val client = McpHttpClient(
+            endpoint = "https://example.com/mcp",
+            connectionFactory = server::connection,
+            allowSynchronousRequests = false
+        )
+        val syncResult = runCatching {
+            client.post(McpProtocol.modernDiscoveryRequest(
+                id = "sync-attempt",
+                clientName = "Test",
+                clientVersion = "1"
+            ))
+        }
+        assertTrue("OAuth-only client must reject the legacy synchronous path", syncResult.isFailure)
+        assertTrue("Rejected synchronous call must not open a connection", server.methods.isEmpty())
+
+        val resolver = object : McpAccessTokenResolver {
+            override fun resolve(
+                connectorId: String,
+                expectedEndpoint: String,
+                onComplete: (Result<McpOAuthTokenRefresher.FreshBearerToken>) -> Unit
+            ) {
+                onComplete(Result.success(
+                    McpOAuthTokenRefresher.FreshBearerToken("async-only-token")
+                ))
+            }
+        }
+        var asyncResult: Result<JSONObject>? = null
+        client.postAsync(
+            connectorId = "test.mcp",
+            tokenProvider = resolver,
+            ioExecutor = java.util.concurrent.Executor { it.run() },
+            request = McpProtocol.modernDiscoveryRequest(
+                id = "async-attempt",
+                clientName = "Test",
+                clientVersion = "1"
+            )
+        ) { asyncResult = it }
+        assertNotNull(asyncResult)
+        assertTrue(asyncResult!!.isSuccess)
+        assertEquals(listOf("server/discover"), server.methods)
+        assertEquals("Bearer async-only-token", server.requestAuthorizationHeaders.lastOrNull())
+    }
 }

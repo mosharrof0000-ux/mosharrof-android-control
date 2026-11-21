@@ -5,7 +5,11 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
+import java.io.IOException
+import java.io.InputStream
 import java.net.HttpURLConnection
+import java.net.URI
 import java.net.URL
 import java.security.KeyStore
 import javax.crypto.Cipher
@@ -13,12 +17,26 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-/** HTTPS-only relay client. Device credentials are encrypted with an Android Keystore AES key. */
+/** HTTPS-only relay client with bounded responses and explicit job identifier validation. */
 object RelayClient {
     private const val PREFS = "device_relay"
     private const val KEY_ALIAS = "mosharrof_android_relay_v1"
     private const val TOKEN_CIPHER = "AES/GCM/NoPadding"
-    private val allowed = setOf("termux.python_version", "termux.git_video_status", "termux.storage_report", "termux.system_info")
+    private const val MAX_RESPONSE_BYTES = 64 * 1024
+    private const val MAX_COMMAND_ID_LENGTH = 128
+    private const val HANDLED_IDS = "handled_command_ids"
+    private const val PENDING_COMMAND_ID = "pending_command_id"
+    private const val PENDING_COMMAND_STARTED = "pending_command_started"
+    private const val PENDING_RESULT = "pending_result"
+    private const val RESULT_TIMEOUT_MS = 90_000L
+
+    private val allowed = setOf(
+        "termux.python_version",
+        "termux.git_video_status",
+        "termux.storage_report",
+        "termux.system_info"
+    )
+
     data class Job(val commandId: String, val operationId: String)
 
     fun pair(context: Context, endpoint: String, setupToken: String): String {
@@ -37,58 +55,260 @@ object RelayClient {
     }
 
     fun poll(context: Context): Job? {
+        // Never dispatch a second job while the previous Termux result is unresolved.
+        if (pendingCommandId(context) != null) return null
         val endpoint = endpoint(context) ?: return null
         val token = token(context) ?: return null
         val response = request(endpoint + "/v1/device/jobs/next", "GET", token)
-        val job = response.optJSONObject("job") ?: return null
-        val id = job.optString("command_id")
-        val operation = job.optString("operation_id")
-        if (id.isBlank() || operation !in allowed) return null
-        return Job(id, operation)
+        if (!response.has("job") || response.isNull("job")) return null
+        val job = response.optJSONObject("job")
+            ?: error("Relay job-এর গঠন অবৈধ; কোনো কমান্ড চালানো হয়নি।")
+        val commandId = job.optString("command_id")
+        require(isValidCommandId(commandId)) {
+            "Relay job-এর command_id অবৈধ; কোনো কমান্ড চালানো হয়নি।"
+        }
+        val operationId = job.optString("operation_id")
+        if (operationId !in allowed) {
+            // Poison/unknown jobs are never dispatched. A valid server-issued ID
+            // lets the client report a safe rejection and release the queue lease.
+            postResult(context, commandId, "Rejected: operation_id is not in the Android read-only allowlist.", 126)
+            markCommandHandled(context, commandId)
+            error("অনুমোদিত তালিকার বাইরের Relay operation প্রত্যাখ্যান করে সার্ভারে জানানো হয়েছে।")
+        }
+        val parsed = Job(commandId, operationId)
+        if (hasHandledCommand(context, parsed.commandId)) return null
+        return parsed
     }
 
     fun postResult(context: Context, commandId: String, output: String, exitCode: Int) {
-        val endpoint = endpoint(context) ?: return
-        val token = token(context) ?: return
-        request("$endpoint/v1/device/jobs/$commandId/result", "POST", token,
+        require(isValidCommandId(commandId)) { "Relay command ID-এর বিন্যাস অবৈধ।" }
+        val endpoint = endpoint(context) ?: error("Relay endpoint configured নয়; ফলাফল পাঠানো যায়নি।")
+        val token = token(context) ?: error("Relay device token পাওয়া যায়নি; ফলাফল পাঠানো যায়নি।")
+        val response = request("$endpoint/v1/device/jobs/$commandId/result", "POST", token,
             JSONObject().put("output", output.take(10000)).put("exit_code", exitCode).toString())
+        check(response.optBoolean("accepted")) {
+            "Relay server ফলাফল গ্রহণের নিশ্চয়তা দেয়নি।"
+        }
+    }
+
+    fun hasHandledCommand(context: Context, commandId: String): Boolean {
+        require(isValidCommandId(commandId)) { "Relay command ID-এর বিন্যাস অবৈধ।" }
+        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getStringSet(HANDLED_IDS, emptySet())
+            .orEmpty()
+            .contains(commandId)
+    }
+
+    fun markCommandHandled(context: Context, commandId: String) {
+        require(isValidCommandId(commandId)) { "Relay command ID-এর বিন্যাস অবৈধ।" }
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val ids = prefs.getStringSet(HANDLED_IDS, emptySet()).orEmpty().toMutableSet()
+        ids.add(commandId)
+        while (ids.size > 100) ids.remove(ids.first())
+        val editor = prefs.edit().putStringSet(HANDLED_IDS, ids)
+        if (prefs.getString(PENDING_COMMAND_ID, null) == commandId) {
+            editor.remove(PENDING_COMMAND_ID).remove(PENDING_COMMAND_STARTED)
+        }
+        check(editor.commit()) {
+            "Relay command-এর স্থানীয় duplicate guard সংরক্ষণ করা যায়নি।"
+        }
+    }
+
+    fun beginCommand(context: Context, commandId: String) {
+        require(isValidCommandId(commandId)) { "Relay command ID-এর বিন্যাস অবৈধ।" }
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        check(prefs.edit()
+            .putString(PENDING_COMMAND_ID, commandId)
+            .putLong(PENDING_COMMAND_STARTED, System.currentTimeMillis())
+            .commit()) { "Relay execution state সংরক্ষণ করা যায়নি।" }
+    }
+
+    fun pendingCommandId(context: Context): String? =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(PENDING_COMMAND_ID, null)
+
+    fun savePendingResult(context: Context, commandId: String, output: String, exitCode: Int) {
+        require(isValidCommandId(commandId)) { "Relay command ID-এর বিন্যাস অবৈধ।" }
+        val pending = JSONObject()
+            .put("command_id", commandId)
+            .put("output", output.take(10000))
+            .put("exit_code", exitCode)
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val existing = prefs.getString(PENDING_RESULT, null)
+        if (existing != null) {
+            val existingCommand = JSONObject(existing).optString("command_id")
+            require(existingCommand == commandId) {
+                "অন্য Relay job-এর ফলাফল এখনো retry queue-তে আছে।"
+            }
+            // Keep the first durable outcome. In particular, a late Termux callback
+            // must not replace a timeout outcome already submitted to the server.
+            return
+        }
+        check(prefs.edit().putString(PENDING_RESULT, pending.toString()).commit()) {
+            "Relay ফলাফল retry queue-তে সংরক্ষণ করা যায়নি।"
+        }
+    }
+
+    fun retryPendingResult(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        var raw = prefs.getString(PENDING_RESULT, null)
+        if (raw == null) {
+            val pendingId = prefs.getString(PENDING_COMMAND_ID, null)
+            val started = prefs.getLong(PENDING_COMMAND_STARTED, 0L)
+            if (pendingId != null && started > 0L &&
+                System.currentTimeMillis() - started >= RESULT_TIMEOUT_MS
+            ) {
+                savePendingResult(
+                    context,
+                    pendingId,
+                    "Termux result callback timed out. Command outcome is unknown; it was not automatically re-executed.",
+                    -2
+                )
+                raw = prefs.getString(PENDING_RESULT, null)
+            }
+        }
+        if (raw == null) return true
+        val pending = JSONObject(raw)
+        val commandId = pending.getString("command_id")
+        postResult(
+            context,
+            commandId,
+            pending.optString("output"),
+            pending.optInt("exit_code", -1)
+        )
+        markCommandHandled(context, commandId)
+        check(prefs.edit().remove(PENDING_RESULT).commit()) {
+            "Relay ফলাফল পাঠানো হয়েছে, কিন্তু স্থানীয় retry state পরিষ্কার করা যায়নি।"
+        }
+        return true
     }
 
     fun configured(context: Context): Boolean = endpoint(context) != null && token(context) != null
-    fun clear(context: Context) { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply() }
 
-    private fun normalize(value: String): String {
-        val parsed = URL(value.trim().trimEnd('/'))
-        require(parsed.protocol == "https" && parsed.host.isNotBlank()) { "Relay URL অবশ্যই HTTPS হতে হবে।" }
-        return parsed.toString().trimEnd('/')
+    fun clear(context: Context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().commit()
+        runCatching {
+            KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+                .deleteEntry(KEY_ALIAS)
+        }
     }
 
-    private fun request(url: String, method: String, bearer: String, body: String? = null): JSONObject {
-        val connection = URL(url).openConnection() as HttpURLConnection
-        connection.requestMethod = method
-        connection.connectTimeout = 8000
-        connection.readTimeout = 8000
-        connection.setRequestProperty("Authorization", "Bearer $bearer")
-        connection.setRequestProperty("Accept", "application/json")
-        if (body != null) {
-            connection.doOutput = true
-            connection.setRequestProperty("Content-Type", "application/json")
-            connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+    internal fun normalize(value: String): String {
+        val uri = URI(value.trim().trimEnd('/'))
+        require(
+            uri.scheme.equals("https", ignoreCase = true) &&
+                !uri.host.isNullOrBlank() &&
+                uri.userInfo == null &&
+                uri.query == null &&
+                uri.fragment == null &&
+                uri.host.none { it.isWhitespace() }
+        ) { "Relay URL অবশ্যই credentials, query বা fragment ছাড়া HTTPS URL হতে হবে।" }
+        return uri.toASCIIString().trimEnd('/')
+    }
+
+    internal fun isValidCommandId(value: String): Boolean =
+        value.length in 1..MAX_COMMAND_ID_LENGTH &&
+            value.matches(Regex("[A-Za-z0-9_-]+"))
+
+    internal fun parseJob(job: JSONObject): Job {
+        val id = job.optString("command_id")
+        val operation = job.optString("operation_id")
+        require(isValidCommandId(id)) {
+            "Relay job-এর command_id অবৈধ; কোনো কমান্ড চালানো হয়নি।"
         }
-        val status = connection.responseCode
-        val stream = if (status in 200..299) connection.inputStream else connection.errorStream
-        val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-        connection.disconnect()
-        val json = runCatching { JSONObject(text) }.getOrElse { JSONObject() }
-        if (status !in 200..299) throw IllegalStateException(
-            "Relay HTTP $status: " + json.optString("error", text.take(300))
-        )
-        return json
+        require(operation in allowed) {
+            "Relay job-এর operation_id অনুমোদিত নয়; কোনো কমান্ড চালানো হয়নি।"
+        }
+        return Job(id, operation)
+    }
+
+    internal fun readLimited(stream: InputStream?, maxBytes: Int = MAX_RESPONSE_BYTES): String {
+        if (stream == null) return ""
+        require(maxBytes > 0)
+        val output = ByteArrayOutputStream()
+        stream.use { input ->
+            val buffer = ByteArray(4096)
+            var total = 0
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                total += count
+                if (total > maxBytes) {
+                    throw IOException("Relay response নির্ধারিত আকারের সীমা অতিক্রম করেছে।")
+                }
+                output.write(buffer, 0, count)
+            }
+        }
+        return output.toString(Charsets.UTF_8.name())
+    }
+
+    internal fun isRetryableRequest(method: String, url: String): Boolean =
+        method == "GET" || (method == "POST" && url.endsWith("/result"))
+
+    internal fun isRetryableStatus(statusCode: Int): Boolean =
+        statusCode in setOf(408, 425, 429, 500, 502, 503, 504)
+
+    internal fun retryDelayMs(attempt: Int): Long =
+        (500L shl attempt.coerceIn(0, 2)).coerceAtMost(2000L)
+
+    private class RelayHttpException(val statusCode: Int, message: String) : IOException(message)
+
+    private fun request(url: String, method: String, bearer: String, body: String? = null): JSONObject {
+        // Pairing creates a new device token and is intentionally never retried.
+        // GET polling and result submission are idempotent and may use bounded retries.
+        val retryable = isRetryableRequest(method, url)
+        var attempt = 0
+        while (true) {
+            try {
+                return requestOnce(url, method, bearer, body)
+            } catch (error: IOException) {
+                val retryableStatus = error !is RelayHttpException || isRetryableStatus(error.statusCode)
+                if (!retryable || !retryableStatus || attempt >= 2) throw error
+                val delayMs = retryDelayMs(attempt)
+                try {
+                    Thread.sleep(delayMs)
+                } catch (interrupted: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    throw IOException("Relay retry interrupted.", interrupted)
+                }
+                attempt++
+            }
+        }
+    }
+
+    private fun requestOnce(url: String, method: String, bearer: String, body: String?): JSONObject {
+        val connection = URL(url).openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = method
+            connection.instanceFollowRedirects = false
+            connection.useCaches = false
+            connection.connectTimeout = 8000
+            connection.readTimeout = 8000
+            connection.setRequestProperty("Authorization", "Bearer $bearer")
+            connection.setRequestProperty("Accept", "application/json")
+            if (body != null) {
+                connection.doOutput = true
+                connection.setRequestProperty("Content-Type", "application/json")
+                connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+            }
+            val status = connection.responseCode
+            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+            val text = readLimited(stream)
+            val json = runCatching { JSONObject(text) }.getOrElse { JSONObject() }
+            if (status !in 200..299) throw RelayHttpException(
+                status,
+                "Relay HTTP $status: " + json.optString("error", "unexpected_response").take(200)
+            )
+            return json
+        } finally {
+            connection.disconnect()
+        }
     }
 
     private fun saveEndpoint(context: Context, endpoint: String) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("endpoint", endpoint).apply()
     }
+
     private fun endpoint(context: Context) =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("endpoint", null)
 
@@ -114,10 +334,16 @@ object RelayClient {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         (store.getKey(KEY_ALIAS, null) as? SecretKey)?.let { return it }
         val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
-        generator.init(KeyGenParameterSpec.Builder(KEY_ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
-            .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-            .setRandomizedEncryptionRequired(true).build())
+        generator.init(
+            KeyGenParameterSpec.Builder(
+                KEY_ALIAS,
+                KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+            )
+                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setRandomizedEncryptionRequired(true)
+                .build()
+        )
         return generator.generateKey()
     }
 }

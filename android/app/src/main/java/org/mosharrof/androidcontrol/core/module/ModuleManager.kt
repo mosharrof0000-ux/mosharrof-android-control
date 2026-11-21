@@ -1,5 +1,7 @@
 package org.mosharrof.androidcontrol.core.module
 
+import org.mosharrof.androidcontrol.safeUiErrorMessage
+
 import android.content.Context
 
 class ModuleManager {
@@ -76,7 +78,7 @@ class ModuleManager {
             failures.remove(id)
         } catch (error: Exception) {
             states[id] = ModuleStatus.FAILED
-            failures[id] = error.message ?: error.javaClass.simpleName
+            failures[id] = safeUiErrorMessage(error)
             throw error
         }
     }
@@ -102,7 +104,7 @@ class ModuleManager {
             failures.remove(id)
         } catch (error: Exception) {
             states[id] = ModuleStatus.FAILED
-            failures[id] = error.message ?: error.javaClass.simpleName
+            failures[id] = safeUiErrorMessage(error)
             throw error
         }
     }
@@ -124,7 +126,7 @@ class ModuleManager {
             states[id] = ModuleStatus.STOPPED
         } catch (error: Exception) {
             states[id] = ModuleStatus.FAILED
-            failures[id] = error.message ?: error.javaClass.simpleName
+            failures[id] = safeUiErrorMessage(error)
             throw error
         }
     }
@@ -149,7 +151,7 @@ class ModuleManager {
             failures.remove(id)
         } catch (error: Exception) {
             states[id] = ModuleStatus.FAILED
-            failures[id] = error.message ?: error.javaClass.simpleName
+            failures[id] = safeUiErrorMessage(error)
             throw error
         }
     }

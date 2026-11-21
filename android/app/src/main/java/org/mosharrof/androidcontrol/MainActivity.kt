@@ -1,6 +1,7 @@
 package org.mosharrof.androidcontrol
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -23,7 +24,11 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.documentfile.provider.DocumentFile
 import java.security.MessageDigest
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import net.openid.appauth.AuthorizationRequest
+import net.openid.appauth.AuthorizationService
 
 class MainActivity : Activity() {
     private lateinit var report: TextView
@@ -33,6 +38,7 @@ class MainActivity : Activity() {
     private var selectedTree: DocumentFile? = null
     private val worker = Executors.newSingleThreadExecutor()
     private val folderRequestCode = 4102
+    private val oauthAuthorizationRequestCode = 4103
     private val maxFiles = 5000
     private val maxDepth = 12
     private lateinit var relayUrl: EditText
@@ -45,25 +51,34 @@ class MainActivity : Activity() {
     private var aiModelDraft = ""
     private var aiEndpointDraft = ""
     private var aiPromptDraft = ""
+    @Volatile private var activeAiCancellation: AiProviderCancellation? = null
     private var relayUrlDraft = ""
     private val relayHandler = Handler(Looper.getMainLooper())
     @Volatile private var relayPolling = false
     @Volatile private var activityVisible = false
-    private var lastRelayCommand = ""
+    @Volatile private var relayApprovalPending = false
+    @Volatile private var lastRelayCommand = ""
     private val relayTick: Runnable = object : Runnable {
         override fun run() {
-            if (!relayPolling || !activityVisible || isFinishing) return
+            if (!relayPolling || !activityVisible || isFinishing || relayApprovalPending) return
             worker.execute {
-                runCatching { RelayClient.poll(this@MainActivity) }.onSuccess { job ->
-                    if (job != null && job.commandId != lastRelayCommand) {
-                        lastRelayCommand = job.commandId
-                        runOnUiThread { status.text = "Relay থেকে অনুমোদিত কাজ এসেছে: ${job.operationId}" }
-                        TermuxBridge.run(this@MainActivity, job.operationId, job.commandId)
+                if (!relayApprovalPending) {
+                    runCatching {
+                        RelayClient.retryPendingResult(this@MainActivity)
+                        RelayClient.poll(this@MainActivity)
+                    }.onSuccess { job ->
+                        if (job != null && job.commandId != lastRelayCommand && !relayApprovalPending) {
+                            lastRelayCommand = job.commandId
+                            relayApprovalPending = true
+                            runOnUiThread { requestRelayJobApproval(job) }
+                        }
+                    }.onFailure { error ->
+                        runOnUiThread { status.text = "Relay polling সমস্যা: ${safeUiErrorMessage(error)}" }
                     }
-                }.onFailure { error ->
-                    runOnUiThread { status.text = "Relay polling সমস্যা: ${error.message}" }
                 }
-                if (relayPolling && activityVisible) relayHandler.postDelayed(this@MainActivity.relayTick, 3000)
+                if (relayPolling && activityVisible && !relayApprovalPending) {
+                    relayHandler.postDelayed(this@MainActivity.relayTick, 3000)
+                }
             }
         }
     }
@@ -76,6 +91,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AiProviderRegistry.registerBuiltIns()
 
         report = TextView(this).apply {
             textSize = 14f
@@ -299,6 +315,17 @@ class MainActivity : Activity() {
     private fun showAiRelayPage() {
         showPage("AI ও Relay") {
             addHeading(this, "AI সংযোগ")
+            if (hasPendingUnknownAiOutcome()) {
+                addTextNote(
+                    this,
+                    "আগের একটি AI অনুরোধের ফলাফল অনিশ্চিত রয়ে গেছে। Provider সেটি পেয়েছিল কি না নিশ্চিত নয়; একই কাজ পুনরায় পাঠানোর আগে Provider-এর অবস্থা যাচাই করুন।"
+                )
+                addButton("অনিশ্চিত অনুরোধ পর্যালোচনা সম্পন্ন") {
+                    clearPendingUnknownAiOutcome()
+                    status.text = "অনিশ্চিত অনুরোধের সতর্কতা পর্যালোচনা করে সরানো হয়েছে।"
+                    showAiRelayPage()
+                }
+            }
             aiModel = EditText(this@MainActivity).apply {
                 hint = "AI মডেলের নাম (যেমন: gemini-2.5-flash)"
                 setText(aiModelDraft)
@@ -323,12 +350,32 @@ class MainActivity : Activity() {
             addView(aiModel)
             addView(aiEndpoint)
             addView(aiKey)
-            addButton("Gemini সেটিং সংরক্ষণ") { saveAiConfig(AiEngine.Provider.GEMINI) }
-            addButton("OpenAI-compatible সেটিং সংরক্ষণ") {
+            addButton("পুরোনো Gemini সেটিং সংরক্ষণ") { saveAiConfig(AiEngine.Provider.GEMINI) }
+            addButton("পুরোনো OpenAI-compatible সেটিং সংরক্ষণ") {
                 saveAiConfig(AiEngine.Provider.OPENAI_COMPATIBLE)
+            }
+            addHeading(this, "Multi-AI Profile Manager")
+            addButton("নতুন Provider Profile যোগ করুন") { showAddProviderProfileDialog() }
+            addButton("সংরক্ষিত Profile দেখুন / Active নির্বাচন") { showProviderProfilesDialog() }
+            addButton("পুরোনো Gemini সেটিং Profile-এ স্থানান্তর") {
+                val migrated = runCatching { AiEngine.migrateLegacyConfigToProfile(this@MainActivity) }
+                status.text = migrated.fold(
+                    { if (it) "পুরোনো Gemini সেটিং Profile-এ স্থানান্তরিত হয়েছে।" else "স্থানান্তর করা হয়নি: সক্রিয় Profile আছে বা পুরোনো Gemini সেটিং নেই।" },
+                    { "স্থানান্তর ব্যর্থ: ${safeUiErrorMessage(it)}" }
+                )
+                report.text = providerProfilesReport()
             }
             addView(aiPrompt)
             addButton("AI-কে প্রশ্ন পাঠান") { runAi() }
+            addButton("চলমান AI অনুরোধ বাতিল করুন") {
+                val active = activeAiCancellation
+                if (active == null) {
+                    status.text = "এখন কোনো AI অনুরোধ চলছে না।"
+                } else {
+                    active.cancel()
+                    status.text = "বাতিলের অনুরোধ পাঠানো হয়েছে; ফলাফল অনিশ্চিত হতে পারে।"
+                }
+            }
             addButton("AI সেটিংসের অবস্থা") {
                 report.text = AiEngine.configurationSummary(this@MainActivity)
             }
@@ -341,6 +388,8 @@ class MainActivity : Activity() {
             }
             setupToken = EditText(this@MainActivity).apply {
                 hint = "Device setup token (গোপন)"
+                inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                    android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
                 setSingleLine(true)
             }
             addView(relayUrl)
@@ -349,6 +398,8 @@ class MainActivity : Activity() {
             addButton("Relay polling চালু করুন") { startRelayPolling() }
             addButton("Relay সংযোগ বন্ধ / বিচ্ছিন্ন করুন") {
                 relayPolling = false
+                relayApprovalPending = false
+                lastRelayCommand = ""
                 relayHandler.removeCallbacks(relayTick)
                 RelayClient.clear(this@MainActivity)
                 status.text = "Relay token মুছে ফেলা হয়েছে; সংযোগ বিচ্ছিন্ন।"
@@ -385,7 +436,10 @@ class MainActivity : Activity() {
             PluginDashboardPage(
                 activity = this@MainActivity,
                 worker = worker,
-                onStatus = { message -> status.text = message }
+                onStatus = { message -> status.text = message },
+                onStartOAuthAuthorization = { connectorId, endpoint, request ->
+                    startMcpOAuthAuthorization(connectorId, endpoint, request)
+                }
             ).render(this)
         }
     }
@@ -428,6 +482,189 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun showAddProviderProfileDialog() {
+        val providers = arrayOf("Gemini", "OpenAI Responses", "xAI Responses", "Anthropic Messages", "Custom OpenAI-compatible")
+        val ids = arrayOf(AiProviderId.GEMINI, AiProviderId.OPENAI, AiProviderId.XAI, AiProviderId.ANTHROPIC, AiProviderId.CUSTOM)
+        AlertDialog.Builder(this)
+            .setTitle("Provider নির্বাচন করুন")
+            .setItems(providers) { _, index -> buildProviderProfileForm(ids[index]) }
+            .setNegativeButton("বাতিল", null)
+            .show()
+    }
+
+    private fun buildProviderProfileForm(provider: AiProviderId) {
+        val form = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 8, 24, 0)
+        }
+        fun field(hintText: String, secret: Boolean = false): EditText =
+            EditText(this).apply {
+                hint = hintText
+                setSingleLine(true)
+                if (secret) inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                    android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+                form.addView(this)
+            }
+        val id = field("Profile ID (যেমন: gemini-main)")
+        val model = field("Model ID")
+        val endpoint = if (provider == AiProviderId.CUSTOM) field("Custom HTTPS endpoint") else null
+        val key = field("API Key (গোপন)", secret = true)
+        val scroll = ScrollView(this).apply { addView(form) }
+        AlertDialog.Builder(this)
+            .setTitle("নতুন ${provider.name} Profile")
+            .setView(scroll)
+            .setNegativeButton("বাতিল", null)
+            .setPositiveButton("এনক্রিপ্ট করে সংরক্ষণ", null)
+            .create().also { dialog ->
+                dialog.setOnShowListener {
+                    dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                        runCatching {
+                            AiEngine.saveProviderProfile(
+                                this,
+                                id.text.toString().trim(),
+                                provider,
+                                model.text.toString().trim(),
+                                key.text.toString(),
+                                endpoint?.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                            )
+                        }.onSuccess {
+                            key.text.clear()
+                            dialog.dismiss()
+                            status.text = "Provider Profile নিরাপদে সংরক্ষিত হয়েছে।"
+                            report.text = providerProfilesReport()
+                        }.onFailure {
+                            status.text = "Profile সংরক্ষণ ব্যর্থ: ${safeUiErrorMessage(it)}"
+                        }
+                    }
+                }
+                dialog.show()
+            }
+    }
+
+    private fun replaceProviderCredential(profile: AiProviderProfileSummary) {
+        val replacement = EditText(this).apply {
+            hint = "নতুন API Key (গোপন)"
+            setSingleLine(true)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Credential বদলান — ${profile.id}")
+            .setMessage("বর্তমান key দেখানো হবে না। নতুন key এনক্রিপ্ট করে সংরক্ষণ হবে; Provider/Model/Endpoint ও Active নির্বাচন অপরিবর্তিত থাকবে।")
+            .setView(replacement)
+            .setNegativeButton("বাতিল", null)
+            .setPositiveButton("নতুন Key সংরক্ষণ", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                runCatching {
+                    AiEngine.replaceProviderCredential(
+                        this,
+                        profile.id,
+                        replacement.text.toString()
+                    )
+                }.onSuccess {
+                    replacement.text.clear()
+                    dialog.dismiss()
+                    status.text = "Provider credential নিরাপদে বদলানো হয়েছে।"
+                    report.text = providerProfilesReport()
+                }.onFailure {
+                    status.text = "Credential বদলানো যায়নি: ${safeUiErrorMessage(it)}"
+                }
+            }
+        }
+        dialog.show()
+    }
+
+    private fun showProviderCapability(profile: AiProviderProfileSummary) {
+        AiProviderRegistry.registerBuiltIns()
+        val adapter = AiProviderRegistry.get(profile.provider)
+        if (adapter == null) {
+            status.text = "এই Provider-এর outbound adapter নেই।"
+            return
+        }
+        val apiVersion = when (profile.provider) {
+            AiProviderId.GEMINI -> "v1beta"
+            AiProviderId.OPENAI, AiProviderId.XAI, AiProviderId.CUSTOM -> "v1"
+            AiProviderId.ANTHROPIC -> "2026-10-21"
+            else -> {
+                status.text = "এই Provider-এর outbound API version নির্ধারিত নয়।"
+                return
+            }
+        }
+        val capability = runCatching {
+            adapter.capabilityProfile(profile.model, apiVersion)
+        }.getOrElse {
+            status.text = "Capability তথ্য তৈরি করা যায়নি: ${safeUiErrorMessage(it)}"
+            return
+        }
+        report.text = buildString {
+            append("Provider: ${profile.provider}\n")
+            append("Model: ${profile.model}\n")
+            append("API version: ${capability.apiVersion}\n")
+            append("Adapter version: ${capability.adapterVersion}\n\n")
+            AiCapability.values().forEach { item ->
+                append("${item.name}: ${capability.capabilities[item] ?: CapabilitySupport.UNKNOWN}\n")
+            }
+            append("\nUNKNOWN মানে এই adapter/model/API version-এর সক্ষমতা এখনো যাচাই করা হয়নি।")
+            append("\nএটি live connection test বা vendor capability verification নয়।")
+        }
+        status.text = "Model/Capability তথ্য দেখানো হয়েছে; live test চালানো হয়নি।"
+    }
+
+    private fun providerProfilesReport(): String {
+        val profiles = AiEngine.providerProfiles(this)
+        val activeId = runCatching { AiProviderProfileStore.active(this)?.summary?.id }.getOrNull()
+        return buildString {
+            append("সংরক্ষিত AI Provider Profile: ${profiles.size}\n\n")
+            profiles.forEach { profile ->
+                append("${if (profile.id == activeId) "● ACTIVE" else "○"} ${profile.id}\n")
+                append("Provider: ${profile.provider} | Model: ${profile.model}\n")
+                profile.endpoint?.let { append("Endpoint: $it\n") }
+                append("Credential: encrypted / hidden\n\n")
+            }
+            if (profiles.isEmpty()) append("কোনো Profile সংরক্ষিত নেই।")
+        }
+    }
+
+    private fun showProviderProfilesDialog() {
+        val profiles = AiEngine.providerProfiles(this)
+        if (profiles.isEmpty()) {
+            report.text = providerProfilesReport()
+            status.text = "কোনো Provider Profile নেই।"
+            return
+        }
+        val labels = profiles.map { "${it.id} — ${it.provider} — ${it.model}" }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Active Profile নির্বাচন করুন")
+            .setItems(labels) { _, index ->
+                val selected = profiles[index]
+                AlertDialog.Builder(this)
+                    .setTitle(selected.id)
+                    .setItems(arrayOf("এই Profile Active করুন", "Credential বদলান", "Model/Capability দেখুন", "Profile মুছে ফেলুন")) { _, action ->
+                        when (action) {
+                            0 -> runCatching { AiEngine.setActiveProviderProfile(this, selected.id) }
+                                .onSuccess { status.text = "Active Provider: ${selected.id}"; report.text = providerProfilesReport() }
+                                .onFailure { status.text = "Active নির্বাচন ব্যর্থ: ${safeUiErrorMessage(it)}" }
+                            1 -> replaceProviderCredential(selected)
+                            2 -> showProviderCapability(selected)
+                            3 -> AlertDialog.Builder(this)
+                                .setTitle("Profile মুছে ফেলবেন?")
+                                .setMessage("Profile metadata ও encrypted credential মুছে যাবে।")
+                                .setNegativeButton("না", null)
+                                .setPositiveButton("মুছে ফেলুন") { _, _ ->
+                                    runCatching { AiEngine.deleteProviderProfile(this, selected.id) }
+                                        .onSuccess { status.text = "Profile মুছে ফেলা হয়েছে।"; report.text = providerProfilesReport() }
+                                        .onFailure { status.text = "মুছতে ব্যর্থ: ${safeUiErrorMessage(it)}" }
+                                }.show()
+                        }
+                    }.setNegativeButton("ফিরে যান", null).show()
+            }
+            .setNegativeButton("বন্ধ", null)
+            .show()
+        report.text = providerProfilesReport()
+    }
+
     private fun saveAiConfig(provider: AiEngine.Provider) {
         val model = aiModel.text.toString().trim()
         val endpoint = aiEndpoint.text.toString().trim()
@@ -440,8 +677,25 @@ class MainActivity : Activity() {
             status.text = "AI সেটিং সংরক্ষিত। API Key এনক্রিপ্ট করে রাখা হয়েছে।"
             report.text = AiEngine.configurationSummary(this)
         }.onFailure {
-            status.text = "AI সেটিং সংরক্ষণ হয়নি: ${it.message}"
+            status.text = "AI সেটিং সংরক্ষণ হয়নি: ${safeUiErrorMessage(it)}"
         }
+    }
+
+    private fun aiRequestRecoveryStore() = AiRequestRecoveryStore(
+        SharedPreferencesAiRequestRecoveryPersistence(
+            getSharedPreferences("ai_request_recovery", MODE_PRIVATE)
+        )
+    )
+
+    private fun hasPendingUnknownAiOutcome(): Boolean =
+        aiRequestRecoveryStore().hasPendingUnknownOutcome()
+
+    private fun savePendingUnknownAiOutcome() {
+        aiRequestRecoveryStore().recordUnknownOutcome(System.currentTimeMillis())
+    }
+
+    private fun clearPendingUnknownAiOutcome() {
+        aiRequestRecoveryStore().markReviewed()
     }
 
     private fun runAi() {
@@ -454,18 +708,109 @@ class MainActivity : Activity() {
             status.text = "আগে AI Provider, মডেল ও API Key সংরক্ষণ করুন।"
             return
         }
+        if (activeAiCancellation != null) {
+            status.text = "আগের AI অনুরোধ এখনো শেষ হয়নি। আগে সেটি শেষ বা বাতিল করুন।"
+            return
+        }
 
+        val cancellation = AiProviderCancellation()
+        activeAiCancellation = cancellation
         status.text = "AI উত্তর তৈরি করছে…"
         worker.execute {
-            val result = runCatching { AiEngine.ask(this@MainActivity, prompt) }
+            val result = runCatching {
+                AiEngine.askWithMcpApproval(
+                    this@MainActivity,
+                    prompt,
+                    PluginDashboardSession.service,
+                    { plan -> requestAiToolApproval(plan, cancellation) },
+                    cancellation
+                )
+            }
             runOnUiThread {
+                if (activeAiCancellation === cancellation) activeAiCancellation = null
                 result.onSuccess {
                     report.text = "AI উত্তর\n\n$it"
                     status.text = "AI উত্তর পাওয়া গেছে।"
-                }.onFailure {
-                    status.text = "AI অনুরোধ ব্যর্থ: ${it.message}"
+                }.onFailure { error ->
+                    if (error is java.util.concurrent.CancellationException || cancellation.isCancelled()) {
+                        if (cancellation.hasUncertainOutcome()) {
+                            savePendingUnknownAiOutcome()
+                            report.text = "অনুরোধের ফলাফল অনিশ্চিত। Provider অনুরোধটি পেয়েছে কি না নিশ্চিত নয়। নিরাপদে যাচাই না করা পর্যন্ত একই কাজ স্বয়ংক্রিয়ভাবে আবার পাঠাবেন না।"
+                            status.text = "AI অনুরোধ বাতিল হয়েছে; ফলাফল অনিশ্চিত।"
+                        } else {
+                            status.text = "AI অনুরোধ বাতিল হয়েছে; Provider-এ পাঠানোর আগেই থেমেছে।"
+                        }
+                    } else {
+                        status.text = "AI অনুরোধ ব্যর্থ: ${safeUiErrorMessage(error)}"
+                    }
                 }
             }
+        }
+    }
+
+    /**
+     * Blocks only the background AI worker while the user reviews the exact
+     * provider-generated arguments. Timeout, cancellation, or activity exit
+     * always means denial; no grant is issued by this dialog.
+     */
+    private fun requestAiToolApproval(
+        plan: AiToolCallPlan.Ready,
+        cancellation: AiProviderCancellation
+    ): Boolean {
+        val decision = CountDownLatch(1)
+        val dialogRef = java.util.concurrent.atomic.AtomicReference<AlertDialog?>(null)
+        var approved = false
+        runOnUiThread {
+            if (isFinishing || isDestroyed || cancellation.isCancelled()) {
+                decision.countDown()
+                return@runOnUiThread
+            }
+            val tool = ConnectorRegistry.toolSnapshot().firstOrNull { it.id == plan.toolId }
+            val risk = tool?.risk?.name ?: "UNKNOWN"
+            val arguments = runCatching {
+                org.json.JSONObject(plan.call.arguments).toString(2)
+            }.getOrElse { "{অবৈধ arguments}" }
+            val dialog = AlertDialog.Builder(this)
+                .setTitle("AI Plugin অনুমোদন")
+                .setMessage(
+                    "AI এই MCP Tool চালাতে চায়।\n\n" +
+                        "Tool: ${plan.call.toolName}\nRisk: $risk\n\n" +
+                        "Arguments (যাচাই করুন):\n$arguments\n\n" +
+                        "অনুমোদন না করলে Tool চালানো হবে না।"
+                )
+                .setNegativeButton("অনুমোদন নয়") { _, _ ->
+                    approved = false
+                    decision.countDown()
+                }
+                .setPositiveButton("অনুমোদন করে চালান") { _, _ ->
+                    approved = true
+                    decision.countDown()
+                }
+                .setOnCancelListener {
+                    approved = false
+                    decision.countDown()
+                }
+                .create()
+            dialogRef.set(dialog)
+            if (cancellation.isCancelled()) {
+                decision.countDown()
+            } else {
+                dialog.show()
+            }
+        }
+        return try {
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(120)
+            while (!cancellation.isCancelled() && System.nanoTime() < deadline) {
+                if (decision.await(100, TimeUnit.MILLISECONDS)) return approved
+            }
+            if (cancellation.isCancelled()) {
+                runOnUiThread { dialogRef.get()?.dismiss() }
+            }
+            false
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            runOnUiThread { dialogRef.get()?.dismiss() }
+            false
         }
     }
 
@@ -496,9 +841,82 @@ class MainActivity : Activity() {
                     setupToken.text.clear()
                     status.text = "Pairing code: $code (৫ মিনিটের মধ্যে অনুমোদিত ChatGPT connector-এ claim করতে হবে)।"
                 }.onFailure { error ->
-                    status.text = "Pairing ব্যর্থ: ${error.message}"
+                    status.text = "Pairing ব্যর্থ: ${safeUiErrorMessage(error)}"
                 }
             }
+        }
+    }
+
+    private fun requestRelayJobApproval(job: RelayClient.Job) {
+        if (isFinishing || !activityVisible) {
+            relayApprovalPending = false
+            lastRelayCommand = ""
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Relay কাজের অনুমতি")
+            .setMessage(
+                "অপারেশন: ${job.operationId}\nকমান্ড ID: ${job.commandId.take(8)}…\n\n" +
+                    "এটি Termux-এ একটি পূর্বনির্ধারিত read-only কমান্ড চালাবে। " +
+                    "আপনি অনুমোদন না দিলে কোনো কমান্ড চলবে না।"
+            )
+            .setCancelable(false)
+            .setNegativeButton("প্রত্যাখ্যান") { _, _ ->
+                worker.execute {
+                    val result = runCatching {
+                        RelayClient.savePendingResult(
+                            this@MainActivity,
+                            job.commandId,
+                            "Rejected by user in Android app",
+                            126
+                        )
+                        RelayClient.retryPendingResult(this@MainActivity)
+                    }
+                    runOnUiThread {
+                        if (result.isFailure) lastRelayCommand = ""
+                        status.text = if (result.isSuccess) {
+                            "Relay কাজ প্রত্যাখ্যান করা হয়েছে; Termux-এ কিছু চালানো হয়নি।"
+                        } else {
+                            "Relay প্রত্যাখ্যানের ফল পাঠানো যায়নি: ${result.exceptionOrNull()?.let(::safeUiErrorMessage) ?: "অজানা সমস্যা"}"
+                        }
+                        finishRelayApproval()
+                    }
+                }
+            }
+            .setPositiveButton("অনুমোদন করে চালান") { _, _ ->
+                worker.execute {
+                    // Do not mark a job handled merely because Termux accepted the request.
+                    // TermuxResultReceiver marks it only after the execution result is
+                    // successfully acknowledged by the Relay server.
+                    val execution = TermuxBridge.run(this@MainActivity, job.operationId, job.commandId)
+                    runOnUiThread {
+                        status.text = execution.fold(
+                            { it },
+                            { "Termux অনুরোধ ব্যর্থ: ${safeUiErrorMessage(it)}" }
+                        )
+                        finishRelayApproval()
+                    }
+                    if (execution.isFailure) {
+                        runCatching {
+                            RelayClient.savePendingResult(
+                                this@MainActivity,
+                                job.commandId,
+                                execution.exceptionOrNull()?.let(::safeUiErrorMessage) ?: "Termux request failed",
+                                -1
+                            )
+                            RelayClient.retryPendingResult(this@MainActivity)
+                        }
+                    }
+                }
+            }
+            .show()
+    }
+
+    private fun finishRelayApproval() {
+        relayApprovalPending = false
+        if (relayPolling && activityVisible) {
+            relayHandler.removeCallbacks(relayTick)
+            relayHandler.postDelayed(relayTick, 3000)
         }
     }
 
@@ -508,14 +926,198 @@ class MainActivity : Activity() {
             return
         }
         relayPolling = true
+        relayApprovalPending = false
+        lastRelayCommand = ""
         relayHandler.removeCallbacks(relayTick)
         status.text = "Relay polling চালু — অ্যাপ সামনে খোলা রাখুন।"
         relayHandler.post(relayTick)
     }
 
+    private fun startMcpOAuthAuthorization(
+        connectorId: String,
+        endpoint: String,
+        request: AuthorizationRequest
+    ) {
+        val prefs = getSharedPreferences("mosharrof_mcp_oauth_flow", MODE_PRIVATE)
+        try {
+            prefs.edit()
+                .putString("pending_connector_id", connectorId)
+                .putString("pending_endpoint", endpoint)
+                .apply()
+            val authorizationService = AuthorizationService(this)
+            val authorizationIntent = try {
+                authorizationService.getAuthorizationRequestIntent(request)
+            } finally {
+                authorizationService.dispose()
+            }
+            startActivityForResult(authorizationIntent, oauthAuthorizationRequestCode)
+            status.text = "OAuth Browser Login শুরু হয়েছে। Authorization শেষ হলে নিরাপদ callback যাচাই হবে।"
+        } catch (_: Exception) {
+            prefs.edit().remove("pending_connector_id").remove("pending_endpoint").apply()
+            status.text = "OAuth Browser Login শুরু করা যায়নি। Browser বা AppAuth configuration যাচাই করুন।"
+        }
+    }
+
+    @Deprecated("AppAuth authorization result is delivered through the activity result contract.")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == folderRequestCode) {
+            if (resultCode != RESULT_OK) return
+            val uri = data?.data ?: return
+            val flags = data.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            try {
+                contentResolver.takePersistableUriPermission(uri, flags)
+                selectedTree = DocumentFile.fromTreeUri(this, uri)
+                status.text = "নির্বাচিত ফোল্ডার: ${selectedTree?.name ?: "নাম অজানা"}"
+                report.text = "ফোল্ডার অনুমতি সংরক্ষিত হয়েছে। এখন ফাইল তালিকা বা ডুপ্লিকেট স্ক্যান চালান।"
+            } catch (error: SecurityException) {
+                status.text = "ফোল্ডার অনুমতি সংরক্ষণ করা যায়নি: ${safeUiErrorMessage(error)}"
+            }
+            return
+        }
+        if (requestCode != oauthAuthorizationRequestCode) return
+
+        val prefs = getSharedPreferences("mosharrof_mcp_oauth_flow", MODE_PRIVATE)
+        val connectorId = prefs.getString("pending_connector_id", null)
+        val endpoint = prefs.getString("pending_endpoint", null)
+        prefs.edit().remove("pending_connector_id").remove("pending_endpoint").apply()
+
+        if (connectorId.isNullOrBlank() || endpoint.isNullOrBlank()) {
+            status.text = "OAuth callback-এর Connector তথ্য পাওয়া যায়নি; callback প্রত্যাখ্যান করা হয়েছে।"
+            return
+        }
+        if (resultCode != RESULT_OK || data == null) {
+            status.text = "OAuth Browser Login সম্পন্ন হয়নি বা বাতিল হয়েছে। Encrypted pending request অক্ষত আছে।"
+            return
+        }
+
+        status.text = "OAuth callback ও encrypted PKCE request যাচাই হচ্ছে…"
+        val authorizationService = AuthorizationService(this)
+        worker.execute {
+            val pending = McpOAuthPendingRequestStore
+                .readBound(this@MainActivity, connectorId)
+                .getOrElse {
+                    runOnUiThread {
+                        authorizationService.dispose()
+                        status.text = "Encrypted OAuth pending request পড়া যায়নি; token exchange বন্ধ রাখা হয়েছে।"
+                    }
+                    return@execute
+                }
+            if (pending == null) {
+                runOnUiThread {
+                    authorizationService.dispose()
+                    status.text = "Encrypted OAuth pending request পাওয়া যায়নি; callback প্রত্যাখ্যান করা হয়েছে।"
+                }
+                return@execute
+            }
+
+            val registered = runCatching {
+                val existing = ConnectorRegistry.connectorSnapshot()
+                    .firstOrNull { it.id == connectorId }
+                if (existing == null) {
+                    ConnectorRegistry.registerConnector(
+                        ConnectorRegistry.Connector(
+                            id = connectorId,
+                            name = "MCP Connector",
+                            transport = ConnectorRegistry.Transport.MCP_STREAMABLE_HTTP,
+                            endpoint = endpoint,
+                            state = ConnectorRegistry.ConnectionState.CONFIGURED
+                        )
+                    ).getOrThrow()
+                } else {
+                    require(existing.endpoint == endpoint) {
+                        "OAuth Connector endpoint mismatch"
+                    }
+                }
+            }
+            if (registered.isFailure) {
+                runOnUiThread {
+                    authorizationService.dispose()
+                    status.text = "OAuth Connector যাচাই ব্যর্থ; token exchange করা হয়নি।"
+                }
+                return@execute
+            }
+
+            McpOAuthTokenExchange.exchange(
+                context = this@MainActivity,
+                connectorId = connectorId,
+                callbackIntent = data,
+                pendingRequest = pending.request,
+                expectedIssuer = pending.expectedIssuer,
+                issuerRequired = pending.issuerRequired,
+                authorizationService = authorizationService
+            ) { exchangeResult ->
+                if (exchangeResult.isFailure) {
+                    authorizationService.dispose()
+                    runOnUiThread {
+                        status.text = "OAuth callback/token exchange যাচাই ব্যর্থ; MCP সংযোগ করা হয়নি।"
+                    }
+                    return@exchange
+                }
+
+                // Do not proceed to MCP connection while the one-time PKCE
+                // request is still present in encrypted storage.
+                if (!McpOAuthTokenExchange.isReadyForMcpConnection(exchangeResult)) {
+                    authorizationService.dispose()
+                    runOnUiThread {
+                        status.text = "OAuth token সংরক্ষিত, কিন্তু pending PKCE request মুছতে ব্যর্থ; নিরাপত্তার জন্য MCP সংযোগ বন্ধ। Local logout করে নতুন Login প্রস্তুত করুন।"
+                    }
+                    return@exchange
+                }
+
+                worker.execute {
+                    runCatching {
+                        val client = McpHttpClient(endpoint = endpoint, allowSynchronousRequests = false)
+                        val taskPreferences = getSharedPreferences(
+                            "mosharrof_mcp_tasks",
+                            MODE_PRIVATE
+                        )
+                        McpConnectorService(
+                            client = client,
+                            taskStore = SharedPreferencesMcpTaskStore(taskPreferences)
+                        )
+                    }.onSuccess { connectorService ->
+                        val resolver = McpOAuthAccessTokenProvider(
+                            this@MainActivity,
+                            authorizationService
+                        )
+                        connectorService.connectAsync(
+                            connectorId = connectorId,
+                            tokenProvider = resolver,
+                            ioExecutor = worker
+                        ) { connectResult ->
+                            authorizationService.dispose()
+                            connectResult.onSuccess { info ->
+                                PluginDashboardSession.connectorId = connectorId
+                                PluginDashboardSession.service = connectorService
+                                runOnUiThread {
+                                    status.text = "OAuth সংযোগ সফল। আবিষ্কৃত Tool: ${info.discoveredTools}"
+                                    showMcpPage()
+                                }
+                            }.onFailure {
+                                runOnUiThread {
+                                    status.text = "OAuth token সংরক্ষিত; MCP server connection ব্যর্থ।"
+                                }
+                            }
+                        }
+                    }.onFailure {
+                        authorizationService.dispose()
+                        runOnUiThread {
+                            status.text = "OAuth MCP connection প্রস্তুত করা যায়নি।"
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         activityVisible = true
+        val pendingCommand = RelayClient.pendingCommandId(this)
+        if (pendingCommand != null) {
+            status.text = "আগের Relay কাজের ফলাফল/timeout recovery অপেক্ষমাণ: ${pendingCommand.take(8)}…"
+        }
         if (RelayClient.configured(this) && relayPolling) relayHandler.post(relayTick)
     }
 
@@ -530,7 +1132,7 @@ class MainActivity : Activity() {
         val result = TermuxBridge.run(this, operationId)
         result.onSuccess { status.text = it }
             .onFailure { error ->
-                status.text = "Termux চালানো যায়নি: ${error.message ?: "অনুমতি বা সেটআপ পরীক্ষা করুন"}"
+                status.text = "Termux চালানো যায়নি: ${safeUiErrorMessage(error)}"
             }
     }
 
@@ -579,23 +1181,7 @@ class MainActivity : Activity() {
         startActivityForResult(intent, folderRequestCode)
     }
 
-    @Deprecated("Platform document picker callback")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != folderRequestCode || resultCode != RESULT_OK) return
-        val uri = data?.data ?: return
-        val flags = data.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-        try {
-            contentResolver.takePersistableUriPermission(uri, flags)
-            selectedTree = DocumentFile.fromTreeUri(this, uri)
-            status.text = "নির্বাচিত ফোল্ডার: ${selectedTree?.name ?: "নাম অজানা"}"
-            report.text = "ফোল্ডার অনুমতি সংরক্ষিত হয়েছে। এখন ফাইল তালিকা বা ডুপ্লিকেট স্ক্যান চালান।"
-        } catch (error: SecurityException) {
-            status.text = "ফোল্ডার অনুমতি সংরক্ষণ করা যায়নি: ${error.message}"
-        }
-    }
-
-    private fun scanSelectedFolder(findDuplicates: Boolean) {
+        private fun scanSelectedFolder(findDuplicates: Boolean) {
         val root = selectedTree
         if (root == null) {
             Toast.makeText(this, "আগে একটি ফোল্ডার নির্বাচন করুন", Toast.LENGTH_SHORT).show()
