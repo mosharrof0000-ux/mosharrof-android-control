@@ -69,6 +69,7 @@ jobs:
           python3 -m unittest discover -s tools -p 'test_audit_binary_notices.py' -v
           python3 -m unittest discover -s tools -p 'test_audit_maven_metadata.py' -v
           python3 -m unittest discover -s tools -p 'test_audit_maven_source_metadata.py' -v
+          python3 -m unittest discover -s tools -p 'test_android_build_workflow.py' -v
 
       - name: Audit upstream Maven POM license and source metadata
         run: |
@@ -498,7 +499,7 @@ jobs:
     with:
       download-artifact: android-gradle-dependency-evidence
       scan-args: |-
-        --lockfile=app/gradle.lockfile
-        --lockfile=buildscript-gradle.lockfile
-        --lockfile=gradle/verification-metadata.xml
+        --lockfile=android/app/gradle.lockfile
+        --lockfile=android/buildscript-gradle.lockfile
+        --lockfile=android/gradle/verification-metadata.xml
       fail-on-vuln: false
